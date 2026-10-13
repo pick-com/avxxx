@@ -69,18 +69,38 @@ func (a *AvjoyAdapter) Resolve(ctx context.Context, id string) (*ResolveResult, 
 	var streams []Stream
 	for _, m := range regexp.MustCompile(`(?is)<source\b[^>]*src=["']([^"']+)["'][^>]*>`).FindAllStringSubmatch(body, -1) {
 		src := absoluteURL(a.baseURL, html.UnescapeString(strings.TrimSpace(m[1])))
-		if !strings.Contains(strings.ToLower(src), ".mp4") {
+		if !strings.Contains(strings.ToLower(src), ".mp4") || strings.HasSuffix(strings.ToLower(strings.Split(src, "?")[0]), "/403.mp4") {
 			continue
 		}
 		tag := m[0]
 		quality := firstMatch(tag, `(?i)(?:res|label)=["']([^"']+)`)
-		streams = append(streams, Stream{URL: src, Protocol: "mp4", Quality: quality})
+		if !a.probe(ctx, src, u) {
+			continue
+		}
+		streams = append(streams, Stream{URL: src, Protocol: "mp4", Quality: quality, Headers: map[string]string{"Referer": u, "User-Agent": "Mozilla/5.0 (compatible; avxxx/0.1)"}})
 	}
 	streams = dedupeStreams(streams)
 	if len(streams) == 0 {
 		return nil, errors.New("avjoy has no direct public stream")
 	}
 	return &ResolveResult{Streams: streams}, nil
+}
+
+func (a *AvjoyAdapter) probe(ctx context.Context, raw, ref string) bool {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, raw, nil)
+	if err != nil {
+		return false
+	}
+	req.Header.Set("Range", "bytes=0-1")
+	req.Header.Set("Accept-Encoding", "identity")
+	req.Header.Set("User-Agent", "Mozilla/5.0 (compatible; avxxx/0.1)")
+	req.Header.Set("Referer", ref)
+	resp, err := a.client.Do(req)
+	if err != nil {
+		return false
+	}
+	defer resp.Body.Close()
+	return resp.StatusCode >= 200 && resp.StatusCode < 300 && strings.Contains(strings.ToLower(resp.Header.Get("Content-Type")), "video/")
 }
 
 func (a *AvjoyAdapter) parseSearch(body string) []SearchResult {
