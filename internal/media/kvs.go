@@ -68,26 +68,34 @@ func (a *kvsAdapter) Resolve(ctx context.Context, id string) (*ResolveResult, er
 	return &ResolveResult{Streams: out}, nil
 }
 func (a *kvsAdapter) parse(body string) []SearchResult {
-	blocks := regexp.MustCompile(`(?is)<(?:div|article)\b[^>]*class=["'][^"']*(?:item|thumb|video)[^"']*["'][^>]*>.*?</(?:div|article)>`).FindAllString(body, -1)
 	out := []SearchResult{}
 	seen := map[string]bool{}
-	for _, b := range blocks {
-		h := regexp.MustCompile(`(?i)href=["']([^"']*` + regexp.QuoteMeta(a.marker) + `[^"']*)`).FindStringSubmatch(b)
-		if len(h) < 2 {
-			continue
-		}
-		u := absoluteURL(a.base, h[1])
+	// KVS installations can return both video cards and album cards. Parse
+	// the anchors directly instead of relying on nested card div boundaries,
+	// which vary between themes and can contain nested divs.
+	anchors := regexp.MustCompile(`(?is)<a\b[^>]*href=["']([^"']*/(?:videos|albums)/[^"']*)["'][^>]*>(.*?)</a>`).FindAllStringSubmatch(body, -1)
+	for _, m := range anchors {
+		u := absoluteURL(a.base, html.UnescapeString(m[1]))
 		if seen[u] {
 			continue
 		}
-		t := cleanHTML(firstMatch(b, `(?is)(?:title|alt)=["']([^"']+)`))
+		anchor := m[0]
+		t := cleanHTML(firstMatch(anchor, `(?is)title=["']([^"']+)`))
 		if t == "" {
-			t = cleanHTML(firstMatch(b, `(?is)<a[^>]*>(.*?)</a>`))
+			t = cleanHTML(m[2])
 		}
 		if t == "" {
 			continue
 		}
-		out = append(out, SearchResult{ID: strings.TrimPrefix(u, a.base), Source: a.name, Title: t, Type: "video"})
+		cover := firstMatch(m[2], `(?is)(?:data-original|src)=["']([^"']+)`)
+		if strings.HasPrefix(cover, "data:") {
+			cover = firstMatch(m[2], `(?is)data-original=["']([^"']+)`)
+		}
+		kind := "video"
+		if strings.Contains(strings.ToLower(u), "/albums/") {
+			kind = "album"
+		}
+		out = append(out, SearchResult{ID: strings.TrimPrefix(u, a.base), Source: a.name, Title: t, Cover: absoluteURL(a.base, html.UnescapeString(cover)), Type: kind})
 		seen[u] = true
 	}
 	sort.SliceStable(out, func(i, j int) bool { return out[i].Title < out[j].Title })
