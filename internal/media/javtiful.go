@@ -111,10 +111,10 @@ func normalizeJavtifulID(id, base string) (string, error) {
 		}
 		return u.String(), nil
 	}
-	if !strings.HasPrefix(id, "/video/") {
+	if !strings.HasPrefix(id, "/video/") && !strings.HasPrefix(id, "video/") {
 		return "", errors.New("invalid javtiful video id")
 	}
-	return base + id, nil
+	return base + "/" + strings.TrimPrefix(id, "/"), nil
 }
 
 func extractJavtifulVideos(body, base string) []SearchResult {
