@@ -22,6 +22,7 @@ type Detail struct {
 	Title       string    `json:"title"`
 	Cover       string    `json:"cover,omitempty"`
 	Description string    `json:"description,omitempty"`
+	EmbedURL    string    `json:"embed_url,omitempty"`
 	Episodes    []Episode `json:"episodes,omitempty"`
 }
 
