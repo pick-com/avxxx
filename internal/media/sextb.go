@@ -72,7 +72,8 @@ func (a *SextbAdapter) Detail(ctx context.Context, id string) (*Detail, error) {
 	if title == "" {
 		title = cleanHTML(firstMatch(body, `<title[^>]*>([\s\S]*?)</title>`))
 	}
-	return &Detail{ID: id, Source: a.Name(), Title: title, Episodes: []Episode{{ID: id, Title: title}}}, nil
+	embed := firstMatch(body, `(?is)<iframe[^>]+src=["'](https?://sextb\.net/e/[^"']+)["']`)
+	return &Detail{ID: id, Source: a.Name(), Title: title, EmbedURL: embed, Episodes: []Episode{{ID: id, Title: title}}}, nil
 }
 
 func (a *SextbAdapter) Resolve(ctx context.Context, id string) (*ResolveResult, error) {
