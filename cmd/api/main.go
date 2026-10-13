@@ -23,7 +23,9 @@ func main() {
 	}
 	defer s.Close()
 	mux := http.NewServeMux()
-	mediaHandler := media.NewHandler(media.NewService(media.NewRegistry()))
+	mediaRegistry := media.NewRegistry()
+	mediaRegistry.Register(media.NewJavtifulAdapter())
+	mediaHandler := media.NewHandler(media.NewService(mediaRegistry))
 	reply := func(w http.ResponseWriter, v any, e error) {
 		w.Header().Set("Content-Type", "application/json")
 		if e != nil {
@@ -55,8 +57,8 @@ func main() {
 	// Adapters are intentionally not registered until their source implementation
 	// and authorization requirements are reviewed.
 	mux.HandleFunc("GET /api/search", mediaHandler.Search)
-	mux.HandleFunc("GET /api/detail/{source}/{id}", mediaHandler.Detail)
-	mux.HandleFunc("POST /api/resolve/{source}/{id}", mediaHandler.Resolve)
+	mux.HandleFunc("GET /api/detail/{source}/{id...}", mediaHandler.Detail)
+	mux.HandleFunc("POST /api/resolve/{source}/{id...}", mediaHandler.Resolve)
 	mux.HandleFunc("GET /api/admin/sources", admin(func(w http.ResponseWriter, r *http.Request) { v, e := s.Sources(r.Context()); reply(w, v, e) }))
 	mux.HandleFunc("GET /api/admin/jobs", admin(func(w http.ResponseWriter, r *http.Request) { v, e := s.Jobs(r.Context()); reply(w, v, e) }))
 	mux.HandleFunc("POST /api/admin/sources", admin(func(w http.ResponseWriter, r *http.Request) {
