@@ -30,6 +30,7 @@ func main() {
 	mediaRegistry.Register(media.NewKVSAdapter("camstreams", "https://camstreams.tv", "/videos/"))
 	mediaRegistry.Register(media.NewKVSAdapter("camwhores", "https://www.camwhores.tv", "/videos/"))
 	mediaRegistry.Register(media.NewAvjoyAdapter())
+	mediaRegistry.Register(media.NewEpornerAdapter())
 	mediaHandler := media.NewHandler(media.NewService(mediaRegistry))
 	reply := func(w http.ResponseWriter, v any, e error) {
 		w.Header().Set("Content-Type", "application/json")
