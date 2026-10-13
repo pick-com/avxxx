@@ -95,7 +95,8 @@ func (a *kvsAdapter) parse(body string) []SearchResult {
 		if strings.Contains(strings.ToLower(u), "/albums/") {
 			kind = "album"
 		}
-		out = append(out, SearchResult{ID: strings.TrimPrefix(u, a.base), Source: a.name, Title: t, Cover: absoluteURL(a.base, html.UnescapeString(cover)), Type: kind})
+		id := strings.TrimPrefix(strings.TrimPrefix(u, a.base), "/")
+		out = append(out, SearchResult{ID: id, Source: a.name, Title: t, Cover: absoluteURL(a.base, html.UnescapeString(cover)), Type: kind})
 		seen[u] = true
 	}
 	sort.SliceStable(out, func(i, j int) bool { return out[i].Title < out[j].Title })
