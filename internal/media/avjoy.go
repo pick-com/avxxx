@@ -55,7 +55,24 @@ func (a *AvjoyAdapter) Detail(ctx context.Context, id string) (*Detail, error) {
 		title = cleanHTML(firstMatch(body, `(?is)<h1[^>]*>(.*?)</h1>`))
 	}
 	embed := firstMatch(body, `(?i)(https?://en\.avjoy\.me/embed/[A-Za-z0-9]+)`)
+	if embed != "" && !a.probePage(ctx, embed) {
+		embed = ""
+	}
 	return &Detail{ID: id, Source: a.Name(), Title: title, EmbedURL: embed, Episodes: []Episode{{ID: id, Title: title}}}, nil
+}
+
+func (a *AvjoyAdapter) probePage(ctx context.Context, raw string) bool {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, raw, nil)
+	if err != nil {
+		return false
+	}
+	req.Header.Set("User-Agent", "Mozilla/5.0 (compatible; avxxx/0.1)")
+	resp, err := a.client.Do(req)
+	if err != nil {
+		return false
+	}
+	defer resp.Body.Close()
+	return resp.StatusCode >= 200 && resp.StatusCode < 300
 }
 
 func (a *AvjoyAdapter) Resolve(ctx context.Context, id string) (*ResolveResult, error) {
