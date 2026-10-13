@@ -145,6 +145,14 @@ func (a *ABxxxAdapter) request(ctx context.Context, method, raw string, body io.
 	return string(b), err
 }
 func decodeABxxxURL(value, base string) (string, error) {
+	for from, to := range map[rune]rune{0x0410: 'A', 0x0412: 'B', 0x0415: 'E', 0x041C: 'M', 0x0421: 'C', 0x041D: 'H', 0x041A: 'K', 0x0420: 'P', 0x0422: 'T', 0x041E: 'O', 0x0425: 'X'} {
+		value = strings.Map(func(r rune) rune {
+			if r == from {
+				return to
+			}
+			return r
+		}, value)
+	}
 	value = strings.NewReplacer(",", "+", "~", "=").Replace(value)
 	value += strings.Repeat("=", (4-len(value)%4)%4)
 	b, err := base64.StdEncoding.DecodeString(value)
