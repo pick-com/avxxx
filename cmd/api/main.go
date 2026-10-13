@@ -7,6 +7,8 @@ import (
 	"avxxx/internal/store"
 	"context"
 	"encoding/json"
+	"errors"
+	"github.com/jackc/pgx/v5"
 	"log"
 	"net/http"
 	"os"
@@ -33,12 +35,23 @@ func main() {
 	mediaRegistry.Register(media.NewEpornerAdapter())
 	mediaRegistry.Register(media.NewFreeomovieAdapter())
 	mediaRegistry.Register(media.NewHclipsAdapter())
+	mediaRegistry.Register(media.NewJavsubbedAdapter())
 	mediaHandler := media.NewHandler(media.NewService(mediaRegistry))
 	reply := func(w http.ResponseWriter, v any, e error) {
 		w.Header().Set("Content-Type", "application/json")
 		if e != nil {
 			log.Print(e)
-			http.Error(w, `{"error":"database error"}`, 500)
+			code := http.StatusInternalServerError
+			if errors.Is(e, pgx.ErrNoRows) {
+				code = http.StatusNotFound
+			}
+			if strings.Contains(e.Error(), "source disabled") {
+				code = http.StatusConflict
+			}
+			if strings.Contains(e.Error(), "duplicate key") {
+				code = http.StatusConflict
+			}
+			http.Error(w, `{"error":"request failed"}`, code)
 			return
 		}
 		json.NewEncoder(w).Encode(v)
@@ -55,8 +68,12 @@ func main() {
 	}
 	mux.HandleFunc("GET /api/health", func(w http.ResponseWriter, r *http.Request) {
 		e := s.Ping(r.Context())
+		if e != nil {
+			w.WriteHeader(http.StatusServiceUnavailable)
+		}
 		reply(w, map[string]bool{"ok": e == nil}, e)
 	})
+	mux.HandleFunc("GET /api/live", func(w http.ResponseWriter, r *http.Request) { reply(w, map[string]bool{"ok": true}, nil) })
 	mux.HandleFunc("GET /api/items", func(w http.ResponseWriter, r *http.Request) {
 		v, e := s.Items(r.Context(), r.URL.Query().Get("q"))
 		reply(w, v, e)
