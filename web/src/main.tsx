@@ -1,13 +1,22 @@
-import React,{useState,useEffect} from 'react';
+import React, {FormEvent, useState} from 'react';
 import {createRoot} from 'react-dom/client';
 import './style.css';
-type Item={id:number;title:string;url:string;summary:string;updated_at:string};
-type Source={id:number;name:string;url:string};
-type Job={id:number;source_id:number;status:string;error:string};
-function App(){const[items,setItems]=useState<Item[]>([]),[sources,setSources]=useState<Source[]>([]),[jobs,setJobs]=useState<Job[]>([]),[q,setQ]=useState(''),[admin,setAdmin]=useState(false),[token,setToken]=useState(''),[name,setName]=useState(''),[url,setURL]=useState(''),[error,setError]=useState('');
-async function request(path:string,body?:unknown){const r=await fetch('/api/'+path,{method:body?'POST':'GET',headers:{'Content-Type':'application/json',Authorization:'Bearer '+token},body:body?JSON.stringify(body):undefined});if(!r.ok)throw Error(await r.text());return r.json()}
-async function load(){try{setItems(await request('items?q='+encodeURIComponent(q)));setError('')}catch(e){setError(String(e))}}
-async function manage(){try{const [s,j]=await Promise.all([request('admin/sources'),request('admin/jobs')]);setSources(s);setJobs(j);setError('')}catch(e){setError(String(e))}}
-useEffect(()=>{void load()},[]);
-return <><header><strong>AVXXX · 信息库</strong><nav><button onClick={()=>setAdmin(false)}>浏览信息</button><button onClick={()=>setAdmin(true)}>数据管理</button></nav></header><main><p className="eyebrow">COLLECT · ORGANIZE · DISCOVER</p><h1>{admin?'数据与采集管理':'发现值得关注的信息'}</h1><p className="muted">统一采集、统一管理，让信息有迹可循。</p>{error&&<p role="alert" className="error">{error}</p>}{admin?<><section><h2>管理员访问</h2><input type="password" placeholder="ADMIN_TOKEN" value={token} onChange={e=>setToken(e.target.value)}/><button onClick={manage}>加载管理数据</button></section><section><h2>添加 RSS / Atom 来源</h2><form onSubmit={async e=>{e.preventDefault();try{await request('admin/sources',{name,url});setName('');setURL('');await manage()}catch(e){setError(String(e))}}}><input required placeholder="来源名称" value={name} onChange={e=>setName(e.target.value)}/><input required type="url" placeholder="https://example.com/feed.xml" value={url} onChange={e=>setURL(e.target.value)}/><button>保存来源</button></form>{sources.map(s=><article key={s.id}><h3>{s.name}</h3><p>{s.url}</p><button onClick={async()=>{try{await request('admin/sources/'+s.id+'/jobs',{});await manage()}catch(e){setError(String(e))}}}>创建采集任务</button></article>)}</section><section><h2>最近任务</h2><button onClick={manage}>刷新状态</button>{jobs.map(j=><p key={j.id}>#{j.id} · 来源 {j.source_id} · {j.status} {j.error}</p>)}</section></>:<><form onSubmit={e=>{e.preventDefault();void load()}}><input placeholder="搜索标题…" value={q} onChange={e=>setQ(e.target.value)}/><button>搜索</button></form><div className="grid">{items.map(i=><article key={i.id}><span className="muted">{new Date(i.updated_at).toLocaleString()}</span><h2><a href={i.url} target="_blank" rel="noreferrer">{i.title}</a></h2><p>{i.summary}</p><a href={i.url} target="_blank" rel="noreferrer">查看来源 ↗</a></article>)}</div>{!items.length&&<section className="empty">还没有信息。请在数据管理中添加来源并创建采集任务。</section>}</>}</main></>}
+
+type Source = 'javtiful' | 'sextb';
+type Result = {id:string; source:string; title:string; cover?:string};
+type Detail = {id:string; source:string; title:string; description?:string; episodes?:{id:string; title:string}[]};
+type Stream = {url:string; protocol:string; quality?:string};
+
+async function api<T>(path:string, init?:RequestInit):Promise<T>{
+  const response=await fetch('/api/'+path, init); const data=await response.json();
+  if(!response.ok) throw new Error(data?.error?.message || '请求失败'); return data;
+}
+
+function App(){
+  const [source,setSource]=useState<Source>('sextb'),[query,setQuery]=useState(''),[results,setResults]=useState<Result[]>([]),[detail,setDetail]=useState<Detail|null>(null),[streams,setStreams]=useState<Stream[]>([]),[selected,setSelected]=useState<Stream|null>(null),[busy,setBusy]=useState(false),[error,setError]=useState('');
+  async function search(e?:FormEvent){e?.preventDefault();setBusy(true);setError('');setDetail(null);setStreams([]);try{const d=await api<{items:Result[]}>(`search?source=${source}&q=${encodeURIComponent(query)}&page=1`);setResults(d.items)}catch(err){setError(String(err))}finally{setBusy(false)}}
+  async function open(item:Result){setBusy(true);setError('');try{setDetail(await api<Detail>(`detail/${item.source}/${item.id}`))}catch(err){setError(String(err))}finally{setBusy(false)}}
+  async function resolve(id:string){setBusy(true);setError('');try{const d=await api<{streams:Stream[]}>(`resolve/${source}/${id}`,{method:'POST'});setStreams(d.streams);setSelected(d.streams[0]||null)}catch(err){setError(String(err))}finally{setBusy(false)}}
+  return <><header><strong>AVXXX · 直连播放器</strong><nav><a href="/">媒体搜索</a></nav></header><main><p className="eyebrow">SEARCH · DETAIL · PLAY</p><h1>搜索并播放</h1><p className="muted">视频直接从源站加载，不经过后端代理。</p><form onSubmit={search}><select value={source} onChange={e=>setSource(e.target.value as Source)}><option value="sextb">Sextb</option><option value="javtiful">JAVtiful</option></select><input value={query} onChange={e=>setQuery(e.target.value)} placeholder="输入关键词…" required/><button disabled={busy}>搜索</button></form>{busy&&<p className="muted">处理中…</p>}{error&&<p role="alert" className="error">{error}</p>}{!detail&&<div className="grid">{results.map(item=><article key={item.id} className="result">{item.cover&&<img src={item.cover} alt="" loading="lazy"/>}<div><h2>{item.title}</h2><button onClick={()=>open(item)}>查看详情</button></div></article>)}</div>}{!detail&&query&&!busy&&!results.length&&<section className="empty">没有找到结果。</section>}{detail&&<section><button onClick={()=>setDetail(null)}>← 返回结果</button><h2>{detail.title}</h2><p>{detail.description||'暂无简介'}</p>{(detail.episodes||[]).map(ep=><button key={ep.id} onClick={()=>resolve(ep.id)}>解析播放</button>)}</section>}{streams.length>0&&<section><h2>播放源</h2><div>{streams.map((stream,i)=><button key={stream.url} onClick={()=>setSelected(stream)} className={selected?.url===stream.url?'active':''}>{stream.quality||stream.protocol||`源站 ${i+1}`}</button>)}</div>{selected&&<video key={selected.url} className="player" controls autoPlay playsInline src={selected.url}/>}<p className="muted">当前为源站直连；若浏览器无法播放，请切换其他源。</p></section>}</main></>;
+}
 createRoot(document.getElementById('root')!).render(<App/>);
