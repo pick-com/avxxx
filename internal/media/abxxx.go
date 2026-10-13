@@ -74,8 +74,12 @@ func (a *ABxxxAdapter) Resolve(ctx context.Context, id string) (*ResolveResult, 
 	if err != nil {
 		return nil, err
 	}
-	parts := strings.Split(strings.Trim(u, "/"), "/")
-	if len(parts) < 2 {
+	parsed, err := url.Parse(u)
+	if err != nil {
+		return nil, errors.New("invalid abxxx video URL")
+	}
+	parts := strings.Split(strings.Trim(parsed.Path, "/"), "/")
+	if len(parts) < 2 || parts[0] != "video" {
 		return nil, errors.New("invalid abxxx video id")
 	}
 	raw, err := a.request(ctx, http.MethodGet, a.baseURL+"api/videofile.php?video_id="+url.QueryEscape(parts[1]), nil, u)
@@ -83,8 +87,9 @@ func (a *ABxxxAdapter) Resolve(ctx context.Context, id string) (*ResolveResult, 
 		return nil, err
 	}
 	var sources []struct {
-		VideoURL, Format string
-		Default          int `json:"is_default"`
+		VideoURL string `json:"video_url"`
+		Format   string `json:"format"`
+		Default  int    `json:"is_default"`
 	}
 	if err := json.Unmarshal([]byte(raw), &sources); err != nil {
 		return nil, fmt.Errorf("invalid abxxx stream response: %w", err)
