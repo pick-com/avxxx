@@ -32,6 +32,7 @@ func main() {
 	mediaRegistry.Register(media.NewAvjoyAdapter())
 	mediaRegistry.Register(media.NewEpornerAdapter())
 	mediaRegistry.Register(media.NewFreeomovieAdapter())
+	mediaRegistry.Register(media.NewHclipsAdapter())
 	mediaHandler := media.NewHandler(media.NewService(mediaRegistry))
 	reply := func(w http.ResponseWriter, v any, e error) {
 		w.Header().Set("Content-Type", "application/json")
