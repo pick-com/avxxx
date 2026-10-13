@@ -54,7 +54,7 @@ func (a *AvjoyAdapter) Detail(ctx context.Context, id string) (*Detail, error) {
 	if title == "" {
 		title = cleanHTML(firstMatch(body, `(?is)<h1[^>]*>(.*?)</h1>`))
 	}
-	embed := firstMatch(body, `(?i)https?://en\.avjoy\.me/embed/[A-Za-z0-9]+`)
+	embed := firstMatch(body, `(?i)(https?://en\.avjoy\.me/embed/[A-Za-z0-9]+)`)
 	return &Detail{ID: id, Source: a.Name(), Title: title, EmbedURL: embed, Episodes: []Episode{{ID: id, Title: title}}}, nil
 }
 
