@@ -118,13 +118,16 @@ func normalizeJavtifulID(id, base string) (string, error) {
 }
 
 func extractJavtifulVideos(body, base string) []SearchResult {
-	blockRE := regexp.MustCompile(`(?is)<article\b[^>]*class=["'][^"']*\bfront-video-card\b(?![^"']*\bfront-partner-card\b)[^>]*>.*?</article>`)
+	blockRE := regexp.MustCompile(`(?is)<article\b[^>]*class=["'][^"']*\bfront-video-card\b[^>]*>.*?</article>`)
 	hrefRE := regexp.MustCompile(`(?is)href=["']([^"']*/video/\d+/[^"']+)["']`)
 	titleRE := regexp.MustCompile(`(?is)class=["'][^"']*\bfront-video-title\b[^"']*["'][^>]*>(.*?)</a>`)
 	imgRE := regexp.MustCompile(`(?i)\s(?:data-front-lazy-src|data-src|src)=["']([^"']+)`)
 	seen := map[string]bool{}
 	out := []SearchResult{}
 	for _, block := range blockRE.FindAllString(body, -1) {
+		if strings.Contains(strings.ToLower(block), "front-partner-card") {
+			continue
+		}
 		m := hrefRE.FindStringSubmatch(block)
 		if len(m) < 2 {
 			continue

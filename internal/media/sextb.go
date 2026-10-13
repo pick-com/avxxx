@@ -134,8 +134,8 @@ func normalizeSextbID(id, base string) (string, error) {
 		}
 		return u.String(), nil
 	}
-	if !strings.HasPrefix(id, "/") || strings.Contains(id, "..") {
+	if strings.Contains(id, "..") || strings.ContainsAny(id, "?#") {
 		return "", errors.New("invalid sextb resource id")
 	}
-	return base + id, nil
+	return base + "/" + strings.TrimPrefix(id, "/"), nil
 }
