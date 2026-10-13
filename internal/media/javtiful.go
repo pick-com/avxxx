@@ -118,9 +118,10 @@ func normalizeJavtifulID(id, base string) (string, error) {
 }
 
 func extractJavtifulVideos(body, base string) []SearchResult {
-	blockRE := regexp.MustCompile(`(?is)<article\b[^>]*class=["'][^"']*\bfront-video-card\b[^>]*>.*?</article>`)
+	blockRE := regexp.MustCompile(`(?is)<article\b[^>]*class=["'][^"']*\b(?:front-video-card|video-card)\b[^>]*>.*?</article>`)
 	hrefRE := regexp.MustCompile(`(?is)href=["']([^"']*/video/\d+/[^"']+)["']`)
-	titleRE := regexp.MustCompile(`(?is)class=["'][^"']*\bfront-video-title\b[^"']*["'][^>]*>(.*?)</a>`)
+	titleRE := regexp.MustCompile(`(?is)class=["'][^"']*\b(?:front-video-title|video-card__title)\b[^"']*["'][^>]*>(.*?)</a>`)
+	titleAttrRE := regexp.MustCompile(`(?is)class=["'][^"']*\bvideo-card__title\b[^"']*["'][^>]*title=["']([^"']+)`)
 	imgRE := regexp.MustCompile(`(?i)\s(?:data-front-lazy-src|data-src|src)=["']([^"']+)`)
 	seen := map[string]bool{}
 	out := []SearchResult{}
@@ -147,6 +148,11 @@ func extractJavtifulVideos(body, base string) []SearchResult {
 		title := ""
 		if t := titleRE.FindStringSubmatch(block); len(t) > 1 {
 			title = cleanHTML(t[1])
+		}
+		if title == "" {
+			if t := titleAttrRE.FindStringSubmatch(block); len(t) > 1 {
+				title = cleanHTML(t[1])
+			}
 		}
 		if title == "" {
 			continue
