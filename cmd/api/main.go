@@ -26,6 +26,7 @@ func main() {
 	mediaRegistry := media.NewRegistry()
 	mediaRegistry.Register(media.NewJavtifulAdapter())
 	mediaRegistry.Register(media.NewSextbAdapter())
+	mediaRegistry.Register(media.NewABxxxAdapter())
 	mediaHandler := media.NewHandler(media.NewService(mediaRegistry))
 	reply := func(w http.ResponseWriter, v any, e error) {
 		w.Header().Set("Content-Type", "application/json")
