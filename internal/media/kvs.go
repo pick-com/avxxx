@@ -73,7 +73,7 @@ func (a *kvsAdapter) parse(body string) []SearchResult {
 	// KVS installations can return both video cards and album cards. Parse
 	// the anchors directly instead of relying on nested card div boundaries,
 	// which vary between themes and can contain nested divs.
-	anchors := regexp.MustCompile(`(?is)<a\b[^>]*href=["']([^"']*/(?:videos|albums)/[^"']*)["'][^>]*>(.*?)</a>`).FindAllStringSubmatch(body, -1)
+	anchors := regexp.MustCompile(`(?is)<a\b[^>]*href=["']([^"']*/(?:videos|albums|watch)/[^"']*)["'][^>]*>(.*?)</a>`).FindAllStringSubmatch(body, -1)
 	for _, m := range anchors {
 		u := absoluteURL(a.base, html.UnescapeString(m[1]))
 		if seen[u] {
