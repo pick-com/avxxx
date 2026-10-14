@@ -42,6 +42,9 @@ func main() {
 	mediaRegistry.Register(media.NewSextvxAdapter())
 	mediaRegistry.Register(media.NewShooshTimeAdapter())
 	mediaRegistry.Register(media.NewKVSAdapter("pornslash", "https://www.pornslash.com", "/videos/"))
+	mediaRegistry.Register(media.NewJavguruAdapter())
+	mediaRegistry.Register(media.NewJavhdpornAdapter())
+	mediaRegistry.Register(media.NewMissavAdapter())
 	mediaHandler := media.NewHandler(media.NewService(mediaRegistry))
 	reply := func(w http.ResponseWriter, v any, e error) {
 		w.Header().Set("Content-Type", "application/json")
