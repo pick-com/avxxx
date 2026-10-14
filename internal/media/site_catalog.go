@@ -44,6 +44,10 @@ func (a *catalogAdapter) Search(ctx context.Context, q string, page int) ([]Sear
 	re := regexp.MustCompile(`(?is)<a\b[^>]*href=["']([^"']+` + regexp.QuoteMeta(a.itemPath) + `[^"']*)["'][^>]*>(.*?)</a>`)
 	for _, m := range re.FindAllStringSubmatch(b, -1) {
 		link := absoluteURL(a.base, html.UnescapeString(m[1]))
+		path := strings.ToLower(link)
+		if a.name == "javguru" && (strings.Contains(path, "/tag/") || strings.Contains(path, "/category/") || strings.Contains(path, "/page/")) {
+			continue
+		}
 		if seen[link] {
 			continue
 		}
