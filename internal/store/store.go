@@ -120,7 +120,7 @@ func (s *Store) EnqueueDue(ctx context.Context) (int, error) {
 		return 0, err
 	}
 	defer tx.Rollback(ctx)
-	r, err := tx.Query(ctx, `SELECT id FROM sources WHERE enabled AND (next_run_at IS NULL OR next_run_at<=now()) ORDER BY COALESCE(next_run_at,now()),id FOR UPDATE SKIP LOCKED`)
+	r, err := tx.Query(ctx, `SELECT s.id FROM sources s LEFT JOIN source_crawl_policies p ON p.source_id=s.id WHERE s.enabled AND (s.next_run_at IS NULL OR s.next_run_at<=now()) ORDER BY COALESCE(s.next_run_at,now()),s.id FOR UPDATE OF s SKIP LOCKED`)
 	if err != nil {
 		return 0, err
 	}
@@ -140,7 +140,7 @@ func (s *Store) EnqueueDue(ctx context.Context) (int, error) {
 		if _, err = tx.Exec(ctx, `INSERT INTO jobs(source_id) SELECT $1 WHERE NOT EXISTS (SELECT 1 FROM jobs WHERE source_id=$1 AND status IN ('pending','running'))`, id); err != nil {
 			return 0, err
 		}
-		if _, err = tx.Exec(ctx, `UPDATE sources SET next_run_at=now()+interval '1 hour' WHERE id=$1`, id); err != nil {
+		if _, err = tx.Exec(ctx, `UPDATE sources SET next_run_at=now()+COALESCE((SELECT discovery_interval FROM source_crawl_policies WHERE source_id=$1),interval '1 hour') WHERE id=$1`, id); err != nil {
 			return 0, err
 		}
 	}
