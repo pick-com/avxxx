@@ -114,6 +114,10 @@ func main() {
 		v, e := s.ReleasePerformers(r.Context(), r.PathValue("slug"))
 		reply(w, map[string]any{"items": v}, e)
 	})
+	mux.HandleFunc("GET /api/releases/{slug}/sources", func(w http.ResponseWriter, r *http.Request) {
+		v, e := s.ReleaseSources(r.Context(), r.PathValue("slug"))
+		reply(w, map[string]any{"items": v}, e)
+	})
 	mux.HandleFunc("GET /api/tags", func(w http.ResponseWriter, r *http.Request) {
 		limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
 		v, e := s.Tags(r.Context(), limit)
