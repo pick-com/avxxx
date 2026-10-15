@@ -336,6 +336,15 @@ func (s *Store) ReleaseSources(ctx context.Context, slug string) ([]map[string]a
 	return out, r.Err()
 }
 
+func (s *Store) ReleasePlayback(ctx context.Context, slug, source string) (map[string]any, error) {
+	var key, u, name string
+	err := s.QueryRow(ctx, `SELECT sr.source_record_key,sr.source_url,s.name FROM source_records sr JOIN sources s ON s.id=sr.source_id JOIN releases r ON r.id=sr.release_id WHERE r.slug=$1 AND sr.entity_type='release' AND lower(s.name)=lower($2) ORDER BY sr.last_seen_at DESC LIMIT 1`, slug, source).Scan(&key, &u, &name)
+	if err != nil {
+		return nil, err
+	}
+	return map[string]any{"source": name, "source_key": key, "source_url": u, "detail_path": "/api/detail/" + strings.ToLower(source) + "/" + key, "resolve_path": "/api/resolve/" + strings.ToLower(source) + "/" + key}, nil
+}
+
 func (s *Store) Tags(ctx context.Context, limit int) ([]map[string]any, error) {
 	if limit <= 0 || limit > 200 {
 		limit = 50
