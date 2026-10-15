@@ -247,6 +247,19 @@ func (s *Store) PerformerBySlug(ctx context.Context, slug string) (model.Perform
 	return x, e
 }
 
+func (s *Store) PerformerDetail(ctx context.Context, slug string) (map[string]any, error) {
+	var raw []byte
+	err := s.QueryRow(ctx, `SELECT row_to_json(x) FROM (SELECT id,slug,canonical_name,canonical_name_ja,birth_date,birth_place,debut_date,debut_age,blood_type,height_cm,bust_cm,waist_cm,hip_cm,cup_size,shoe_size,hair_color,hair_length,activity_start,activity_end,biography,status FROM performers WHERE slug=$1 AND merged_into_id IS NULL AND status='active') x`, slug).Scan(&raw)
+	if err != nil {
+		return nil, err
+	}
+	var out map[string]any
+	if err = json.Unmarshal(raw, &out); err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (s *Store) Releases(ctx context.Context, q string, limit int) ([]model.Release, error) {
 	if limit <= 0 || limit > 100 {
 		limit = 20
@@ -512,8 +525,14 @@ func (s *Store) SaveCatalogRecord(ctx context.Context, sourceID int64, parserVer
 			slug = catalog.Slug(rec.SourceKey)
 		}
 		var id int64
-		err = tx.QueryRow(ctx, `INSERT INTO performers(slug,canonical_name) VALUES($1,$2)
-			ON CONFLICT(slug) DO UPDATE SET updated_at=now() RETURNING id`, slug, name).Scan(&id)
+		nameJA, _ := rec.Fields["name_ja"].(string)
+		birthPlace, _ := rec.Fields["birth_place"].(string)
+		birthDate, _ := rec.Fields["birth_date"].(string)
+		debutDate, _ := rec.Fields["debut_date"].(string)
+		height, _ := rec.Fields["height_cm"].(any)
+		cup, _ := rec.Fields["cup_size"].(string)
+		err = tx.QueryRow(ctx, `INSERT INTO performers(slug,canonical_name,canonical_name_ja,birth_date,birth_place,debut_date,height_cm,cup_size) VALUES($1,$2,NULLIF($3,''),NULLIF($4,'')::date,NULLIF($5,''),NULLIF($6,'')::date,NULLIF($7,'')::numeric,NULLIF($8,''))
+			ON CONFLICT(slug) DO UPDATE SET canonical_name_ja=COALESCE(NULLIF(EXCLUDED.canonical_name_ja,''),performers.canonical_name_ja),birth_date=COALESCE(EXCLUDED.birth_date,performers.birth_date),birth_place=COALESCE(NULLIF(EXCLUDED.birth_place,''),performers.birth_place),debut_date=COALESCE(EXCLUDED.debut_date,performers.debut_date),height_cm=COALESCE(EXCLUDED.height_cm,performers.height_cm),cup_size=COALESCE(NULLIF(EXCLUDED.cup_size,''),performers.cup_size),updated_at=now() RETURNING id`, slug, name, nameJA, birthDate, birthPlace, debutDate, height, cup).Scan(&id)
 		if err != nil {
 			return 0, err
 		}
