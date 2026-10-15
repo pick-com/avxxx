@@ -1,0 +1,41 @@
+---
+- name: Deploy avxxx
+  hosts: avxxx
+  become: true
+  become_user: "{{ deploy_user }}"
+  vars_files: [vars.yml]
+  tasks:
+    - name: Checkout application
+      ansible.builtin.git:
+        repo: "{{ git_repo }}"
+        dest: "{{ app_dir }}"
+        version: "{{ git_branch }}"
+        update: true
+        force: true
+    - name: Render production environment
+      ansible.builtin.copy:
+        dest: "{{ app_dir }}/.env"
+        mode: '0600'
+        content: |
+          POSTGRES_DB=avxxx
+          POSTGRES_USER=avxxx
+          POSTGRES_PASSWORD={{ postgres_password | default('change-me') }}
+          DATABASE_URL={{ database_url }}
+    - name: Build and start database
+      ansible.builtin.command:
+        cmd: docker compose up -d db
+        chdir: "{{ app_dir }}"
+    - name: Build API image
+      ansible.builtin.command:
+        cmd: docker compose build api
+        chdir: "{{ app_dir }}"
+    - name: Start application services
+      ansible.builtin.command:
+        cmd: docker compose up -d api scheduler scraper
+        chdir: "{{ app_dir }}"
+    - name: Check API health
+      ansible.builtin.uri:
+        url: http://127.0.0.1:8080/api/health
+        status_code: 200
+        retries: 12
+        delay: 5

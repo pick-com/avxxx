@@ -2,9 +2,9 @@ services:
   db:
     image: postgres:17
     environment:
-      POSTGRES_USER: avxxx
-      POSTGRES_PASSWORD: avxxx
-      POSTGRES_DB: avxxx
+      POSTGRES_USER: ${POSTGRES_USER:-avxxx}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-avxxx}
+      POSTGRES_DB: ${POSTGRES_DB:-avxxx}
     ports: ["127.0.0.1:55434:5432"]
     volumes: ["pgdata:/var/lib/postgresql/data"]
     healthcheck:
@@ -12,5 +12,36 @@ services:
       interval: 5s
       timeout: 3s
       retries: 10
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile.api
+    command: ["/usr/local/bin/api"]
+    environment:
+      DATABASE_URL: ${DATABASE_URL:-postgres://avxxx:avxxx@db:5432/avxxx?sslmode=disable}
+    depends_on:
+      db:
+        condition: service_healthy
+    ports: ["127.0.0.1:8080:8080"]
+  scheduler:
+    build:
+      context: .
+      dockerfile: Dockerfile.api
+    command: ["/usr/local/bin/scheduler"]
+    environment:
+      DATABASE_URL: ${DATABASE_URL:-postgres://avxxx:avxxx@db:5432/avxxx?sslmode=disable}
+    depends_on:
+      db:
+        condition: service_healthy
+  scraper:
+    build:
+      context: .
+      dockerfile: Dockerfile.api
+    command: ["/usr/local/bin/scraper"]
+    environment:
+      DATABASE_URL: ${DATABASE_URL:-postgres://avxxx:avxxx@db:5432/avxxx?sslmode=disable}
+    depends_on:
+      db:
+        condition: service_healthy
 volumes:
   pgdata:
