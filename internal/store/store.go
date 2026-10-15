@@ -76,6 +76,29 @@ func (s *Store) UpsertCrawlPolicy(ctx context.Context, sourceID int64, discovery
 	return err
 }
 
+func (s *Store) IdentityCandidates(ctx context.Context, entityType string, limit int) ([]map[string]any, error) {
+	if limit <= 0 || limit > 100 {
+		limit = 50
+	}
+	r, err := s.Query(ctx, `SELECT id,entity_type,left_id,right_id,score,evidence,status FROM identity_candidates WHERE ($1='' OR entity_type=$1) AND status='pending' ORDER BY score DESC,id LIMIT $2`, entityType, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer r.Close()
+	out := []map[string]any{}
+	for r.Next() {
+		var id, left, right int64
+		var typ, status string
+		var score float64
+		var evidence []byte
+		if err = r.Scan(&id, &typ, &left, &right, &score, &evidence, &status); err != nil {
+			return nil, err
+		}
+		out = append(out, map[string]any{"id": id, "entity_type": typ, "left_id": left, "right_id": right, "score": score, "evidence": json.RawMessage(evidence), "status": status})
+	}
+	return out, r.Err()
+}
+
 func Open(ctx context.Context) (*Store, error) {
 	p, e := pgxpool.New(ctx, os.Getenv("DATABASE_URL"))
 	if e != nil {

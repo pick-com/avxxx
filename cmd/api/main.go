@@ -133,6 +133,11 @@ func main() {
 	mux.HandleFunc("GET /api/admin/sources", admin(func(w http.ResponseWriter, r *http.Request) { v, e := s.Sources(r.Context()); reply(w, v, e) }))
 	mux.HandleFunc("GET /api/admin/jobs", admin(func(w http.ResponseWriter, r *http.Request) { v, e := s.Jobs(r.Context()); reply(w, v, e) }))
 	mux.HandleFunc("GET /api/admin/crawl-policies", admin(func(w http.ResponseWriter, r *http.Request) { v, e := s.CrawlPolicies(r.Context()); reply(w, v, e) }))
+	mux.HandleFunc("GET /api/admin/identity-candidates", admin(func(w http.ResponseWriter, r *http.Request) {
+		limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
+		v, e := s.IdentityCandidates(r.Context(), r.URL.Query().Get("entity_type"), limit)
+		reply(w, v, e)
+	}))
 	mux.HandleFunc("PUT /api/admin/sources/{id}/crawl-policy", admin(func(w http.ResponseWriter, r *http.Request) {
 		id, e := strconv.ParseInt(r.PathValue("id"), 10, 64)
 		if e != nil || id <= 0 {
