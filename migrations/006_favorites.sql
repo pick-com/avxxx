@@ -1,0 +1,1 @@
+CREATE TABLE IF NOT EXISTS favorites (user_id bigint NOT NULL REFERENCES users(id) ON DELETE CASCADE, release_id bigint NOT NULL REFERENCES releases(id) ON DELETE CASCADE, created_at timestamptz NOT NULL DEFAULT now(), PRIMARY KEY(user_id, release_id));

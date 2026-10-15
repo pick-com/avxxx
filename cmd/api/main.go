@@ -89,6 +89,8 @@ func main() {
 	userID := func(r *http.Request) (int64,error) { return s.UserIDByToken(r.Context(), strings.TrimPrefix(r.Header.Get("Authorization"),"Bearer ")) }
 	mux.HandleFunc("GET /api/me/watch-history", func(w http.ResponseWriter, r *http.Request) { id,e:=userID(r); if e!=nil { reply(w,nil,errors.New("unauthorized")); return }; v,e:=s.WatchHistory(r.Context(),id); reply(w,map[string]any{"items":v},e) })
 	mux.HandleFunc("POST /api/me/watch-history", func(w http.ResponseWriter, r *http.Request) { id,e:=userID(r); if e!=nil { reply(w,nil,errors.New("unauthorized")); return }; var in struct{ Slug string `json:"slug"`; Progress int `json:"progress_seconds"`; Duration int `json:"duration_seconds"` }; _=json.NewDecoder(r.Body).Decode(&in); e=s.SaveWatch(r.Context(),id,in.Slug,in.Progress,in.Duration); reply(w,map[string]bool{"saved":e==nil},e) })
+	mux.HandleFunc("GET /api/me/favorites", func(w http.ResponseWriter, r *http.Request) { id,e:=userID(r); if e!=nil { reply(w,nil,errors.New("unauthorized")); return }; v,e:=s.Favorites(r.Context(),id); reply(w,map[string]any{"items":v},e) })
+	mux.HandleFunc("POST /api/me/favorites", func(w http.ResponseWriter, r *http.Request) { id,e:=userID(r); if e!=nil { reply(w,nil,errors.New("unauthorized")); return }; var in struct{ Slug string `json:"slug"`; Enabled bool `json:"enabled"` }; _=json.NewDecoder(r.Body).Decode(&in); e=s.SetFavorite(r.Context(),id,in.Slug,in.Enabled); reply(w,map[string]bool{"saved":e==nil},e) })
 	mux.HandleFunc("GET /api/items", func(w http.ResponseWriter, r *http.Request) {
 		v, e := s.Items(r.Context(), r.URL.Query().Get("q"))
 		reply(w, v, e)
