@@ -98,15 +98,18 @@ func runCatalog(ctx context.Context, st *store.Store, registry *catalog.Registry
 	client := &http.Client{Timeout: 30 * time.Second}
 	index, err := catalog.FetchDocument(ctx, client, source.URL)
 	if err != nil {
+		_ = st.FailCheckpoint(ctx, store.CrawlCheckpoint{SourceID: source.ID, TaskType: "catalog_discovery", ParserVersion: adapter.Name()}, "index_fetch_failed")
 		return err
 	}
 	records, err := adapter.Discover(ctx, index)
 	if err != nil {
+		_ = st.FailCheckpoint(ctx, store.CrawlCheckpoint{SourceID: source.ID, TaskType: "catalog_discovery", ParserVersion: adapter.Name()}, "discover_failed")
 		return err
 	}
 	for _, discovered := range records {
 		doc, fetchErr := catalog.FetchDocument(ctx, client, discovered.URL)
 		if fetchErr != nil {
+			_ = st.FailCheckpoint(ctx, store.CrawlCheckpoint{SourceID: source.ID, TaskType: "catalog_detail", PartitionKey: discovered.SourceKey, ParserVersion: adapter.Name()}, "detail_fetch_failed")
 			return fetchErr
 		}
 		record, parseErr := adapter.Parse(ctx, doc, discovered.EntityType)
@@ -120,8 +123,12 @@ func runCatalog(ctx context.Context, st *store.Store, registry *catalog.Registry
 			record.URL = discovered.URL
 		}
 		if _, saveErr := st.SaveCatalogRecord(ctx, source.ID, adapter.Name(), record); saveErr != nil {
+			_ = st.FailCheckpoint(ctx, store.CrawlCheckpoint{SourceID: source.ID, TaskType: "catalog_detail", PartitionKey: discovered.SourceKey, ParserVersion: adapter.Name()}, "record_save_failed")
 			return saveErr
 		}
+	}
+	if err := st.AdvanceCheckpoint(ctx, store.CrawlCheckpoint{SourceID: source.ID, TaskType: "catalog_discovery", ParserVersion: adapter.Name()}, source.URL, nil, 1); err != nil {
+		return err
 	}
 	return nil
 }
