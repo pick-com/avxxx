@@ -93,7 +93,7 @@ func main() {
 		reply(w, map[string]any{"items": v}, e)
 	})
 	mux.HandleFunc("GET /api/performers/{slug}", func(w http.ResponseWriter, r *http.Request) {
-		v, e := s.PerformerBySlug(r.Context(), r.PathValue("slug"))
+		v, e := s.PerformerDetail(r.Context(), r.PathValue("slug"))
 		reply(w, v, e)
 	})
 	mux.HandleFunc("GET /api/performers/{slug}/releases", func(w http.ResponseWriter, r *http.Request) {
