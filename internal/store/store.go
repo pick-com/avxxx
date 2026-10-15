@@ -433,6 +433,11 @@ func (s *Store) CatalogSearch(ctx context.Context, q string, limit int) ([]map[s
 	return out, r.Err()
 }
 
+func (s *Store) SaveMediaAsset(ctx context.Context, asset map[string]any) error {
+	_, err := s.Exec(ctx, `INSERT INTO media_assets(entity_type,entity_id,asset_type,storage_provider,object_key,source_url,content_sha256,mime_type,width,height,byte_size,is_original,retained_until) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13) ON CONFLICT(entity_type,entity_id,asset_type,content_sha256) DO UPDATE SET object_key=EXCLUDED.object_key,byte_size=EXCLUDED.byte_size,width=EXCLUDED.width,height=EXCLUDED.height,retained_until=EXCLUDED.retained_until`, asset["entity_type"], asset["entity_id"], asset["asset_type"], asset["storage_provider"], asset["object_key"], asset["source_url"], asset["content_sha256"], asset["mime_type"], asset["width"], asset["height"], asset["byte_size"], asset["is_original"], asset["retained_until"])
+	return err
+}
+
 func (s *Store) PendingConflicts(ctx context.Context, limit int) ([]map[string]any, error) {
 	if limit <= 0 || limit > 100 {
 		limit = 50

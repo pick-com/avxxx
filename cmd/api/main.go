@@ -190,6 +190,21 @@ func main() {
 	mux.HandleFunc("GET /api/admin/sources", admin(func(w http.ResponseWriter, r *http.Request) { v, e := s.Sources(r.Context()); reply(w, v, e) }))
 	mux.HandleFunc("GET /api/admin/jobs", admin(func(w http.ResponseWriter, r *http.Request) { v, e := s.Jobs(r.Context()); reply(w, v, e) }))
 	mux.HandleFunc("GET /api/admin/crawl-policies", admin(func(w http.ResponseWriter, r *http.Request) { v, e := s.CrawlPolicies(r.Context()); reply(w, v, e) }))
+	mux.HandleFunc("POST /api/admin/media-assets", admin(func(w http.ResponseWriter, r *http.Request) {
+		var asset map[string]any
+		r.Body = http.MaxBytesReader(w, r.Body, 16384)
+		if json.NewDecoder(r.Body).Decode(&asset) != nil || asset["entity_type"] == nil || asset["entity_id"] == nil || asset["asset_type"] == nil || asset["object_key"] == nil || asset["content_sha256"] == nil || asset["mime_type"] == nil {
+			http.Error(w, "required asset fields are missing", 400)
+			return
+		}
+		if asset["storage_provider"] == nil {
+			asset["storage_provider"] = "s3"
+		}
+		if asset["is_original"] == nil {
+			asset["is_original"] = true
+		}
+		reply(w, map[string]bool{"ok": true}, s.SaveMediaAsset(r.Context(), asset))
+	}))
 	mux.HandleFunc("GET /api/admin/identity-candidates", admin(func(w http.ResponseWriter, r *http.Request) {
 		limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
 		v, e := s.IdentityCandidates(r.Context(), r.URL.Query().Get("entity_type"), limit)
