@@ -249,7 +249,7 @@ func (s *Store) PerformerBySlug(ctx context.Context, slug string) (model.Perform
 
 func (s *Store) PerformerDetail(ctx context.Context, slug string) (map[string]any, error) {
 	var raw []byte
-	err := s.QueryRow(ctx, `SELECT row_to_json(x) FROM (SELECT id,slug,canonical_name,canonical_name_ja,birth_date,birth_place,debut_date,debut_age,blood_type,height_cm,bust_cm,waist_cm,hip_cm,cup_size,shoe_size,hair_color,hair_length,activity_start,activity_end,biography,status FROM performers WHERE slug=$1 AND merged_into_id IS NULL AND status='active') x`, slug).Scan(&raw)
+	err := s.QueryRow(ctx, `SELECT row_to_json(x) FROM (SELECT p.id,p.slug,p.canonical_name,COALESCE(p.canonical_name_ja,sr.raw_data->>'name_ja') canonical_name_ja,COALESCE(p.birth_date::text,sr.raw_data->>'birth_date') birth_date,p.birth_place,COALESCE(p.debut_date::text,sr.raw_data->>'debut_date') debut_date,p.debut_age,p.blood_type,COALESCE(p.height_cm::text,sr.raw_data->>'height_cm') height_cm,p.bust_cm,p.waist_cm,p.hip_cm,COALESCE(p.cup_size,sr.raw_data->>'cup_size') cup_size,p.shoe_size,p.hair_color,p.hair_length,p.activity_start,p.activity_end,p.biography,p.status FROM performers p LEFT JOIN LATERAL (SELECT raw_data FROM source_records WHERE performer_id=p.id ORDER BY last_seen_at DESC LIMIT 1) sr ON true WHERE p.slug=$1 AND p.merged_into_id IS NULL AND p.status='active') x`, slug).Scan(&raw)
 	if err != nil {
 		return nil, err
 	}
