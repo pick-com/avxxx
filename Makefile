@@ -2,7 +2,7 @@ ifneq (,$(wildcard .env))
 include .env
 export
 endif
-.PHONY: db-up api scheduler scraper web test build
+.PHONY: db-up api scheduler scraper web test build smoke backup
 db-up:
 	docker compose up -d db
 api:
@@ -18,3 +18,7 @@ test:
 build:
 	go build ./cmd/...
 	cd web && npm run build
+smoke:
+	./scripts/smoke.sh
+backup:
+	./scripts/backup-db.sh

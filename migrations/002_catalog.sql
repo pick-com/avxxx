@@ -72,6 +72,22 @@ CREATE TABLE IF NOT EXISTS source_records (
   CHECK(NOT (performer_id IS NOT NULL AND release_id IS NOT NULL))
 );
 CREATE INDEX IF NOT EXISTS source_records_unresolved ON source_records(resolution_status, last_seen_at);
+
+-- Links a canonical release to a playback provider's public media identifier.
+-- This is deliberately separate from source_records: media providers expose
+-- playable pages while catalog sources provide metadata and identifiers.
+CREATE TABLE IF NOT EXISTS release_media_sources (
+  release_id bigint NOT NULL REFERENCES releases(id) ON DELETE CASCADE,
+  source text NOT NULL,
+  media_id text NOT NULL,
+  media_url text,
+  confidence text NOT NULL DEFAULT 'identifier',
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now(),
+  PRIMARY KEY(release_id, source),
+  UNIQUE(source, media_id)
+);
+CREATE INDEX IF NOT EXISTS release_media_sources_lookup ON release_media_sources(source, media_id);
 CREATE TABLE IF NOT EXISTS release_performer_sources (
   release_id bigint NOT NULL REFERENCES releases(id), performer_id bigint NOT NULL REFERENCES performers(id),
   source_record_id bigint NOT NULL REFERENCES source_records(id), billing_order smallint,
