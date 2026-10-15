@@ -10,3 +10,8 @@
 .review-heading { display:flex; justify-content:space-between; gap:16px; align-items:center; }
 pre { overflow:auto; background:#f5f7f4; padding:12px; border-radius:8px; font-size:13px; }
 code { background:#f5f7f4; padding:2px 5px; border-radius:4px; }
+.metadata-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:10px;margin:22px 0}
+.metadata-item{background:#f7faf7;border:1px solid #dce7dd;border-radius:12px;padding:12px 14px;min-width:0}
+.metadata-item span{display:block;color:#718177;font-size:12px;margin-bottom:4px}
+.metadata-item strong{display:block;font-weight:650;overflow-wrap:anywhere;white-space:pre-wrap}
+.metadata-wide{grid-column:1/-1}
