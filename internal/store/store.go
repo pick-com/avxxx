@@ -359,6 +359,27 @@ func (s *Store) Makers(ctx context.Context, limit int) ([]map[string]any, error)
 	return out, r.Err()
 }
 
+func (s *Store) CatalogSearch(ctx context.Context, q string, limit int) ([]map[string]any, error) {
+	if limit <= 0 || limit > 100 {
+		limit = 20
+	}
+	r, err := s.Query(ctx, `SELECT 'performer',id,slug,canonical_name FROM performers WHERE status='active' AND merged_into_id IS NULL AND (canonical_name ILIKE '%'||$1||'%' OR canonical_name_ja ILIKE '%'||$1||'%') UNION ALL SELECT 'release',id,slug,canonical_title FROM releases WHERE status='published' AND merged_into_id IS NULL AND (canonical_title ILIKE '%'||$1||'%' OR title_ja ILIKE '%'||$1||'%') ORDER BY 1,4 LIMIT $2`, q, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer r.Close()
+	out := []map[string]any{}
+	for r.Next() {
+		var typ, name, slug string
+		var id int64
+		if err = r.Scan(&typ, &id, &slug, &name); err != nil {
+			return nil, err
+		}
+		out = append(out, map[string]any{"type": typ, "id": id, "slug": slug, "name": name})
+	}
+	return out, r.Err()
+}
+
 func (s *Store) PendingConflicts(ctx context.Context, limit int) ([]map[string]any, error) {
 	if limit <= 0 || limit > 100 {
 		limit = 50

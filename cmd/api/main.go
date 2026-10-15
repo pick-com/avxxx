@@ -124,6 +124,11 @@ func main() {
 		v, e := s.Makers(r.Context(), limit)
 		reply(w, map[string]any{"items": v}, e)
 	})
+	mux.HandleFunc("GET /api/catalog/search", func(w http.ResponseWriter, r *http.Request) {
+		limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
+		v, e := s.CatalogSearch(r.Context(), r.URL.Query().Get("q"), limit)
+		reply(w, map[string]any{"items": v}, e)
+	})
 	// Source-specific search/detail/resolve routes are ready for Kodi adapters.
 	// Adapters are intentionally not registered until their source implementation
 	// and authorization requirements are reviewed.
