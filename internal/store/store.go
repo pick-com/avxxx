@@ -317,6 +317,25 @@ func (s *Store) ReleasePerformers(ctx context.Context, slug string) ([]model.Per
 	return out, r.Err()
 }
 
+func (s *Store) ReleaseSources(ctx context.Context, slug string) ([]map[string]any, error) {
+	r, err := s.Query(ctx, `SELECT sr.id,s.name,sr.source_record_key,sr.source_url,sr.last_seen_at FROM source_records sr JOIN sources s ON s.id=sr.source_id JOIN releases rel ON rel.id=sr.release_id WHERE rel.slug=$1 AND sr.entity_type='release' AND rel.status='published' ORDER BY sr.last_seen_at DESC`, slug)
+	if err != nil {
+		return nil, err
+	}
+	defer r.Close()
+	out := []map[string]any{}
+	for r.Next() {
+		var id int64
+		var name, key, u string
+		var seen time.Time
+		if err = r.Scan(&id, &name, &key, &u, &seen); err != nil {
+			return nil, err
+		}
+		out = append(out, map[string]any{"source_record_id": id, "source": name, "source_key": key, "url": u, "last_seen_at": seen})
+	}
+	return out, r.Err()
+}
+
 func (s *Store) Tags(ctx context.Context, limit int) ([]map[string]any, error) {
 	if limit <= 0 || limit > 200 {
 		limit = 50
