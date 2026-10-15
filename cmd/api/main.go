@@ -83,6 +83,9 @@ func main() {
 		reply(w, map[string]bool{"ok": e == nil}, e)
 	})
 	mux.HandleFunc("GET /api/live", func(w http.ResponseWriter, r *http.Request) { reply(w, map[string]bool{"ok": true}, nil) })
+	mux.HandleFunc("POST /api/auth/register", func(w http.ResponseWriter, r *http.Request) { var in struct{ Email string `json:"email"`; Password string `json:"password"`; DisplayName string `json:"display_name"` }; _ = json.NewDecoder(r.Body).Decode(&in); v,e:=s.Register(r.Context(),in.Email,in.Password,in.DisplayName); reply(w,v,e) })
+	mux.HandleFunc("POST /api/auth/login", func(w http.ResponseWriter, r *http.Request) { var in struct{ Email string `json:"email"`; Password string `json:"password"` }; _ = json.NewDecoder(r.Body).Decode(&in); v,e:=s.Login(r.Context(),in.Email,in.Password); reply(w,v,e) })
+	mux.HandleFunc("GET /api/auth/me", func(w http.ResponseWriter, r *http.Request) { v,e:=s.UserByToken(r.Context(), strings.TrimPrefix(r.Header.Get("Authorization"),"Bearer ")); reply(w,v,e) })
 	mux.HandleFunc("GET /api/items", func(w http.ResponseWriter, r *http.Request) {
 		v, e := s.Items(r.Context(), r.URL.Query().Get("q"))
 		reply(w, v, e)
