@@ -2,7 +2,7 @@
 
 > 状态更新时间：2026-10-14
 >
-> 当前基础能力完成度约为 **82%**。基础架构、目录采集、调度、WebApp 浏览和 Ansible 部署已经可运行，剩余工作主要集中在多来源覆盖、真正的分页增量执行、审核后台和生产化验收。
+> 当前基础能力完成度约为 **84%**。基础架构、目录采集、调度、WebApp 浏览、Javtiful 播放映射和 Ansible 部署已经可运行，剩余工作主要集中在多来源覆盖、真正的分页增量执行、审核后台和生产化验收。
 
 ## 已完成
 
@@ -24,6 +24,8 @@
 - [x] WebApp 标签、厂商面板
 - [x] Docker Compose API/scheduler/scraper 服务
 - [x] Ansible provision/deploy playbook
+- [x] 作品详情的来源播放映射 API
+- [x] Javtiful detail/resolve 播放路径
 - [x] 管理员 Bearer Token 鉴权
 - [x] 独立 scheduler 命令和到期来源任务创建
 - [x] 来源级 discovery interval 调度
@@ -67,6 +69,7 @@
 - [ ] identity candidate 审核队列
 - [ ] 合并、拆分、人工覆盖和撤销审计
 - [ ] 来源可信度和字段优先级策略
+- [ ] 目录 source record 与 Javtiful media record 自动关联
 - [ ] 作品、演员和字段完整性报告
 
 ### Web 和 API
@@ -107,7 +110,7 @@ JAV Database adapter 已接入 scraper，可完成发现、详情抓取、解析
 
 ### 阶段 5：用户 WebApp 和生产化 — 进行中
 
-已完成目录首页、演员/作品详情、标签/厂商面板、媒体搜索播放、Docker Compose 和 Ansible 部署；仍需完成后台审核页面、图片存储、监控和最终验收。
+已完成目录首页、演员/作品详情、标签/厂商面板、媒体搜索播放、Javtiful 播放映射、Docker Compose 和 Ansible 部署；仍需完成后台审核页面、图片存储、来源记录自动关联、监控和最终验收。
 
 ## 下一步执行顺序
 
