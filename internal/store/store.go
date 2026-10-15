@@ -111,6 +111,44 @@ func (s *Store) Enqueue(ctx context.Context, id int64) error {
 	_, e := s.Exec(ctx, "INSERT INTO jobs(source_id) VALUES($1)", id)
 	return e
 }
+
+// EnqueueDue creates at most one job per due source and advances its schedule.
+// The scheduler never performs network I/O; workers claim the resulting jobs.
+func (s *Store) EnqueueDue(ctx context.Context) (int, error) {
+	tx, err := s.Begin(ctx)
+	if err != nil {
+		return 0, err
+	}
+	defer tx.Rollback(ctx)
+	r, err := tx.Query(ctx, `SELECT id FROM sources WHERE enabled AND (next_run_at IS NULL OR next_run_at<=now()) ORDER BY COALESCE(next_run_at,now()),id FOR UPDATE SKIP LOCKED`)
+	if err != nil {
+		return 0, err
+	}
+	defer r.Close()
+	ids := []int64{}
+	for r.Next() {
+		var id int64
+		if err = r.Scan(&id); err != nil {
+			return 0, err
+		}
+		ids = append(ids, id)
+	}
+	if err = r.Err(); err != nil {
+		return 0, err
+	}
+	for _, id := range ids {
+		if _, err = tx.Exec(ctx, `INSERT INTO jobs(source_id) SELECT $1 WHERE NOT EXISTS (SELECT 1 FROM jobs WHERE source_id=$1 AND status IN ('pending','running'))`, id); err != nil {
+			return 0, err
+		}
+		if _, err = tx.Exec(ctx, `UPDATE sources SET next_run_at=now()+interval '1 hour' WHERE id=$1`, id); err != nil {
+			return 0, err
+		}
+	}
+	if err = tx.Commit(ctx); err != nil {
+		return 0, err
+	}
+	return len(ids), nil
+}
 func (s *Store) Items(ctx context.Context, q string) ([]model.Item, error) {
 	r, e := s.Query(ctx, "SELECT id,source_id,title,url,summary,updated_at FROM items WHERE title ILIKE '%'||$1||'%' ORDER BY updated_at DESC LIMIT 100", q)
 	if e != nil {
