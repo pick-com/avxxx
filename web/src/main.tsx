@@ -31,7 +31,8 @@ function ReleasePlayback({ slug }: { slug: string }) {
   async function play() { if (!playback?.resolve_path) return; try { const data = await api<{ streams: Stream[] }>(playback.resolve_path.replace(/^\/api\//, ''), { method: 'POST' }); setStreams(data.streams || []); } catch (cause) { setError(String(cause)); } }
   if (error) return <p className="muted">JAVtiful 暂无可用播放：{error}</p>;
   if (!playback) return <p className="muted">正在查找 JAVtiful 播放…</p>;
-  return <div className="playback-box"><div><strong>JAVtiful 播放</strong><span className="muted"> · {playback.source_key}</span></div><button onClick={play}>加载播放</button>{playback.source_url && <a href={playback.source_url} target="_blank" rel="noreferrer">打开来源页面</a>}{streams.map(stream => <video key={stream.url} className="player" controls autoPlay src={stream.url} />)}</div>;
+  const saveProgress = (event: React.SyntheticEvent<HTMLVideoElement>) => { const token=localStorage.getItem('user_token'); if (!token) return; const video=event.currentTarget; fetch('/api/me/watch-history',{method:'POST',headers:{'Content-Type':'application/json','Authorization':`Bearer ${token}`},body:JSON.stringify({slug,progress_seconds:Math.floor(video.currentTime),duration_seconds:Math.floor(video.duration||0)})}); };
+  return <div className="playback-box"><div><strong>JAVtiful 播放</strong><span className="muted"> · {playback.source_key}</span></div><button onClick={play}>加载播放</button>{playback.source_url && <a href={playback.source_url} target="_blank" rel="noreferrer">打开来源页面</a>}{streams.map(stream => <video key={stream.url} onTimeUpdate={saveProgress} className="player" controls autoPlay src={stream.url} />)}</div>;
 }
 function AuthPage() {
   const [email, setEmail] = useState(''), [password, setPassword] = useState(''), [error, setError] = useState('');

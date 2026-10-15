@@ -1,0 +1,2 @@
+CREATE TABLE IF NOT EXISTS watch_history (user_id bigint NOT NULL REFERENCES users(id) ON DELETE CASCADE, release_id bigint NOT NULL REFERENCES releases(id) ON DELETE CASCADE, progress_seconds integer NOT NULL DEFAULT 0, duration_seconds integer, watched_at timestamptz NOT NULL DEFAULT now(), PRIMARY KEY(user_id, release_id));
+CREATE INDEX IF NOT EXISTS watch_history_recent ON watch_history(user_id, watched_at DESC);

@@ -5,7 +5,7 @@ import (
 	"strings"
 )
 
-//go:embed 001_init.sql 002_catalog.sql 003_media_assets.sql 004_auth.sql
+//go:embed 001_init.sql 002_catalog.sql 003_media_assets.sql 004_auth.sql 005_watch_history.sql
 var schemaFiles embed.FS
 
 var Schema = func() string {
@@ -13,5 +13,6 @@ var Schema = func() string {
 	b, _ := schemaFiles.ReadFile("002_catalog.sql")
 	c, _ := schemaFiles.ReadFile("003_media_assets.sql")
 	d, _ := schemaFiles.ReadFile("004_auth.sql")
-	return strings.Join([]string{string(a), string(b), string(c), string(d)}, "\n")
+	e, _ := schemaFiles.ReadFile("005_watch_history.sql")
+	return strings.Join([]string{string(a), string(b), string(c), string(d), string(e)}, "\n")
 }()
