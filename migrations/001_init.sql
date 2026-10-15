@@ -3,3 +3,18 @@ CREATE TABLE IF NOT EXISTS items (id bigserial PRIMARY KEY,source_id bigint NOT 
 CREATE TABLE IF NOT EXISTS jobs (id bigserial PRIMARY KEY,source_id bigint NOT NULL REFERENCES sources(id),status text NOT NULL DEFAULT 'pending' CHECK(status IN ('pending','running','succeeded','failed')),error text NOT NULL DEFAULT '',created_at timestamptz NOT NULL DEFAULT now(),started_at timestamptz,finished_at timestamptz);
 CREATE UNIQUE INDEX IF NOT EXISTS jobs_active_source ON jobs(source_id) WHERE status IN ('pending','running');
 CREATE INDEX IF NOT EXISTS items_updated ON items(updated_at DESC);
+ALTER TABLE sources ADD COLUMN IF NOT EXISTS version bigint NOT NULL DEFAULT 1;
+ALTER TABLE sources ADD COLUMN IF NOT EXISTS adapter text NOT NULL DEFAULT 'rss';
+ALTER TABLE sources ADD COLUMN IF NOT EXISTS next_run_at timestamptz;
+ALTER TABLE sources ADD COLUMN IF NOT EXISTS last_success_at timestamptz;
+ALTER TABLE jobs ADD COLUMN IF NOT EXISTS available_at timestamptz NOT NULL DEFAULT now();
+ALTER TABLE jobs ADD COLUMN IF NOT EXISTS attempt integer NOT NULL DEFAULT 0;
+ALTER TABLE jobs ADD COLUMN IF NOT EXISTS max_attempts integer NOT NULL DEFAULT 3;
+ALTER TABLE jobs ADD COLUMN IF NOT EXISTS worker_id text;
+ALTER TABLE jobs ADD COLUMN IF NOT EXISTS lease_until timestamptz;
+ALTER TABLE jobs ADD COLUMN IF NOT EXISTS heartbeat_at timestamptz;
+ALTER TABLE jobs ADD COLUMN IF NOT EXISTS execution_version bigint NOT NULL DEFAULT 0;
+ALTER TABLE jobs ADD COLUMN IF NOT EXISTS error_code text NOT NULL DEFAULT '';
+ALTER TABLE jobs ADD COLUMN IF NOT EXISTS result_counts jsonb NOT NULL DEFAULT '{}'::jsonb;
+CREATE INDEX IF NOT EXISTS jobs_pending_due ON jobs(available_at,id) WHERE status='pending';
+CREATE INDEX IF NOT EXISTS jobs_expired_lease ON jobs(lease_until) WHERE status='running';

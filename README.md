@@ -8,6 +8,10 @@
 
 架构、数据库、任务租约、接口和部署设计见 [技术文档](docs/TECHNICAL_DESIGN.md)。
 
+五个 JAV 来源的字段调研、艺人与作品 slug、规范化 schema、合并去重及采集方案见 [来源采集与去重方案](docs/SOURCE_SCHEMA_PLAN.md)。
+
+最终的数据分层、本站与多来源合并、Review、cron 增量和实施基线见 [最终数据设计](docs/FINAL_DATA_DESIGN.md)。
+
 ## 模块
 
 | 模块 | 目录 | 职责 |
