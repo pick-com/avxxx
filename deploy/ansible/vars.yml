@@ -1,0 +1,7 @@
+app_name: avxxx
+app_dir: /opt/avxxx
+deploy_user: avxxx
+git_repo: git@github.com:pick-com/avxxx.git
+git_branch: main
+database_url: postgres://avxxx:avxxx@db:5432/avxxx?sslmode=disable
+compose_project: avxxx
