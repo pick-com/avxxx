@@ -4,3 +4,8 @@
 .catalog-list a { display:flex; justify-content:space-between; gap:12px; padding:10px 12px; border:1px solid #dce3ed; border-radius:8px; color:inherit; text-decoration:none; }
 .catalog-list span { display:flex; justify-content:space-between; gap:12px; padding:10px 12px; border:1px solid #dce3ed; border-radius:8px; }
 .catalog-list small { color:#6b7280; }
+.review-list { display:grid; gap:16px; }
+.review-list article { margin:0; }
+.review-heading { display:flex; justify-content:space-between; gap:16px; align-items:center; }
+pre { overflow:auto; background:#f5f7f4; padding:12px; border-radius:8px; font-size:13px; }
+code { background:#f5f7f4; padding:2px 5px; border-radius:4px; }
