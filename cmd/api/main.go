@@ -126,6 +126,46 @@ func main() {
 		v, e := s.ReleasePlayback(r.Context(), r.PathValue("slug"), source)
 		reply(w, v, e)
 	})
+	mux.HandleFunc("POST /api/admin/releases/{id}/media-link", admin(func(w http.ResponseWriter, r *http.Request) {
+		id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+		if err != nil {
+			reply(w, nil, err)
+			return
+		}
+		var input struct {
+			Source   string `json:"source"`
+			MediaID  string `json:"media_id"`
+			MediaURL string `json:"media_url"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+			reply(w, nil, err)
+			return
+		}
+		if input.Source == "" || input.MediaID == "" {
+			reply(w, nil, errors.New("source and media_id are required"))
+			return
+		}
+		err = s.LinkMediaToRelease(r.Context(), id, input.Source, input.MediaID, input.MediaURL)
+		reply(w, map[string]any{"linked": err == nil}, err)
+	}))
+	mux.HandleFunc("POST /api/admin/media-links/by-identifier", admin(func(w http.ResponseWriter, r *http.Request) {
+		var input struct {
+			Source     string `json:"source"`
+			MediaID    string `json:"media_id"`
+			MediaURL   string `json:"media_url"`
+			Identifier string `json:"identifier"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+			reply(w, nil, err)
+			return
+		}
+		if input.Source == "" || input.MediaID == "" || input.Identifier == "" {
+			reply(w, nil, errors.New("source, media_id and identifier are required"))
+			return
+		}
+		linked, err := s.LinkMediaByIdentifier(r.Context(), input.Source, input.MediaID, input.MediaURL, input.Identifier)
+		reply(w, map[string]any{"linked": linked}, err)
+	}))
 	mux.HandleFunc("GET /api/tags", func(w http.ResponseWriter, r *http.Request) {
 		limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
 		v, e := s.Tags(r.Context(), limit)

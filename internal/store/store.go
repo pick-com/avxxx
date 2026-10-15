@@ -338,11 +338,36 @@ func (s *Store) ReleaseSources(ctx context.Context, slug string) ([]map[string]a
 
 func (s *Store) ReleasePlayback(ctx context.Context, slug, source string) (map[string]any, error) {
 	var key, u, name string
-	err := s.QueryRow(ctx, `SELECT sr.source_record_key,sr.source_url,s.name FROM source_records sr JOIN sources s ON s.id=sr.source_id JOIN releases r ON r.id=sr.release_id WHERE r.slug=$1 AND sr.entity_type='release' AND lower(s.name)=lower($2) ORDER BY sr.last_seen_at DESC LIMIT 1`, slug, source).Scan(&key, &u, &name)
+	err := s.QueryRow(ctx, `SELECT rms.media_id,COALESCE(rms.media_url,''),rms.source FROM release_media_sources rms JOIN releases r ON r.id=rms.release_id WHERE r.slug=$1 AND lower(rms.source)=lower($2) LIMIT 1`, slug, source).Scan(&key, &u, &name)
+	if err == nil {
+		return map[string]any{"source": name, "source_key": key, "source_url": u, "detail_path": "/api/detail/" + strings.ToLower(source) + "/" + key, "resolve_path": "/api/resolve/" + strings.ToLower(source) + "/" + key}, nil
+	}
+	err = s.QueryRow(ctx, `SELECT sr.source_record_key,sr.source_url,s.name FROM source_records sr JOIN sources s ON s.id=sr.source_id JOIN releases r ON r.id=sr.release_id WHERE r.slug=$1 AND sr.entity_type='release' AND lower(s.name)=lower($2) ORDER BY sr.last_seen_at DESC LIMIT 1`, slug, source).Scan(&key, &u, &name)
 	if err != nil {
 		return nil, err
 	}
 	return map[string]any{"source": name, "source_key": key, "source_url": u, "detail_path": "/api/detail/" + strings.ToLower(source) + "/" + key, "resolve_path": "/api/resolve/" + strings.ToLower(source) + "/" + key}, nil
+}
+
+// LinkMediaToRelease stores a provider media id against a canonical release.
+// Repeated discovery is idempotent and changing the URL refreshes the link.
+func (s *Store) LinkMediaToRelease(ctx context.Context, releaseID int64, source, mediaID, mediaURL string) error {
+	_, err := s.Exec(ctx, `INSERT INTO release_media_sources(release_id,source,media_id,media_url)
+		VALUES($1,lower($2),$3,NULLIF($4,'')) ON CONFLICT(release_id,source)
+		DO UPDATE SET media_id=EXCLUDED.media_id,media_url=COALESCE(EXCLUDED.media_url,release_media_sources.media_url),updated_at=now()`, releaseID, source, mediaID, mediaURL)
+	return err
+}
+
+// LinkMediaByIdentifier associates a provider id with the release carrying a
+// normalized identifier (for example JUQ-743). It returns false when no
+// unique release match exists, leaving ambiguous matches for review.
+func (s *Store) LinkMediaByIdentifier(ctx context.Context, source, mediaID, mediaURL, identifier string) (bool, error) {
+	var releaseID int64
+	err := s.QueryRow(ctx, `SELECT release_id FROM release_identifiers WHERE normalized_value=$1 LIMIT 1`, catalog.NormalizeIdentifier(identifier)).Scan(&releaseID)
+	if err != nil {
+		return false, err
+	}
+	return true, s.LinkMediaToRelease(ctx, releaseID, source, mediaID, mediaURL)
 }
 
 func (s *Store) Tags(ctx context.Context, limit int) ([]map[string]any, error) {
