@@ -2,7 +2,7 @@
 
 > 状态更新时间：2026-10-14
 >
-> 当前基础能力完成度约为 **70%**。基础架构、目录采集、调度和来源策略已经可运行，剩余工作主要集中在多来源覆盖、真正的分页增量执行、管理界面和生产化验收。
+> 当前基础能力完成度约为 **82%**。基础架构、目录采集、调度、WebApp 浏览和 Ansible 部署已经可运行，剩余工作主要集中在多来源覆盖、真正的分页增量执行、审核后台和生产化验收。
 
 ## 已完成
 
@@ -19,6 +19,11 @@
 - [x] 冲突查询和审核 API
 - [x] 演员、作品、演员作品、作品演员公开 API
 - [x] 标签和厂商公开 API
+- [x] 统一演员/作品搜索 API
+- [x] WebApp 演员、作品详情页
+- [x] WebApp 标签、厂商面板
+- [x] Docker Compose API/scheduler/scraper 服务
+- [x] Ansible provision/deploy playbook
 - [x] 管理员 Bearer Token 鉴权
 - [x] 独立 scheduler 命令和到期来源任务创建
 - [x] 来源级 discovery interval 调度
@@ -32,6 +37,7 @@
 - [ ] 增加合并、拆分和撤销合并操作
 - [x] 增加 checkpoint 和分页断点数据访问层
 - [ ] 将 checkpoint 接入每个目录 adapter 的分页执行流程
+- [x] 目录批次成功后推进 discovery checkpoint
 
 ## 待完成
 
@@ -99,9 +105,9 @@ JAV Database adapter 已接入 scraper，可完成发现、详情抓取、解析
 
 已完成 JAV Database、XCITY、Jav.Guru adapter、scheduler、来源级 discovery interval 和 crawl policy API；仍需完成更多 adapter、checkpoint 实际分页接入、限速执行和来源级失败隔离。
 
-### 阶段 5：用户 WebApp 和生产化 — 未完成
+### 阶段 5：用户 WebApp 和生产化 — 进行中
 
-需要完成前端浏览页面、后台审核页面、监控、部署和最终验收。
+已完成目录首页、演员/作品详情、标签/厂商面板、媒体搜索播放、Docker Compose 和 Ansible 部署；仍需完成后台审核页面、图片存储、监控和最终验收。
 
 ## 下一步执行顺序
 
@@ -120,5 +126,5 @@ JAV Database adapter 已接入 scraper，可完成发现、详情抓取、解析
 **关系与冲突审核：已完成**  
 **多来源规模化采集：进行中**  
 **增量调度：基础能力已完成，分页执行未完成**  
-**WebApp 完整交付：未完成**  
+**WebApp 完整交付：主要浏览流程已完成，后台功能未完成**  
 **生产化验收：未完成**
