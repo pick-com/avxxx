@@ -2,7 +2,7 @@
 
 > 状态更新时间：2026-10-14
 >
-> 当前基础能力完成度约为 **60%**。基础架构已经可运行，剩余工作主要集中在多来源规模化采集、增量调度、管理界面和生产化验收。
+> 当前基础能力完成度约为 **70%**。基础架构、目录采集、调度和来源策略已经可运行，剩余工作主要集中在多来源覆盖、真正的分页增量执行、管理界面和生产化验收。
 
 ## 已完成
 
@@ -20,6 +20,9 @@
 - [x] 演员、作品、演员作品、作品演员公开 API
 - [x] 标签和厂商公开 API
 - [x] 管理员 Bearer Token 鉴权
+- [x] 独立 scheduler 命令和到期来源任务创建
+- [x] 来源级 discovery interval 调度
+- [x] 来源抓取策略管理 API
 - [x] Go 单元测试、`go vet` 和 `git diff --check`
 
 ## 进行中
@@ -27,14 +30,15 @@
 - [ ] 完善来源级字段优先级和规范字段更新策略
 - [ ] 增加 unresolved identity candidate 生成和候选匹配
 - [ ] 增加合并、拆分和撤销合并操作
-- [ ] 增加 checkpoint 和分页断点模型的实际执行逻辑
+- [x] 增加 checkpoint 和分页断点数据访问层
+- [ ] 将 checkpoint 接入每个目录 adapter 的分页执行流程
 
 ## 待完成
 
 ### 来源适配器
 
-- [ ] XCITY
-- [ ] Jav.Guru
+- [x] XCITY
+- [x] Jav.Guru
 - [ ] XSList（VPN/授权条件确认后启用）
 - [ ] JAVLibrary（VPN/授权条件确认后启用）
 - [ ] DMM/FANZA 官方目录或 Affiliate API
@@ -91,9 +95,9 @@ JAV Database adapter 已接入 scraper，可完成发现、详情抓取、解析
 
 演员关系、标签关系、字段冲突检测和冲突审核 API 已实现。
 
-### 阶段 4：多来源和增量采集 — 未完成
+### 阶段 4：多来源和增量采集 — 进行中
 
-需要完成更多 adapter、checkpoint、cron、限速和来源级失败隔离。
+已完成 JAV Database、XCITY、Jav.Guru adapter、scheduler、来源级 discovery interval 和 crawl policy API；仍需完成更多 adapter、checkpoint 实际分页接入、限速执行和来源级失败隔离。
 
 ### 阶段 5：用户 WebApp 和生产化 — 未完成
 
@@ -114,8 +118,7 @@ JAV Database adapter 已接入 scraper，可完成发现、详情抓取、解析
 **基础工程：已完成**  
 **单来源目录采集：已完成**  
 **关系与冲突审核：已完成**  
-**多来源规模化采集：未完成**  
-**增量调度：未完成**  
+**多来源规模化采集：进行中**  
+**增量调度：基础能力已完成，分页执行未完成**  
 **WebApp 完整交付：未完成**  
 **生产化验收：未完成**
-
