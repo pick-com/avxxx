@@ -132,6 +132,27 @@ func main() {
 	mux.HandleFunc("POST /api/resolve/{source}/{id...}", mediaHandler.Resolve)
 	mux.HandleFunc("GET /api/admin/sources", admin(func(w http.ResponseWriter, r *http.Request) { v, e := s.Sources(r.Context()); reply(w, v, e) }))
 	mux.HandleFunc("GET /api/admin/jobs", admin(func(w http.ResponseWriter, r *http.Request) { v, e := s.Jobs(r.Context()); reply(w, v, e) }))
+	mux.HandleFunc("GET /api/admin/crawl-policies", admin(func(w http.ResponseWriter, r *http.Request) { v, e := s.CrawlPolicies(r.Context()); reply(w, v, e) }))
+	mux.HandleFunc("PUT /api/admin/sources/{id}/crawl-policy", admin(func(w http.ResponseWriter, r *http.Request) {
+		id, e := strconv.ParseInt(r.PathValue("id"), 10, 64)
+		if e != nil || id <= 0 {
+			http.Error(w, "invalid id", 400)
+			return
+		}
+		var req struct {
+			DiscoveryInterval     string `json:"discovery_interval"`
+			DetailRefreshInterval string `json:"detail_refresh_interval"`
+			MinRequestInterval    string `json:"min_request_interval"`
+			DailyPageBudget       int64  `json:"daily_page_budget"`
+			DailyByteBudget       int64  `json:"daily_byte_budget"`
+		}
+		r.Body = http.MaxBytesReader(w, r.Body, 16384)
+		if json.NewDecoder(r.Body).Decode(&req) != nil || req.MinRequestInterval == "" {
+			http.Error(w, "min_request_interval is required", 400)
+			return
+		}
+		reply(w, map[string]bool{"ok": true}, s.UpsertCrawlPolicy(r.Context(), id, req.DiscoveryInterval, req.DetailRefreshInterval, req.MinRequestInterval, req.DailyPageBudget, req.DailyByteBudget))
+	}))
 	mux.HandleFunc("GET /api/admin/conflicts", admin(func(w http.ResponseWriter, r *http.Request) {
 		limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
 		v, e := s.PendingConflicts(r.Context(), limit)

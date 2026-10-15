@@ -51,6 +51,31 @@ func (s *Store) FailCheckpoint(ctx context.Context, c CrawlCheckpoint, code stri
 	return err
 }
 
+func (s *Store) CrawlPolicies(ctx context.Context) ([]map[string]any, error) {
+	r, err := s.Query(ctx, `SELECT source_id,COALESCE(discovery_interval::text,''),COALESCE(detail_refresh_interval::text,''),min_request_interval::text,daily_page_budget,daily_byte_budget,enabled_at,baseline_completed_at FROM source_crawl_policies ORDER BY source_id`)
+	if err != nil {
+		return nil, err
+	}
+	defer r.Close()
+	out := []map[string]any{}
+	for r.Next() {
+		var id, pages int64
+		var discovery, detail, min string
+		var bytes int64
+		var enabled, baseline *time.Time
+		if err = r.Scan(&id, &discovery, &detail, &min, &pages, &bytes, &enabled, &baseline); err != nil {
+			return nil, err
+		}
+		out = append(out, map[string]any{"source_id": id, "discovery_interval": discovery, "detail_refresh_interval": detail, "min_request_interval": min, "daily_page_budget": pages, "daily_byte_budget": bytes, "enabled_at": enabled, "baseline_completed_at": baseline})
+	}
+	return out, r.Err()
+}
+
+func (s *Store) UpsertCrawlPolicy(ctx context.Context, sourceID int64, discovery, detail, min string, pages, bytes int64) error {
+	_, err := s.Exec(ctx, `INSERT INTO source_crawl_policies(source_id,discovery_interval,detail_refresh_interval,min_request_interval,daily_page_budget,daily_byte_budget) VALUES($1,$2::interval,$3::interval,$4::interval,$5,$6) ON CONFLICT(source_id) DO UPDATE SET discovery_interval=EXCLUDED.discovery_interval,detail_refresh_interval=EXCLUDED.detail_refresh_interval,min_request_interval=EXCLUDED.min_request_interval,daily_page_budget=EXCLUDED.daily_page_budget,daily_byte_budget=EXCLUDED.daily_byte_budget`, sourceID, discovery, detail, min, pages, bytes)
+	return err
+}
+
 func Open(ctx context.Context) (*Store, error) {
 	p, e := pgxpool.New(ctx, os.Getenv("DATABASE_URL"))
 	if e != nil {
