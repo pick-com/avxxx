@@ -87,6 +87,43 @@ func main() {
 		v, e := s.Items(r.Context(), r.URL.Query().Get("q"))
 		reply(w, v, e)
 	})
+	mux.HandleFunc("GET /api/performers", func(w http.ResponseWriter, r *http.Request) {
+		limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
+		v, e := s.Performers(r.Context(), r.URL.Query().Get("q"), limit)
+		reply(w, map[string]any{"items": v}, e)
+	})
+	mux.HandleFunc("GET /api/performers/{slug}", func(w http.ResponseWriter, r *http.Request) {
+		v, e := s.PerformerBySlug(r.Context(), r.PathValue("slug"))
+		reply(w, v, e)
+	})
+	mux.HandleFunc("GET /api/performers/{slug}/releases", func(w http.ResponseWriter, r *http.Request) {
+		limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
+		v, e := s.PerformerReleases(r.Context(), r.PathValue("slug"), limit)
+		reply(w, map[string]any{"items": v}, e)
+	})
+	mux.HandleFunc("GET /api/releases", func(w http.ResponseWriter, r *http.Request) {
+		limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
+		v, e := s.Releases(r.Context(), r.URL.Query().Get("q"), limit)
+		reply(w, map[string]any{"items": v}, e)
+	})
+	mux.HandleFunc("GET /api/releases/{slug}", func(w http.ResponseWriter, r *http.Request) {
+		v, e := s.ReleaseBySlug(r.Context(), r.PathValue("slug"))
+		reply(w, v, e)
+	})
+	mux.HandleFunc("GET /api/releases/{slug}/performers", func(w http.ResponseWriter, r *http.Request) {
+		v, e := s.ReleasePerformers(r.Context(), r.PathValue("slug"))
+		reply(w, map[string]any{"items": v}, e)
+	})
+	mux.HandleFunc("GET /api/tags", func(w http.ResponseWriter, r *http.Request) {
+		limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
+		v, e := s.Tags(r.Context(), limit)
+		reply(w, map[string]any{"items": v}, e)
+	})
+	mux.HandleFunc("GET /api/makers", func(w http.ResponseWriter, r *http.Request) {
+		limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
+		v, e := s.Makers(r.Context(), limit)
+		reply(w, map[string]any{"items": v}, e)
+	})
 	// Source-specific search/detail/resolve routes are ready for Kodi adapters.
 	// Adapters are intentionally not registered until their source implementation
 	// and authorization requirements are reviewed.
@@ -95,6 +132,29 @@ func main() {
 	mux.HandleFunc("POST /api/resolve/{source}/{id...}", mediaHandler.Resolve)
 	mux.HandleFunc("GET /api/admin/sources", admin(func(w http.ResponseWriter, r *http.Request) { v, e := s.Sources(r.Context()); reply(w, v, e) }))
 	mux.HandleFunc("GET /api/admin/jobs", admin(func(w http.ResponseWriter, r *http.Request) { v, e := s.Jobs(r.Context()); reply(w, v, e) }))
+	mux.HandleFunc("GET /api/admin/conflicts", admin(func(w http.ResponseWriter, r *http.Request) {
+		limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
+		v, e := s.PendingConflicts(r.Context(), limit)
+		reply(w, v, e)
+	}))
+	mux.HandleFunc("POST /api/admin/conflicts/{id}/resolve", admin(func(w http.ResponseWriter, r *http.Request) {
+		id, e := strconv.ParseInt(r.PathValue("id"), 10, 64)
+		if e != nil || id <= 0 {
+			http.Error(w, "invalid id", 400)
+			return
+		}
+		var req struct {
+			SourceRecordID int64           `json:"source_record_id"`
+			Value          json.RawMessage `json:"value"`
+			Note           string          `json:"note"`
+		}
+		r.Body = http.MaxBytesReader(w, r.Body, 16384)
+		if json.NewDecoder(r.Body).Decode(&req) != nil || len(req.Value) == 0 {
+			http.Error(w, "value is required", 400)
+			return
+		}
+		reply(w, map[string]bool{"ok": true}, s.ResolveConflict(r.Context(), id, req.SourceRecordID, req.Value, req.Note))
+	}))
 	mux.HandleFunc("POST /api/admin/sources", admin(func(w http.ResponseWriter, r *http.Request) {
 		var x model.Source
 		r.Body = http.MaxBytesReader(w, r.Body, 16384)
