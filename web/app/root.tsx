@@ -1,8 +1,13 @@
 import type {ReactNode} from 'react';
 import {Link, Links, Meta, Outlet, Scripts, ScrollRestoration, isRouteErrorResponse, useRouteError} from 'react-router';
+import {CookieBanner} from './components/CookieBanner';
 import {AuthProvider} from './lib/auth';
+import {ConsentProvider} from './lib/consent';
+import {SettingsProvider} from './lib/settings';
+import {SocialProvider} from './lib/social';
 import {ThemeProvider, themeInitScript} from './lib/theme';
 import './styles/app.css';
+import './styles/beta.css';
 
 export const links = () => [
   {rel: 'preconnect', href: 'https://fonts.googleapis.com'},
@@ -39,7 +44,14 @@ export default function App() {
   return (
     <ThemeProvider>
       <AuthProvider>
-        <Outlet />
+        <SettingsProvider>
+          <SocialProvider>
+            <ConsentProvider>
+              <Outlet />
+              <CookieBanner />
+            </ConsentProvider>
+          </SocialProvider>
+        </SettingsProvider>
       </AuthProvider>
     </ThemeProvider>
   );

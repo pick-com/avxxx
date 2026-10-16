@@ -1,6 +1,7 @@
 import {useEffect, useState} from 'react';
 import {Outlet, useLocation, useMatches} from 'react-router';
 import {BottomTabs} from '../components/BottomTabs';
+import {Footer} from '../components/Footer';
 import {NetworkBanner} from '../components/NetworkBanner';
 import {SideNav, type NavVariant} from '../components/SideNav';
 import {TopBar} from '../components/TopBar';
@@ -53,6 +54,7 @@ export default function Shell() {
         {variant === 'overlay' && <button type="button" className="nav-backdrop" aria-label="关闭导航菜单" onClick={() => setMode('auto')} />}
         <main id="main" className="shell-main" tabIndex={-1}>
           <Outlet />
+          {!immersive && <Footer />}
         </main>
       </div>
       <BottomTabs />

@@ -2,6 +2,7 @@ import type {ReactNode} from 'react';
 import {Link} from 'react-router';
 import {swatch} from '../lib/format';
 import {Icon} from './Icon';
+import {LaterButton} from './SocialButtons';
 
 // The API has no cover or portrait images yet (tech plan 2.4: covers via
 // media_assets / object storage). Artwork slots render a neutral placeholder
@@ -24,27 +25,34 @@ export function Thumb({seed, badge, progress, className = ''}: {seed: string; ba
   );
 }
 
-export function ReleaseCard({slug, title, meta, sub, badge, progress}: {
+/** Video card. Signed-in users get a 稍后观看 toggle over the thumbnail (NavLater). */
+export function ReleaseCard({slug, title, meta, sub, badge, progress, later = true}: {
   slug: string;
   title: string;
   meta?: ReactNode;
   sub?: ReactNode;
   badge?: string;
   progress?: number;
+  later?: boolean;
 }) {
   return (
-    <Link to={`/releases/${encodeURIComponent(slug)}`} className="release-card">
-      <Thumb seed={slug} badge={badge} progress={progress} />
-      <span className="card-title">{title}</span>
-      {meta && <span className="card-meta">{meta}</span>}
-      {sub && <span className="card-meta">{sub}</span>}
-    </Link>
+    <div className="release-card-wrap">
+      <Link to={`/releases/${encodeURIComponent(slug)}`} className="release-card">
+        <Thumb seed={slug} badge={badge} progress={progress} />
+        <span className="card-title">{title}</span>
+        {meta && <span className="card-meta">{meta}</span>}
+        {sub && <span className="card-meta">{sub}</span>}
+      </Link>
+      {later && <LaterButton slug={slug} title={title} variant="icon" />}
+    </div>
   );
 }
 
 /** Horizontal row card (Video aside, MobileSearch results, history). */
-export function ReleaseRow({slug, title, meta, sub, badge, progress, children}: {
+export function ReleaseRow({slug, title, meta, sub, badge, progress, children, query = ''}: {
   slug: string;
+  /** Appended to the link, e.g. "?list=later". */
+  query?: string;
   title: string;
   meta?: ReactNode;
   sub?: ReactNode;
@@ -54,7 +62,7 @@ export function ReleaseRow({slug, title, meta, sub, badge, progress, children}: 
 }) {
   return (
     <div className="release-row">
-      <Link to={`/releases/${encodeURIComponent(slug)}`} className="release-row-link">
+      <Link to={`/releases/${encodeURIComponent(slug)}${query}`} className="release-row-link">
         <Thumb seed={slug} badge={badge} progress={progress} className="thumb-row" />
         <span className="release-row-text">
           <span className="card-title">{title}</span>

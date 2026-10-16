@@ -58,6 +58,29 @@ export function dayLabel(iso: string, now = new Date()): string {
   return new Intl.DateTimeFormat('zh-CN', {year: 'numeric', month: '2-digit', day: '2-digit'}).format(d).replace(/\//g, '-');
 }
 
+/** 刚刚 / N 分钟前 / N 小时前 / 昨天 / YYYY-MM-DD for timestamps (local time). */
+export function timeAgo(iso: string, now = new Date()): string {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return '';
+  const minutes = Math.floor((now.getTime() - d.getTime()) / 60000);
+  if (minutes < 1) return '刚刚';
+  if (minutes < 60) return `${minutes} 分钟前`;
+  if (minutes < 24 * 60 && dayLabel(iso, now) === '今天') return `${Math.floor(minutes / 60)} 小时前`;
+  return dayLabel(iso, now);
+}
+
+const scheduleFormat = new Intl.DateTimeFormat('zh-CN', {month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit'});
+
+/** When an upcoming release goes live: scheduled_at in local time, else the release date, else 日期未定. */
+export function formatSchedule(scheduledAt: string | null | undefined, releaseDate?: string | null): string {
+  if (scheduledAt) {
+    const d = new Date(scheduledAt);
+    if (!Number.isNaN(d.getTime())) return `${scheduleFormat.format(d)} 上线`;
+  }
+  const date = formatDate(releaseDate);
+  return date ? `${date} 上线` : '上线日期未定';
+}
+
 /** Stable placeholder colour index (0–9) for artwork we do not have yet. */
 export function swatch(key: string): number {
   let hash = 0;

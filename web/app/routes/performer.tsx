@@ -2,6 +2,7 @@ import {useEffect, useState} from 'react';
 import {useParams} from 'react-router';
 import {Avatar, ReleaseCard, SectionHeader} from '../components/Cards';
 import {LoadMore} from '../components/Paging';
+import {FollowButton} from '../components/SocialButtons';
 import {BlockSkeleton, CardGridSkeleton, EmptyState, ErrorBanner} from '../components/States';
 import {getPerformer, getPerformerReleases, listPerformerPage, listReleasePage, type PerformerDetail} from '../lib/api';
 import {ageAt, formatCount, formatDate, formatYear} from '../lib/format';
@@ -23,7 +24,8 @@ const LEGACY_LIMIT = 100;
 // otherwise the number of works loaded.
 //
 // Omitted for lack of backend:
-// TODO(tech plan 3.13 follows): 关注 button.
+// 关注 + bell (NewWorkAlert) via PUT/DELETE /api/me/follows/{slug}.
+// TODO(PRD 17): 即将上线 shelf — there is no public endpoint for a performer's upcoming works yet.
 // TODO(tech plan 3.13 performer_stats): 总播放 / 粉丝 / 热度 stats.
 // TODO(tech plan 3.13 release_performers.role_type): 主演 / 客串 filters; 最热 sort.
 // TODO(tech plan 3.5 performer_similar): 相似演员.
@@ -89,6 +91,7 @@ export default function PerformerPage() {
           <div className="performer-head">
             <h1>{p.canonical_name}</h1>
             {p.canonical_name_ja && <p className="muted">{p.canonical_name_ja}</p>}
+            <FollowButton slug={p.slug} name={p.canonical_name} />
             {countLabel && (
               <div className="stat-row">
                 <div className="stat">

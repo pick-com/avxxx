@@ -90,7 +90,7 @@ function errorDetail(data: unknown): string | undefined {
 }
 
 type RequestOptions = {
-  method?: 'GET' | 'POST' | 'PUT';
+  method?: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
   body?: unknown;
   signal?: AbortSignal;
   keepalive?: boolean;
@@ -438,3 +438,123 @@ export const adminNotDuplicate = (id: number, body: ReviewBody = {}) =>
   api<DecisionResult>(`admin/identity-candidates/${id}/not-duplicate`, {method: 'POST', body});
 export const adminUndoMerge = (eventId: number, body: ReviewBody = {}) =>
   api<UndoResult>(`admin/merges/${eventId}/undo`, {method: 'POST', body});
+
+// ---- Social: follows, reservations, watch later, settings, notifications ----
+// (internal/api/social.go, internal/api/notifications.go; PRD 7, 17, 20.)
+// Every route needs the user token (me/*). Callers treat 404 / 405 as "not
+// deployed on this backend" via isMissingEndpoint() and hide the feature.
+
+export type NotifyMode = 'all' | 'lead_only' | 'off';
+export const NOTIFY_MODES: NotifyMode[] = ['all', 'lead_only', 'off'];
+
+/** GET /api/me/follows item. new_count: works gone live since the following feed was last opened. */
+export type FollowItem = {
+  slug: string;
+  name: string;
+  name_ja: string;
+  notify_mode: NotifyMode;
+  created_at: string;
+  last_seen_at: string | null;
+  new_count: number;
+};
+
+/** GET /api/me/following/feed item. Upcoming items are not reachable via GET /api/releases/{slug}. */
+export type FeedItem = {
+  slug: string;
+  title: string;
+  title_ja: string;
+  release_date: string | null;
+  scheduled_at: string | null;
+  status: 'published' | 'upcoming' | string;
+  reserved: boolean;
+  followed_performers: string[] | null;
+};
+
+export type ReservationItem = {
+  slug: string;
+  title: string;
+  title_ja: string;
+  status: 'published' | 'upcoming' | string;
+  release_date: string | null;
+  scheduled_at: string | null;
+  reserved_at: string;
+};
+
+export type WatchLaterItem = {
+  slug: string;
+  title: string;
+  title_ja: string;
+  runtime_minutes: number;
+  position: number;
+  added_at: string;
+};
+
+export type NotifyKind = 'new_work' | 'reservation' | 'comment_reply' | 'favorite_update';
+export type NotifyChannel = 'in_app' | 'push' | 'email';
+export type QualityPref = 'auto' | '2160p' | '1080p' | '720p' | '480p' | '360p';
+export type LangCode = 'zh-CN' | 'zh-TW' | 'en' | 'ja' | 'ko' | 'vi' | 'es' | 'th';
+
+/** store.UserSettings. */
+export type UserSettings = {
+  ui_lang: LangCode;
+  content_lang: LangCode;
+  subtitle_langs: LangCode[];
+  quality_pref: QualityPref;
+  data_saver: boolean;
+  autoplay: boolean;
+  remember_rate: boolean;
+  history_paused: boolean;
+  theme: 'system' | 'dark' | 'light';
+  timezone: string;
+  notify_prefs: Record<NotifyKind, Record<NotifyChannel, boolean>>;
+  quiet_hours: {start: string; end: string} | null;
+};
+
+/** One release inside a (possibly merged, one-per-day) notification. */
+export type NotificationRelease = {
+  release_id?: number;
+  slug: string;
+  title: string;
+  reason: 'follow' | 'reservation' | string;
+  performers: {slug: string; name: string}[] | null;
+};
+
+export type NotificationItem = {
+  id: number;
+  kind: NotifyKind | string;
+  payload: {items?: NotificationRelease[] | null; count?: number} | null;
+  read: boolean;
+  read_at: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export const getFollows = (signal?: AbortSignal) => api<Items<FollowItem>>('me/follows', {signal}).then(items);
+export const followPerformer = (slug: string, mode: NotifyMode) =>
+  api<{performer_slug: string; notify_mode: NotifyMode}>(`me/follows/${enc(slug)}`, {method: 'PUT', body: {notify_mode: mode}});
+export const unfollowPerformer = (slug: string) => api<{deleted: boolean}>(`me/follows/${enc(slug)}`, {method: 'DELETE'});
+export const getFollowingFeed = (limit: number, cursor?: string | null, signal?: AbortSignal) =>
+  api<PageBody<FeedItem>>(`me/following/feed${query({limit, cursor})}`, {signal}).then(toPage);
+
+export const getReservations = (signal?: AbortSignal) => api<Items<ReservationItem>>('me/reservations', {signal}).then(items);
+export const reserveRelease = (slug: string) => api<{reserved: boolean}>(`me/reservations/${enc(slug)}`, {method: 'PUT'});
+export const unreserveRelease = (slug: string) => api<{deleted: boolean}>(`me/reservations/${enc(slug)}`, {method: 'DELETE'});
+
+export const getWatchLater = (signal?: AbortSignal) => api<Items<WatchLaterItem>>('me/watch-later', {signal}).then(items);
+export const addWatchLater = (slug: string) => api<{saved: boolean}>(`me/watch-later/${enc(slug)}`, {method: 'PUT'});
+export const removeWatchLater = (slug: string) => api<{deleted: boolean}>(`me/watch-later/${enc(slug)}`, {method: 'DELETE'});
+export const reorderWatchLater = (slugs: string[]) => api<{saved: boolean}>('me/watch-later/reorder', {method: 'POST', body: {slugs}});
+
+export const getSettings = (signal?: AbortSignal) => api<UserSettings>('me/settings', {signal});
+export const patchSettings = (patch: Partial<UserSettings> | Record<string, unknown>) =>
+  api<UserSettings>('me/settings', {method: 'PATCH', body: patch});
+
+export const deleteWatchEntry = (slug: string) => api<{deleted: boolean}>(`me/watch-history/${enc(slug)}`, {method: 'DELETE'});
+export const clearWatchHistory = () => api<{deleted: number}>('me/watch-history', {method: 'DELETE'});
+
+export const getNotifications = (limit: number, cursor?: string | null, signal?: AbortSignal) =>
+  api<PageBody<NotificationItem>>(`me/notifications${query({limit, cursor})}`, {signal}).then(toPage);
+export const getUnreadCount = (signal?: AbortSignal) =>
+  api<{unread: number}>('me/notifications/unread-count', {signal}).then(d => d?.unread ?? 0);
+export const markNotificationsRead = (ids: number[] | 'all') =>
+  api<{updated: number}>('me/notifications/read', {method: 'POST', body: ids === 'all' ? {all: true} : {ids}});

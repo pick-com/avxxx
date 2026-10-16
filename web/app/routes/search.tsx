@@ -1,5 +1,6 @@
 import {useEffect, useState} from 'react';
 import {Link, useSearchParams} from 'react-router';
+import {FollowButton} from '../components/SocialButtons';
 import {Avatar, ReleaseCard, SectionHeader} from '../components/Cards';
 import {FilterBar, ReleaseResults, type SortOption} from '../components/ReleaseFilters';
 import {SearchBox} from '../components/SearchBox';
@@ -90,17 +91,17 @@ export default function SearchPage() {
           {performers.length > 0 && (
             <div className="performer-hits">
               {performers.map(hit => (
-                <Link key={hit.id} to={`/performers/${encodeURIComponent(hit.slug)}`} className="performer-hit">
-                  <Avatar seed={hit.slug} name={hit.name} size={64} />
-                  <span className="performer-hit-text">
-                    <span className="performer-hit-kind">演员</span>
-                    <span className="performer-hit-name">{hit.name}</span>
-                    {performerSub(hit) && <span className="muted">{performerSub(hit)}</span>}
-                  </span>
-                  <span className="btn btn-secondary btn-sm" aria-hidden="true">
-                    查看主页
-                  </span>
-                </Link>
+                <div key={hit.id} className="performer-hit">
+                  <Link to={`/performers/${encodeURIComponent(hit.slug)}`} className="performer-hit-link">
+                    <Avatar seed={hit.slug} name={hit.name} size={64} />
+                    <span className="performer-hit-text">
+                      <span className="performer-hit-kind">演员</span>
+                      <span className="performer-hit-name">{hit.name}</span>
+                      {performerSub(hit) && <span className="muted">{performerSub(hit)}</span>}
+                    </span>
+                  </Link>
+                  <FollowButton slug={hit.slug} name={hit.name} size="sm" />
+                </div>
               ))}
             </div>
           )}

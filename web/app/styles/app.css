@@ -2893,7 +2893,7 @@ a.chip {
     display: none;
   }
 
-  .card-grid-scroll .release-card {
+  .card-grid-scroll .release-card-wrap {
     width: 168px;
     flex-shrink: 0;
   }
