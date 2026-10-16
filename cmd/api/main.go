@@ -49,6 +49,9 @@ func main() {
 	mediaRegistry.Register(media.NewJavhdpornAdapter())
 	mediaRegistry.Register(media.NewMissavAdapter())
 	mediaHandler := media.NewHandler(media.NewService(mediaRegistry))
+	// Resolve results are shared through Postgres (media_resolve_cache)
+	// behind the in-process cache.
+	mediaHandler.UseResolveStore(s)
 	clientIPs, e := clientip.FromEnv(os.Getenv)
 	if e != nil {
 		obs.Fatal("client ip config", e)

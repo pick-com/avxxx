@@ -64,6 +64,9 @@
           BACKUP_METRICS_DIR={{ backup_metrics_dir }}
           PUBLIC_BASE_URL={{ public_base_url | default(base_url | default('')) }}
           WEB_API_PROXY={{ web_api_proxy | default('true') }}
+          # Resolve cache (api): sliding TTL, and the max age when a stream's expiry is unknown.
+          MEDIA_RESOLVE_TTL={{ media_resolve_ttl | default('5m') }}
+          MEDIA_RESOLVE_MAX_AGE={{ media_resolve_max_age | default('30m') }}
           # Proxies whose X-Forwarded-For the API trusts; empty = TCP peer only.
           TRUSTED_PROXIES={{ trusted_proxies | default('') }}
           # Country header a trusted proxy / CDN sets besides CF-IPCountry; empty = none.

@@ -55,7 +55,9 @@ services:
       # false = release-page comments off (routes 404, web hides them).
       COMMENTS_ENABLED: ${COMMENTS_ENABLED:-true}
       MEDIA_LINK_MIN_INTERVAL: ${MEDIA_LINK_MIN_INTERVAL:-2s}
+      # Resolve cache: sliding TTL, and the max age when the stream expiry is unknown.
       MEDIA_RESOLVE_TTL: ${MEDIA_RESOLVE_TTL:-5m}
+      MEDIA_RESOLVE_MAX_AGE: ${MEDIA_RESOLVE_MAX_AGE:-30m}
       # Catalog images (internal/images): S3-compatible storage; empty
       # S3_ENDPOINT = no image fields and /api/images/ is 404. With the
       # "storage" profile: S3_ENDPOINT=http://minio:9000.
