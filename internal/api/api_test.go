@@ -169,6 +169,10 @@ var expectedRoutes = []string{
 	"POST /api/admin/performer-requests/{id}/reject",
 	"POST /api/admin/similarity-weights/preview",
 	"POST /api/performer-requests",
+	"GET /api/admin/media-links",
+	"POST /api/admin/media-links/run",
+	"POST /api/admin/media-links/{release_id}/retry",
+	"POST /api/admin/media-links/{release_id}/choose",
 }
 
 var (

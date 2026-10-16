@@ -76,6 +76,15 @@ func main() {
 			log.Fatalf("invalid SEARCH_STATS_EVERY %q: want a duration of at least 1m", v)
 		}
 	}
+	// Offline release -> playback provider linking (internal/medialink, run
+	// by cmd/audit): once per MEDIA_LINK_EVERY slot (default 1h). Newly
+	// ingested releases are picked up by the next run.
+	mediaLinkEvery := time.Hour
+	if v := os.Getenv("MEDIA_LINK_EVERY"); v != "" {
+		if mediaLinkEvery, err = time.ParseDuration(v); err != nil || mediaLinkEvery < time.Minute {
+			log.Fatalf("invalid MEDIA_LINK_EVERY %q: want a duration of at least 1m", v)
+		}
+	}
 	interval := 60 * time.Second
 	for ctx.Err() == nil {
 		if ok, err := s.EnqueueKindSince(ctx, recs.JobKindSimilarity, audit.LastSlot(time.Now(), recsHour, recsMinute)); err != nil {
@@ -101,6 +110,9 @@ func main() {
 		// Replay peak / retention curves (PRD 14.3): hourly, run by cmd/audit.
 		if _, err := s.EnqueueKindSince(ctx, playcurve.JobKind, time.Now().Truncate(time.Hour)); err != nil {
 			log.Printf("enqueue release curves: %v", err)
+		}
+		if _, err := s.EnqueueKindSince(ctx, store.JobKindMediaLink, time.Now().Truncate(mediaLinkEvery)); err != nil {
+			log.Printf("enqueue media link: %v", err)
 		}
 		n, err := s.EnqueueDue(ctx)
 		if err != nil {
