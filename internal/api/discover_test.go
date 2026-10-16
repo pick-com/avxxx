@@ -84,15 +84,17 @@ func TestTrendingTagChips(t *testing.T) {
 }
 
 type stubSearchHistory struct {
-	saved   []string
+	keys    []string // normalized
+	saved   []string // as typed
 	cleared bool
 }
 
 func (s *stubSearchHistory) SearchHistory(context.Context, int64, int) ([]string, error) {
 	return s.saved, nil
 }
-func (s *stubSearchHistory) RecordSearch(_ context.Context, _ int64, q string) error {
-	s.saved = append([]string{q}, s.saved...)
+func (s *stubSearchHistory) RecordSearch(_ context.Context, _ int64, q, display string) error {
+	s.keys = append([]string{q}, s.keys...)
+	s.saved = append([]string{display}, s.saved...)
 	return nil
 }
 func (s *stubSearchHistory) ClearSearchHistory(context.Context, int64) (int64, error) {
@@ -114,6 +116,9 @@ func TestSearchHistoryRoutes(t *testing.T) {
 	if rec := do(mux, "POST", "/api/me/search-history", "good", `{"q":"  夜航  的人 "}`); rec.Code != 200 || len(hist.saved) != 1 || hist.saved[0] != "夜航 的人" {
 		t.Errorf("record: %d %v", rec.Code, hist.saved)
 	}
+	if rec := do(mux, "POST", "/api/me/search-history", "good", `{"q":" Summer  Ｎight "}`); rec.Code != 200 || hist.saved[0] != "Summer Ｎight" || hist.keys[0] != "summer night" || !strings.Contains(rec.Body.String(), `"q":"Summer Ｎight"`) {
+		t.Errorf("record as typed: %d %v %v %s", rec.Code, hist.saved, hist.keys, rec.Body)
+	}
 	for _, body := range []string{`{"q":"   "}`, `{"q":"` + strings.Repeat("x", 300) + `"}`, `{"query":"x"}`} {
 		if rec := do(mux, "POST", "/api/me/search-history", "good", body); rec.Code != 400 {
 			t.Errorf("%s: %d", body, rec.Code)
@@ -123,7 +128,7 @@ func TestSearchHistoryRoutes(t *testing.T) {
 	if rec.Code != 200 || !strings.Contains(rec.Body.String(), "夜航 的人") {
 		t.Errorf("list: %d %s", rec.Code, rec.Body)
 	}
-	if rec = do(mux, "DELETE", "/api/me/search-history", "good", ""); rec.Code != 200 || !hist.cleared || !strings.Contains(rec.Body.String(), `"deleted":1`) {
+	if rec = do(mux, "DELETE", "/api/me/search-history", "good", ""); rec.Code != 200 || !hist.cleared || !strings.Contains(rec.Body.String(), `"deleted":2`) {
 		t.Errorf("clear: %d %s", rec.Code, rec.Body)
 	}
 }

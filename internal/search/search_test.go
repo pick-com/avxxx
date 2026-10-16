@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 	"time"
+	"unicode/utf8"
 )
 
 func TestNormalizeQuery(t *testing.T) {
@@ -356,5 +357,23 @@ func TestRunner(t *testing.T) {
 	}
 	if len(f2.runs) != 2 || f2.runs[1].Result != audit.ResultFailed || f2.runs[0].Result != audit.ResultOK {
 		t.Errorf("failed runs %+v", f2.runs)
+	}
+}
+
+func TestDisplayQueryKeepsSpelling(t *testing.T) {
+	for in, want := range map[string]string{
+		"  Summer   Night ": "Summer Night",
+		"ＪＵＱ　743":           "ＪＵＱ 743",
+		"夜航":                "夜航",
+	} {
+		if got := DisplayQuery(in); got != want {
+			t.Errorf("DisplayQuery(%q) = %q, want %q", in, got, want)
+		}
+		if NormalizeQuery(DisplayQuery(in)) != NormalizeQuery(in) {
+			t.Errorf("%q: display and input normalize differently", in)
+		}
+	}
+	if got := DisplayQuery(strings.Repeat("A", MaxQueryRunes+5)); utf8.RuneCountInString(got) != MaxQueryRunes {
+		t.Errorf("not capped: %d runes", utf8.RuneCountInString(got))
 	}
 }

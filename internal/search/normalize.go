@@ -34,6 +34,18 @@ func NormalizeQuery(s string) string {
 	return s
 }
 
+// DisplayQuery is a query as the user typed it, for showing back (最近搜索):
+// case and width kept, every run of whitespace collapsed to one space,
+// trimmed, and cut to MaxQueryRunes runes. Two queries with the same
+// NormalizeQuery are the same search.
+func DisplayQuery(s string) string {
+	s = strings.Join(strings.Fields(s), " ")
+	if utf8.RuneCountInString(s) > MaxQueryRunes {
+		s = strings.TrimSpace(string([]rune(s)[:MaxQueryRunes]))
+	}
+	return s
+}
+
 // Meaningful reports whether a normalized query is long enough to keep
 // (at least MinQueryRunes runes).
 func Meaningful(q string) bool { return utf8.RuneCountInString(q) >= MinQueryRunes }

@@ -158,7 +158,7 @@ func TestAccountIntegration(t *testing.T) {
 	must(err)
 	_, err = s.Exec(ctx, `INSERT INTO release_reactions(release_id,voter_key,user_id,value) VALUES($1,$2,$3,1)`, exportRel, fmt.Sprintf("u:%d", uid), uid)
 	must(err)
-	must(s.RecordSearch(ctx, uid, "导出搜索"))
+	must(s.RecordSearch(ctx, uid, "导出搜索", ""))
 	_, err = s.Exec(ctx, `INSERT INTO consent_records(user_id,categories,source) VALUES($1,ARRAY['necessary'],'banner')`, uid)
 	must(err)
 	var buf bytes.Buffer
