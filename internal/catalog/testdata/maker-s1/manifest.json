@@ -1,0 +1,49 @@
+{
+  "source": "maker:s1",
+  "fixtures": [
+    {
+      "file": "listing_page1.html",
+      "url": "https://s1s1s1.com/works/date",
+      "entity": "discovery",
+      "origin": "synthetic"
+    },
+    {
+      "file": "listing_page2.html",
+      "url": "https://s1s1s1.com/works/date?page=2",
+      "entity": "discovery",
+      "origin": "synthetic"
+    },
+    {
+      "file": "release_sone00901.html",
+      "url": "https://s1s1s1.com/works/detail/sone00901",
+      "entity": "release",
+      "origin": "synthetic"
+    },
+    {
+      "file": "release_sone00900.html",
+      "url": "https://s1s1s1.com/works/detail/sone00900",
+      "entity": "release",
+      "origin": "synthetic"
+    },
+    {
+      "file": "release_abp00123_foreign.html",
+      "url": "https://s1s1s1.com/works/detail/abp00123",
+      "entity": "release",
+      "origin": "synthetic",
+      "expect": "skip"
+    },
+    {
+      "file": "actress_40001.html",
+      "url": "https://s1s1s1.com/actress/detail/40001",
+      "entity": "performer",
+      "origin": "synthetic"
+    },
+    {
+      "file": "actress_no_name.html",
+      "url": "https://s1s1s1.com/actress/detail/1",
+      "entity": "performer",
+      "origin": "synthetic",
+      "expect": "skip"
+    }
+  ]
+}

@@ -46,8 +46,11 @@ type Adapter interface {
 // credentials from the environment; unconfigured, it still parses fixtures
 // but refuses to build an HTTP client (HTTPClientFor -> ErrNotConfigured).
 // The ThePornDB adapter (THEPORNDB_API_TOKEN) behaves the same way.
+// The official maker catalogs ("maker:<slug>", maker.go) follow, one per
+// built-in profile; AdaptersFromEnv adds MAKER_PROFILES_FILE overrides.
 func Adapters() []Adapter {
-	return []Adapter{NewJAVDatabaseAdapter(), NewXCITYAdapter(), NewJavGuruAdapter(), NewDMMAdapter(), NewThePornDBAdapter()}
+	out := []Adapter{NewJAVDatabaseAdapter(), NewXCITYAdapter(), NewJavGuruAdapter(), NewDMMAdapter(), NewThePornDBAdapter()}
+	return append(out, builtinMakerAdapters()...)
 }
 
 // LookupAdapter is implemented by adapters that can look a release up by

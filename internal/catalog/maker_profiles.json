@@ -1,0 +1,73 @@
+{
+  "_comment": "Built-in official maker catalog profiles (adapter maker:<slug>, tier official_maker). Selectors were written against SYNTHETIC fixtures (testdata/maker-<slug>/README.md) and must be checked against saved real pages before a source is enabled. Override or add profiles with MAKER_PROFILES_FILE (same format, docs/MAKER_CATALOG.md).",
+  "profiles": [
+    {
+      "slug": "s1",
+      "maker": "S1 NO.1 STYLE",
+      "base_url": "https://s1s1s1.com",
+      "listing_url": "https://s1s1s1.com/works/date",
+      "listing_pattern": "^/works/date(\\?page=\\d+)?$",
+      "detail_pattern": "^/works/detail/([A-Za-z0-9_-]+)/?$",
+      "performer_pattern": "^/actress/detail/(\\d+)/?$",
+      "item_selector": ".p-worksList .item a[href]",
+      "next_selector": ".p-pagination a[rel='next']",
+      "code_pattern": "^(SONE|SSIS|SSNI|SNIS|SOE|OFJE|SIVR|SSPD)-\\d{3,}$",
+      "code_from_key": true,
+      "date_layouts": ["2006年1月2日", "2006/1/2", "2006-01-02"],
+      "release": {
+        "title": ".p-workPage__title",
+        "code": ".p-workPage__table .item:has(.th:containsOwn(\"品番\")) .td",
+        "release_date": ".p-workPage__table .item:has(.th:containsOwn(\"発売日\")) .td",
+        "runtime": ".p-workPage__table .item:has(.th:containsOwn(\"収録時間\")) .td",
+        "label": ".p-workPage__table .item:has(.th:containsOwn(\"レーベル\")) .td",
+        "series": ".p-workPage__table .item:has(.th:containsOwn(\"シリーズ\")) .td",
+        "director": ".p-workPage__table .item:has(.th:containsOwn(\"監督\")) .td",
+        "performers": ".p-workPage__table .item:has(.th:containsOwn(\"女優\")) .td a",
+        "genres": ".p-workPage__table .item:has(.th:containsOwn(\"ジャンル\")) .td a",
+        "cover": ".p-workPage__side img.swiper-lazy@data-src"
+      },
+      "performer": {
+        "name": ".p-profile__title .name",
+        "name_romaji": ".p-profile__title .romaji",
+        "birth_date": ".p-profile__info tr:has(th:containsOwn(\"誕生日\")) td",
+        "height": ".p-profile__info tr:has(th:containsOwn(\"身長\")) td",
+        "measurements": ".p-profile__info tr:has(th:containsOwn(\"スリーサイズ\")) td",
+        "birth_place": ".p-profile__info tr:has(th:containsOwn(\"出身地\")) td"
+      }
+    },
+    {
+      "slug": "ideapocket",
+      "maker": "IDEA POCKET",
+      "base_url": "https://ideapocket.com",
+      "listing_url": "https://ideapocket.com/works/date",
+      "listing_pattern": "^/works/date(\\?page=\\d+)?$",
+      "detail_pattern": "^/works/detail/([A-Za-z0-9_-]+)/?$",
+      "performer_pattern": "^/actress/detail/(\\d+)/?$",
+      "item_selector": ".p-worksList .item a[href]",
+      "next_selector": ".p-pagination a[rel='next']",
+      "code_pattern": "^(IPZZ|IPX|IPZ|IPTD|IDBD|IPVR|SUPD)-\\d{3,}$",
+      "code_from_key": true,
+      "date_layouts": ["2006年1月2日", "2006/1/2", "2006-01-02"],
+      "release": {
+        "title": ".p-workPage__title",
+        "code": ".p-workPage__table .item:has(.th:containsOwn(\"品番\")) .td",
+        "release_date": ".p-workPage__table .item:has(.th:containsOwn(\"発売日\")) .td",
+        "runtime": ".p-workPage__table .item:has(.th:containsOwn(\"収録時間\")) .td",
+        "label": ".p-workPage__table .item:has(.th:containsOwn(\"レーベル\")) .td",
+        "series": ".p-workPage__table .item:has(.th:containsOwn(\"シリーズ\")) .td",
+        "director": ".p-workPage__table .item:has(.th:containsOwn(\"監督\")) .td",
+        "performers": ".p-workPage__table .item:has(.th:containsOwn(\"女優\")) .td a",
+        "genres": ".p-workPage__table .item:has(.th:containsOwn(\"ジャンル\")) .td a",
+        "cover": ".p-workPage__side img.swiper-lazy@data-src"
+      },
+      "performer": {
+        "name": ".p-profile__title .name",
+        "name_romaji": ".p-profile__title .romaji",
+        "birth_date": ".p-profile__info tr:has(th:containsOwn(\"誕生日\")) td",
+        "height": ".p-profile__info tr:has(th:containsOwn(\"身長\")) td",
+        "measurements": ".p-profile__info tr:has(th:containsOwn(\"スリーサイズ\")) td",
+        "birth_place": ".p-profile__info tr:has(th:containsOwn(\"出身地\")) td"
+      }
+    }
+  ]
+}
