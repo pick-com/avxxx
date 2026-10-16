@@ -98,7 +98,8 @@ func TestAdminReleaseIntegration(t *testing.T) {
 	var relID int64
 	must(s.QueryRow(ctx, `SELECT release_id FROM release_identifiers WHERE identifier_value=$1`, code).Scan(&relID))
 
-	// ---- ResolveConflict: ingest conflicts have NULL current_value and parser field names.
+	// ---- ResolveConflict: ingest conflicts carry parser field names and the
+	// field-policy winner as current_value (equal tiers: lower source id wins).
 	conflictFor := func(field string) int64 {
 		t.Helper()
 		var id int64
@@ -106,8 +107,8 @@ func TestAdminReleaseIntegration(t *testing.T) {
 		return id
 	}
 	titleConflict, makerConflict := conflictFor("title"), conflictFor("maker")
-	if n := count(`SELECT count(*) FROM field_conflicts WHERE id=$1 AND current_value IS NULL`, titleConflict); n != 1 {
-		t.Fatalf("ingest conflict should have NULL current_value")
+	if n := count(`SELECT count(*) FROM field_conflicts WHERE id=$1 AND current_value #>> '{}' = 'Alpha Title'`, titleConflict); n != 1 {
+		t.Fatalf("ingest conflict should carry the policy winner as current_value")
 	}
 	res, err := s.ResolveConflict(ctx, titleConflict, 0, json.RawMessage(`"Admin Title"`), "verified on maker site", "alice")
 	must(err)

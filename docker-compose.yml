@@ -48,6 +48,9 @@ services:
     command: ["/usr/local/bin/scraper"]
     environment:
       DATABASE_URL: ${DATABASE_URL:-postgres://avxxx:avxxx@db:5432/avxxx?sslmode=disable}
+      # Contact URL or email in the crawler User-Agent; empty disables catalog crawls.
+      CATALOG_CONTACT: ${CATALOG_CONTACT:-}
+      CATALOG_USER_AGENT: ${CATALOG_USER_AGENT:-}
     depends_on:
       db:
         condition: service_healthy

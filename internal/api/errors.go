@@ -60,7 +60,10 @@ func errorStatus(e error) (int, string) {
 	var ce *store.ConflictError
 	var ve *store.ValidationError
 	var ae *store.AgeGateError
+	var gr *store.GateRefusal
 	switch {
+	case errors.As(e, &gr):
+		return http.StatusConflict, gr.Error()
 	case errors.As(e, &he):
 		return he.status, he.msg
 	case errors.As(e, &ce):
