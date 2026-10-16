@@ -1,0 +1,103 @@
+/* Compliance back office: /admin/legal (versions, editor, diff),
+   /admin/takedowns (queue with SLA, ticket detail), /admin/feedback. */
+
+.adm-diff {
+  margin: 0;
+  padding: 8px 0;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--bg);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12px;
+  line-height: 1.6;
+  max-height: 480px;
+  overflow: auto;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.adm-diff-line {
+  display: block;
+  padding: 0 10px;
+}
+
+.adm-diff-line.add {
+  background: var(--adm-green-bg, rgba(46, 160, 67, 0.15));
+}
+
+.adm-diff-line.del {
+  background: var(--adm-red-bg, rgba(248, 81, 73, 0.15));
+  text-decoration: line-through;
+  text-decoration-color: var(--faint);
+}
+
+.adm-diff-line::before {
+  display: inline-block;
+  width: 1.5em;
+  color: var(--faint);
+  content: ' ';
+}
+
+.adm-diff-line.add::before {
+  content: '+';
+}
+
+.adm-diff-line.del::before {
+  content: '-';
+}
+
+.adm-editor {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.adm-editor textarea.body {
+  min-height: 360px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 13px;
+}
+
+.adm-row-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+
+.adm-sla {
+  white-space: nowrap;
+}
+
+.adm-quote {
+  margin: 0;
+  padding: 8px 12px;
+  border-left: 3px solid var(--line2);
+  background: var(--surface);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font-size: 13px;
+}
+
+.adm-urls {
+  margin: 0;
+  padding-left: 18px;
+  font-size: 13px;
+  overflow-wrap: anywhere;
+}
+
+.adm-events {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 13px;
+}
+
+.adm-events li {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 10px;
+}

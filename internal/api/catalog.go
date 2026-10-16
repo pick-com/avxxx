@@ -136,7 +136,7 @@ func (srv *Server) releaseBySlug(w http.ResponseWriter, r *http.Request) {
 	}
 	v, err := srv.store.ReleaseDetailBySlug(r.Context(), r.PathValue("slug"))
 	if err != nil {
-		reply(w, nil, err)
+		srv.replyMissingRelease(w, r, err)
 		return
 	}
 	one := []model.Release{v.Release}

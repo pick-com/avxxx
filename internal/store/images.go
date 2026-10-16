@@ -349,37 +349,13 @@ func mediaEventState(a images.Asset) map[string]any {
 // and writes review_events 'media_suppress'. The purge job deletes the
 // objects after the retention window. Unknown asset: pgx.ErrNoRows.
 func (s *Store) SuppressMediaAsset(ctx context.Context, id int64, reason, actor string) (EntityMedia, error) {
-	reason = strings.TrimSpace(reason)
-	if reason == "" {
-		return EntityMedia{}, invalid("reason is required")
-	}
-	if len(reason) > MaxReasonLen {
-		return EntityMedia{}, invalid("reason too long")
-	}
 	tx, err := s.Begin(ctx)
 	if err != nil {
 		return EntityMedia{}, err
 	}
 	defer tx.Rollback(ctx)
-	orig, err := mediaOriginal(ctx, tx, id)
+	orig, err := suppressMediaTx(ctx, tx, id, reason, actor)
 	if err != nil {
-		return EntityMedia{}, err
-	}
-	before := mediaEventState(orig)
-	if _, err = tx.Exec(ctx, `UPDATE media_assets SET suppressed_at=COALESCE(suppressed_at,now()),suppressed_reason=COALESCE(suppressed_reason,$2)
-		WHERE id=$1 OR derived_from=$1`, orig.ID, reason); err != nil {
-		return EntityMedia{}, err
-	}
-	if _, err = tx.Exec(ctx, `INSERT INTO media_blocks(entity_type,entity_id,asset_type,reason,actor) VALUES($1,$2,$3,$4,$5)
-		ON CONFLICT (entity_type,entity_id,asset_type) DO NOTHING`, orig.EntityType, orig.EntityID, orig.AssetType, reason, actor); err != nil {
-		return EntityMedia{}, err
-	}
-	if orig, err = mediaOriginal(ctx, tx, orig.ID); err != nil {
-		return EntityMedia{}, err
-	}
-	after := mediaEventState(orig)
-	after["blocked"] = true
-	if err = writeReviewEvent(ctx, tx, orig.EntityType, orig.EntityID, "media_suppress", before, after, reason, actor); err != nil {
 		return EntityMedia{}, err
 	}
 	if err = tx.Commit(ctx); err != nil {
@@ -388,54 +364,92 @@ func (s *Store) SuppressMediaAsset(ctx context.Context, id int64, reason, actor 
 	return s.EntityMedia(ctx, orig.EntityType, orig.EntityID)
 }
 
+// suppressMediaTx is SuppressMediaAsset inside the caller's transaction
+// (copyright takedowns suppress through it); it returns the original.
+func suppressMediaTx(ctx context.Context, tx pgx.Tx, id int64, reason, actor string) (images.Asset, error) {
+	reason = strings.TrimSpace(reason)
+	if reason == "" {
+		return images.Asset{}, invalid("reason is required")
+	}
+	if len(reason) > MaxReasonLen {
+		return images.Asset{}, invalid("reason too long")
+	}
+	orig, err := mediaOriginal(ctx, tx, id)
+	if err != nil {
+		return orig, err
+	}
+	before := mediaEventState(orig)
+	if _, err = tx.Exec(ctx, `UPDATE media_assets SET suppressed_at=COALESCE(suppressed_at,now()),suppressed_reason=COALESCE(suppressed_reason,$2)
+		WHERE id=$1 OR derived_from=$1`, orig.ID, reason); err != nil {
+		return orig, err
+	}
+	if _, err = tx.Exec(ctx, `INSERT INTO media_blocks(entity_type,entity_id,asset_type,reason,actor) VALUES($1,$2,$3,$4,$5)
+		ON CONFLICT (entity_type,entity_id,asset_type) DO NOTHING`, orig.EntityType, orig.EntityID, orig.AssetType, reason, actor); err != nil {
+		return orig, err
+	}
+	if orig, err = mediaOriginal(ctx, tx, orig.ID); err != nil {
+		return orig, err
+	}
+	after := mediaEventState(orig)
+	after["blocked"] = true
+	return orig, writeReviewEvent(ctx, tx, orig.EntityType, orig.EntityID, "media_suppress", before, after, reason, actor)
+}
+
 // RestoreMediaAsset undoes SuppressMediaAsset while the rows still exist
 // (before the purge), lifts the block and writes review_events
 // 'media_restore'. A performer with an approved remove_photo request
 // cannot have photos restored here.
 func (s *Store) RestoreMediaAsset(ctx context.Context, id int64, reason, actor string) (EntityMedia, error) {
-	reason = strings.TrimSpace(reason)
-	if reason == "" {
-		return EntityMedia{}, invalid("reason is required")
-	}
-	if len(reason) > MaxReasonLen {
-		return EntityMedia{}, invalid("reason too long")
-	}
 	tx, err := s.Begin(ctx)
 	if err != nil {
 		return EntityMedia{}, err
 	}
 	defer tx.Rollback(ctx)
-	orig, err := mediaOriginal(ctx, tx, id)
+	orig, err := restoreMediaTx(ctx, tx, id, reason, actor)
 	if err != nil {
-		return EntityMedia{}, err
-	}
-	if orig.EntityType == images.EntityPerformer {
-		var approved bool
-		if err = tx.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM performer_requests WHERE performer_id=$1 AND kind='remove_photo' AND status='approved')`,
-			orig.EntityID).Scan(&approved); err != nil {
-			return EntityMedia{}, err
-		}
-		if approved {
-			return EntityMedia{}, invalid("the performer has an approved remove_photo request")
-		}
-	}
-	before := mediaEventState(orig)
-	if _, err = tx.Exec(ctx, `UPDATE media_assets SET suppressed_at=NULL,suppressed_reason=NULL,retained_until=NULL WHERE id=$1 OR derived_from=$1`, orig.ID); err != nil {
-		return EntityMedia{}, err
-	}
-	if _, err = tx.Exec(ctx, `DELETE FROM media_blocks WHERE entity_type=$1 AND entity_id=$2 AND asset_type=$3`, orig.EntityType, orig.EntityID, orig.AssetType); err != nil {
-		return EntityMedia{}, err
-	}
-	if orig, err = mediaOriginal(ctx, tx, orig.ID); err != nil {
-		return EntityMedia{}, err
-	}
-	if err = writeReviewEvent(ctx, tx, orig.EntityType, orig.EntityID, "media_restore", before, mediaEventState(orig), reason, actor); err != nil {
 		return EntityMedia{}, err
 	}
 	if err = tx.Commit(ctx); err != nil {
 		return EntityMedia{}, err
 	}
 	return s.EntityMedia(ctx, orig.EntityType, orig.EntityID)
+}
+
+// restoreMediaTx is RestoreMediaAsset inside the caller's transaction
+// (a counter-notice restores through it); it returns the original.
+func restoreMediaTx(ctx context.Context, tx pgx.Tx, id int64, reason, actor string) (images.Asset, error) {
+	reason = strings.TrimSpace(reason)
+	if reason == "" {
+		return images.Asset{}, invalid("reason is required")
+	}
+	if len(reason) > MaxReasonLen {
+		return images.Asset{}, invalid("reason too long")
+	}
+	orig, err := mediaOriginal(ctx, tx, id)
+	if err != nil {
+		return orig, err
+	}
+	if orig.EntityType == images.EntityPerformer {
+		var approved bool
+		if err = tx.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM performer_requests WHERE performer_id=$1 AND kind='remove_photo' AND status='approved')`,
+			orig.EntityID).Scan(&approved); err != nil {
+			return orig, err
+		}
+		if approved {
+			return orig, invalid("the performer has an approved remove_photo request")
+		}
+	}
+	before := mediaEventState(orig)
+	if _, err = tx.Exec(ctx, `UPDATE media_assets SET suppressed_at=NULL,suppressed_reason=NULL,retained_until=NULL WHERE id=$1 OR derived_from=$1`, orig.ID); err != nil {
+		return orig, err
+	}
+	if _, err = tx.Exec(ctx, `DELETE FROM media_blocks WHERE entity_type=$1 AND entity_id=$2 AND asset_type=$3`, orig.EntityType, orig.EntityID, orig.AssetType); err != nil {
+		return orig, err
+	}
+	if orig, err = mediaOriginal(ctx, tx, orig.ID); err != nil {
+		return orig, err
+	}
+	return orig, writeReviewEvent(ctx, tx, orig.EntityType, orig.EntityID, "media_restore", before, mediaEventState(orig), reason, actor)
 }
 
 // SourceImagePolicy is a source's image policy and the resulting decision.

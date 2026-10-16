@@ -58,8 +58,11 @@ type playConfigResponse struct {
 	// PeakCurve is the curve to show when danmaku is on: 70% danmaku + 30%
 	// replay rate when both exist, otherwise whichever exists, else null.
 	PeakCurve []int16 `json:"peak_curve"`
-	Subtitles []any   `json:"subtitles"`
-	Chapters  []any   `json:"chapters"`
+	// RegionBlocked: sources exist but none is licensed for ?region= (the
+	// player shows the region state instead of "no source").
+	RegionBlocked bool  `json:"region_blocked,omitempty"`
+	Subtitles     []any `json:"subtitles"`
+	Chapters      []any `json:"chapters"`
 }
 
 var regionCode = regexp.MustCompile(`^[A-Za-z]{2}$`)
@@ -99,11 +102,12 @@ func servePlayConfig(w http.ResponseWriter, r *http.Request, ps playbackStore) {
 	plan := store.PlanPlayback(rel, all, region, quality)
 	rel.DurationSeconds = plan.DurationSeconds
 	resp := playConfigResponse{
-		Release:   rel,
-		Sources:   plan.Sources,
-		Danmaku:   map[string]any{"enabled": true, "segment_ms": danmakuSegmentMS},
-		Subtitles: []any{},
-		Chapters:  []any{},
+		Release:       rel,
+		Sources:       plan.Sources,
+		Danmaku:       map[string]any{"enabled": true, "segment_ms": danmakuSegmentMS},
+		Subtitles:     []any{},
+		Chapters:      []any{},
+		RegionBlocked: plan.RegionBlocked,
 	}
 	resp.DanmakuCurve, resp.Danmaku["alt_curves"] = danmakuCurves(r.Context(), ps, rel.ID, plan.Sources)
 	resp.ReplayCurve = replayCurve(r.Context(), ps, rel.ID)

@@ -10,7 +10,8 @@ import {Switch} from './Switch';
 // CookieBanner (desktop) / MobileConsent (phone: the same banner pinned above
 // the tab bar, preferences as a bottom sheet). Shown on first visit; until the
 // visitor chooses only necessary storage is used (there is no analytics or ad
-// script yet, so nothing else has to be held back).
+// script yet, so nothing else has to be held back). Every choice is also
+// recorded server-side (lib/consent: consent_records).
 
 type Cat = {key: keyof ConsentChoice | 'necessary'; title: MessageKey; desc: MessageKey};
 const CATS: Cat[] = [
@@ -52,10 +53,10 @@ export function CookieBanner() {
             <button type="button" className="btn btn-secondary" onClick={openPrefs}>
               {t('cookie.custom')}
             </button>
-            <button type="button" className="btn btn-secondary" onClick={() => save(ALL_OFF)}>
+            <button type="button" className="btn btn-secondary" onClick={() => save(ALL_OFF, 'banner')}>
               {t('cookie.necessaryOnly')}
             </button>
-            <button type="button" className="btn btn-primary" onClick={() => save(ALL_ON)}>
+            <button type="button" className="btn btn-primary" onClick={() => save(ALL_ON, 'banner')}>
               {t('cookie.acceptAll')}
             </button>
           </div>

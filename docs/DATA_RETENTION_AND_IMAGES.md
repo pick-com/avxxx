@@ -46,13 +46,16 @@
 | 原始事件 | 90 天（PRD 14.5，`events` 按月分区） | 既有 |
 | 聚合结果（曲线、日报） | 长期 | 既有 |
 | 账号关联数据 | 注销后 30 天内删除（PRD 14.5）。图片不含用户数据，不受影响 | 账号模块（不在本文范围） |
+| Cookie 同意记录 `consent_records` | 只追加；随账号删除。**[法务]** 保存期限、注销后是否保留为同意证明（见 [COMPLIANCE.md](COMPLIANCE.md)） | 未自动清理 |
+| 反馈 `feedback`（含可选邮箱） | **[法务]** 保存期限待定 | 未自动清理 |
+| 版权投诉 `takedown_requests`（投诉人 / 反通知人联系方式） | **[法务]** 保存期限待定 | 未自动清理 |
 | 数据库备份 | 7 日 + 4 周（PRODUCTION_OPERATIONS.md）；对象存储不做版本化，删除即生效。**[法务]** 备份里残留的已下架元数据是否可接受 | 运维 |
 
 ## 4. 下架如何传到图片
 
 | 触发 | 效果 |
 | --- | --- |
-| 版权投诉（PRD 15：24 h 内暂时下架） | 管理员把作品改为 `unpublished`（或屏蔽单张图）。公开接口和 `/api/images/` 立即不再返回；24 h 后对象删除。恢复上架后由 `media_fetch` 重新下载 |
+| 版权投诉（PRD 15：24 h 内暂时下架） | 在 `/admin/takedowns` 对投诉编号执行「下架作品」（作品改为 `unpublished`，前台返回 451）或「屏蔽图片」（见 [COMPLIANCE.md](COMPLIANCE.md)）。公开接口和 `/api/images/` 立即不再返回；24 h 后对象删除。恢复上架后由 `media_fetch` 重新下载 |
 | 演员 `remove_photo` 请求批准 | 既有逻辑把该演员 `avatar`/`gallery` 全部置 `suppressed_at`；`media_fetch` 以后不再为此演员下载照片（以批准的请求为准，永久生效）；24 h 后对象删除 |
 | 管理员屏蔽单张图 `POST /api/admin/media/{id}/suppress` | 原图和派生图一起屏蔽，写 `media_blocks`，之后不再为该实体该类型下载；写 `review_events`（`media_suppress`，含操作人） |
 | 管理员恢复 `POST /api/admin/media/{id}/restore` | 未清理前可恢复；删除 `media_blocks`；写 `review_events`（`media_restore`） |

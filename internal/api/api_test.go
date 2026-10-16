@@ -254,6 +254,32 @@ var expectedRoutes = []string{
 	"POST /api/me/deletion",
 	"GET /api/me/interests",
 	"PUT /api/me/interests",
+	// Consent records (consent.go).
+	"POST /api/consent",
+	"GET /api/me/consent",
+	// Legal documents (legal.go).
+	"GET /api/legal/terms/current-version",
+	"GET /api/legal/{kind}",
+	"GET /api/legal/{kind}/versions",
+	"GET /api/admin/legal",
+	"POST /api/admin/legal",
+	"GET /api/admin/legal/{id}",
+	"PUT /api/admin/legal/{id}",
+	"POST /api/admin/legal/{id}/publish",
+	"GET /api/admin/legal/{id}/diff",
+	// Feedback (feedback.go).
+	"POST /api/feedback",
+	"GET /api/admin/feedback",
+	"POST /api/admin/feedback/{id}/status",
+	// Copyright takedowns (takedowns.go).
+	"POST /api/takedowns",
+	"GET /api/takedowns/{ticket}",
+	"POST /api/takedowns/{ticket}/counter",
+	"GET /api/admin/takedowns",
+	"GET /api/admin/takedowns/{id}",
+	"POST /api/admin/takedowns/{id}/status",
+	"POST /api/admin/takedowns/{id}/actions",
+	"POST /api/admin/takedowns/{id}/restore",
 	// 赞 / 踩 and comments (interactions.go, moderation.go).
 	"POST /api/admin/moderation/comments/{id}/action",
 	"GET /api/releases/{slug}/reaction",

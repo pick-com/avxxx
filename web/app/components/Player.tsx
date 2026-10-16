@@ -132,7 +132,9 @@ export function Player({slug, releaseId, title, resumeAt, startAt, onBack, theat
   const config = useAsync(signal => getPlayConfig(slug, signal, quality), [slug, quality]);
   const configEntries = useMemo(() => entriesFromConfig(config.data), [config.data]);
   const mode: 'pending' | 'config' | 'legacy' = config.loading ? 'pending' : configEntries.length > 0 ? 'config' : 'legacy';
-  const info = useAsync(signal => getPlayback(slug, signal), [slug], mode === 'legacy');
+  // Sources exist but none is licensed for the viewer's region (PRD 15): no legacy fallback.
+  const regionBlocked = config.data?.region_blocked === true;
+  const info = useAsync(signal => getPlayback(slug, signal), [slug], mode === 'legacy' && !regionBlocked);
   const [entries, setEntries] = useState<PlayEntry[]>([]);
   const [current, setCurrent] = useState(0);
   const [failure, setFailure] = useState('');
@@ -1030,6 +1032,12 @@ export function Player({slug, releaseId, title, resumeAt, startAt, onBack, theat
                 {entry.provider ? t('player.goPartner', {provider: entry.provider}) : t('player.openInNewTab')}
                 <Icon name="external" size={16} />
               </a>
+            </div>
+          ) : regionBlocked ? (
+            <div className="player-state" role="status">
+              <Icon name="lock" size={28} />
+              <strong>{t('player.unavailable')}</strong>
+              <span>{t('player.regionBlocked')}</span>
             </div>
           ) : mode === 'legacy' && info.error ? (
             <div className="player-state">

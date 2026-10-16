@@ -93,6 +93,9 @@ type Server struct {
 	// routes (home.go); homeCache holds their short-lived public responses.
 	home      homeStore
 	homeCache *respCache
+	// compliance backs consent records, legal documents, feedback and
+	// copyright takedowns (consent.go, legal.go, feedback.go, takedowns.go).
+	compliance complianceStore
 	// interactions backs 赞 / 踩 and comments (interactions.go);
 	// commentsOff is COMMENTS_ENABLED=false (comment routes answer 404).
 	interactions interactionStore
@@ -177,6 +180,7 @@ func Register(mux *http.ServeMux, s *store.Store, mediaHandler *media.Handler) {
 		srv.setupImages(s)
 		srv.home = s
 		srv.homeCache = newRespCache()
+		srv.compliance = s
 		srv.interactions = s
 	}
 	srv.commentsOff = !commentsEnabled(os.Getenv("COMMENTS_ENABLED"))
@@ -220,6 +224,10 @@ func (srv *Server) routes() []route {
 	rs = append(rs, srv.playlistRoutes()...)
 	rs = append(rs, srv.homeRoutes()...)
 	rs = append(rs, srv.adminOpsRoutes()...)
+	rs = append(rs, srv.consentRoutes()...)
+	rs = append(rs, srv.legalRoutes()...)
+	rs = append(rs, srv.feedbackRoutes()...)
+	rs = append(rs, srv.takedownRoutes()...)
 	rs = append(rs, srv.interactionRoutes()...)
 	return srv.followMerges(rs)
 }

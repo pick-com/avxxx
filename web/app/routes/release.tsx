@@ -53,6 +53,8 @@ type ReleaseLoad = {
   credits?: Attribution[];
   /** 404 / 410: not published, held, removed or unknown. */
   missing?: boolean;
+  /** 451: held down by a copyright takedown (rendered with status 451, not 404). */
+  legal?: boolean;
   /** The API failed: render the loading state and let the browser retry. */
   unavailable?: boolean;
 };
@@ -75,6 +77,7 @@ export async function loader({params, request}: LoaderFunctionArgs) {
     return {lang, slug, release, performers: cast.items ?? [], credits} satisfies ReleaseLoad;
   } catch (e) {
     if (e instanceof Response) throw e;
+    if (e instanceof ApiError && e.status === 451) return data({lang, slug, missing: true, legal: true} satisfies ReleaseLoad, {status: 451});
     if (isGone(e)) return data({lang, slug, missing: true} satisfies ReleaseLoad, {status: 404});
     console.error('release loader', slug, e);
     return data({lang, slug, unavailable: true} satisfies ReleaseLoad, {status: 503});
@@ -227,15 +230,16 @@ export default function ReleasePage() {
   };
 
   if (detail.error || missingOnServer) {
-    const missing = missingOnServer || (detail.error instanceof ApiError && detail.error.status === 404);
+    const legal = !!own?.legal || (detail.error instanceof ApiError && detail.error.status === 451);
+    const missing = missingOnServer || legal || (detail.error instanceof ApiError && detail.error.status === 404);
     return (
       <div className="page">
         {missing ? (
           <EmptyState
             icon="film"
-            title={t('release.unavailableTitle')}
-            body={t('release.unavailableBody')}
-            actions={[{to: '/', label: t('error.backHome')}, {to: '/discover?tab=new', label: t('release.seeNew'), primary: false}]}
+            title={t(legal ? 'release.takenDownTitle' : 'release.unavailableTitle')}
+            body={t(legal ? 'release.takenDownBody' : 'release.unavailableBody')}
+            actions={[{to: '/', label: t('error.backHome')}, legal ? {to: '/copyright?tab=counter', label: t('release.takenDownCounter'), primary: false} : {to: '/discover?tab=new', label: t('release.seeNew'), primary: false}]}
           />
         ) : (
           <ErrorBanner error={detail.error!} onRetry={detail.reload} />

@@ -552,6 +552,8 @@ export type PlayConfig = {
   peak_curve?: number[] | null;
   /** Chapters of the main timeline (tech plan 3.3: start_ms, title); empty until release_assets land. */
   chapters?: {start_ms?: number; start_seconds?: number; title?: string}[] | null;
+  /** Sources exist but none is licensed for ?region= (PRD 15 地区限制). */
+  region_blocked?: boolean;
 };
 
 /**
