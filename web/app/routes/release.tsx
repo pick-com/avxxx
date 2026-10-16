@@ -308,6 +308,7 @@ export default function ReleasePage() {
           releaseId={release?.id}
           title={release?.canonical_title ?? ''}
           resumeAt={resumeAt}
+          resumePending={status === 'unknown' || (status === 'user' && history.loading)}
           startAt={startAt}
           onBack={back}
           theater={theater}
