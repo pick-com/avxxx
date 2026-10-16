@@ -4,6 +4,7 @@ import {Avatar, ReleaseRow, SectionHeader} from '../components/Cards';
 import {Icon} from '../components/Icon';
 import {PerformerHoverCard, PerformerSheet} from '../components/PerformerPeek';
 import {Player} from '../components/Player';
+import {Community} from '../components/Ratings';
 import {LaterButton, ReserveButton} from '../components/SocialButtons';
 import {BlockSkeleton, CardGridSkeleton, EmptyState, ErrorBanner} from '../components/States';
 import {getFavorites, getPerformerReleases, getWatchLater, getRelease, getReleasePerformers, getWatchHistory, setFavorite, type Performer, type ReleaseDetail} from '../lib/api';
@@ -165,6 +166,8 @@ export default function ReleasePage() {
             </div>
 
             <ReleaseMeta release={release} />
+
+            <Community slug={release.slug} releaseId={release.id} watched={!!resumeAt && resumeAt > 0} />
 
             {performers.length > 0 && (
               <section className="cast">

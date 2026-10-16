@@ -1,8 +1,10 @@
 // Typed client for the Go API (cmd/api/main.go). All paths are relative to /api.
 //
 // Token rule (tech plan 2.6): the admin token is sent only to `admin/*`, the
-// user token only to `me/*`, `auth/me` and play-config (for `resume`). Every
-// other endpoint is public and gets no Authorization header. Tokens stay in
+// user token only to `me/*`, `auth/me`, play-config (for `resume`) and the
+// community routes (danmaku, rating, reviews, reports: posting needs it, reads
+// add the caller's own state). Every other endpoint is public and gets no
+// Authorization header. Tokens stay in
 // localStorage until cookie sessions land (tech plan 3.6).
 //
 // Several endpoints exist only on newer backends (catalog-filters, play-config,
@@ -50,10 +52,12 @@ export class ApiError extends Error {
 
 // play-config is public, but a user token adds `resume` (tech plan 3.3).
 const PLAY_CONFIG_PATH = /^releases\/[^/?]+\/play-config(\?|$)/;
+// Community routes (internal/api/community.go).
+const COMMUNITY_PATH = /^(releases\/[^/?]+\/(danmaku|rating|reviews)|danmaku\/\d+\/report|reviews\/\d+(\/(like|report))?|reports)(\?|$)/;
 
 function tokenFor(path: string): string | null {
   if (path.startsWith('admin/')) return tokens.admin();
-  if (path.startsWith('me/') || path === 'auth/me' || PLAY_CONFIG_PATH.test(path)) return tokens.user();
+  if (path.startsWith('me/') || path === 'auth/me' || PLAY_CONFIG_PATH.test(path) || COMMUNITY_PATH.test(path)) return tokens.user();
   return null;
 }
 
@@ -104,7 +108,7 @@ export function setContentLang(lang: string | null) {
 }
 
 const LOCALIZED_PATH = /^(releases|performers|catalog\/search)(\/|\?|$)/;
-const UNLOCALIZED_PATH = /\/(play-config|playback)(\?|$)/;
+const UNLOCALIZED_PATH = /\/(play-config|playback|danmaku|rating|reviews)(\?|$)/;
 const isLocalizedPath = (path: string) => LOCALIZED_PATH.test(path) && !UNLOCALIZED_PATH.test(path);
 
 function withLang(path: string): string {
@@ -150,11 +154,12 @@ type RequestOptions = {
   body?: unknown;
   signal?: AbortSignal;
   keepalive?: boolean;
+  headers?: Record<string, string>;
 };
 
 export async function api<T>(path: string, options: RequestOptions = {}): Promise<T> {
   const clean = withLang(path.replace(/^\/+/, '').replace(/^api\//, ''));
-  const headers = new Headers({Accept: 'application/json'});
+  const headers = new Headers({...options.headers, Accept: 'application/json'});
   const token = tokenFor(clean);
   if (token) headers.set('Authorization', `Bearer ${token}`);
   if (options.body !== undefined) headers.set('Content-Type', 'application/json');
@@ -402,9 +407,13 @@ export type PlaySource = {
   priority: number;
 };
 export type PlayConfig = {
-  release: {slug: string; title: string; duration_seconds: number | null};
+  release: {id?: number; slug: string; title: string; duration_seconds: number | null};
   sources: PlaySource[];
   resume: {source_id: number; position_seconds: number} | null;
+  /** enabled, segment_ms, alt_curves (peak curves of alternate versions keyed by source id). */
+  danmaku?: {enabled?: boolean; segment_ms?: number; alt_curves?: Record<string, number[] | null> | null} | null;
+  /** 高能波峰 of the main timeline (PRD 5.5.1): 200 values 0-255, null under 50 valid danmaku. */
+  danmaku_curve?: number[] | null;
 };
 
 /**
