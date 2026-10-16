@@ -1,6 +1,6 @@
 # 设计稿 × PRD × 技术方案对齐表
 
-日期：2026-10-15
+日期：2026-10-15；状态列更新于 2026-10-16（#109 之后）
 范围：设计稿「视频网站设计」全部 70 个画板（67 个页面 + 3 个组件）、`docs/PRD.md`（rev 25）、`docs/PRODUCT_REVIEW_AND_TECH_PLAN.md`
 
 70 个画板全部有 PRD 章节对应，全部已落到技术方案。逐项对齐后发现 3 类问题：**定位冲突 1 项**（需决策）、**PRD 与设计稿不一致 9 项**、**技术方案原先缺失或与 PRD 数值不符 21 项**（本次已补进技术方案第 3.13–3.14 节）。
@@ -22,6 +22,8 @@ PRD 把 REEL 定位为面向大众的视频站：第 15 节「不面向 13 岁�
 
 技术方案第 2.2 节的合规评审是按成人站写的；本表按 PRD 的大众视频站对齐。选成人站时，`AgeGate`、青少年模式、广告品类三处要按技术方案第 2.2 节改。
 
+**已决策（2026-10-16）：成人站。** 进站 18+ 自我声明，不做青少年模式；`AgeGate` 正在按此实现，PRD 第 15 节与第 2 节 #8 由该实现分支更新。广告品类随广告方案另定。
+
 ---
 
 ## 2 PRD 与设计稿不一致的地方
@@ -42,7 +44,7 @@ PRD 把 REEL 定位为面向大众的视频站：第 15 节「不面向 13 岁�
 
 ## 3 逐画板对齐表
 
-状态：**已覆盖** = 技术方案原已覆盖；**已补充** = 本次补进技术方案；**需决策** = 见第 1、2 节；**降级** = 授权嵌入/外链模式下做不全。
+状态：**已实现** = 代码已合并（括号内为 PR 号）；**部分** = 已合并部分功能，余下的见 [IMPLEMENTATION_GAPS.md](IMPLEMENTATION_GAPS.md)；**未实现** / **进行中** 同字面；**已覆盖** = 技术方案原已覆盖；**已补充** = 本次补进技术方案；**需决策** = 见第 1、2 节；**降级** = 授权嵌入/外链模式下做不全。
 
 ### 3.1 组件与总览
 
@@ -52,49 +54,49 @@ PRD 把 REEL 定位为面向大众的视频站：第 15 节「不面向 13 岁�
 | `TopBar` | 4.1、8 | 搜索框、外观切换、通知角标、语言切换、登录态 | 3.10、3.13 外观；`GET /api/me/notifications/unread-count` | Alpha | 已补充 |
 | `SideNav` | 7 | 主导航、我的、关注的演员带新作红点、访客登录卡 | 3.13 `follows.last_seen_at` 算红点 | Beta | 已补充 |
 | `BrowseRail` | 3 | 侧栏折叠为图标栏 | 纯前端 | Alpha | 已覆盖 |
-| `AdminNav` | 11 | 后台导航，含「夜间任务」 | 3.11、3.13 夜间任务页 | Alpha | 已补充 |
+| `AdminNav` | 11 | 后台导航，含「夜间任务」 | 3.11、3.13 夜间任务页 | Alpha | 已实现：「夜间任务」`/admin/jobs`（#108） |
 
 ### 3.2 发现
 
 | 画板 | PRD | 关键功能 | 技术方案落点 | 阶段 | 状态 |
 |---|---|---|---|---|---|
-| `NavHome` | 4.1 | 主推横幅（运营排期 + 推荐补位）、chips、继续观看、为你推荐、关注演员新作、热门演员 | `home_slots`、`/api/recs?slot=home`、`watch_history` | Alpha（个性化行 V1） | 已覆盖 |
+| `NavHome` | 4.1 | 主推横幅（运营排期 + 推荐补位）、chips、继续观看、为你推荐、关注演员新作、热门演员 | `home_slots`、`/api/recs?slot=home`、`watch_history` | Alpha（个性化行 V1） | 已实现：主推横幅、编辑精选、公告条（#98，`home_slots` 迁移 038，`/admin/ops` 排期） |
 | `NavHomeLight` | 8 | 浅色主题 | 3.13 外观 | Beta | 已补充 |
-| `NavHomeVisitor` | 20 | 访客首页：本周热门 / 新上线 / 高分短片 | `/api/recs` 访客分支 | Alpha | 已覆盖 |
-| `NavTrending` | 4.2 | 今日 / 本周 / 本月 / 年度榜，每小时更新，排名升降，演员热度榜，热搜词 | 3.13 `trending_snapshots` 每小时任务 | Alpha | 已补充 |
-| `NavNew` | 4.3 | 即将上线 + 预约，按日期分组，只看关注的演员 | 3.13 `releases.status='upcoming'` + `scheduled_at`；`reservations` | Beta | 已补充 |
-| `NavCategories` | 4.4 | 类型方块、时长 / 年代 / 语言筛选、标签云 | 3.4 分面查询；标签计数缓存 | Alpha | 已覆盖 |
-| `Browse` | 4.5 | 联想、演员卡 + 视频、8 种筛选、4 种排序、跨语言结果 | 3.4；跨语言向量见第 4 节差异 | Alpha | 已覆盖 |
-| `Tonight` | 18 | 时长 / 感觉 / 和谁看，一次一部，理由 + 静音预告，换一个 / 稍后看 / 看过了，保留最近 3 个 | 3.5 `slot=tonight`；预告需片段地址 | V1 | 已覆盖；预告降级 |
+| `NavHomeVisitor` | 20 | 访客首页：本周热门 / 新上线 / 高分短片 | `/api/recs` 访客分支 | Alpha | 已实现：高分短片（#98，`GET /api/home/top-rated-short`） |
+| `NavTrending` | 4.2 | 今日 / 本周 / 本月 / 年度榜，每小时更新，排名升降，演员热度榜，热搜词 | 3.13 `trending_snapshots` 每小时任务 | Alpha | 已覆盖；类型筛选 chips（#101） |
+| `NavNew` | 4.3 | 即将上线 + 预约，按日期分组，只看关注的演员 | 3.13 `releases.status='upcoming'` + `scheduled_at`；`reservations` | Beta | 已实现：`GET /api/upcoming` 按日分组、只看关注、预约（#101） |
+| `NavCategories` | 4.4 | 类型方块、时长 / 年代 / 语言筛选、标签云 | 3.4 分面查询；标签计数缓存 | Alpha | 已实现：类型方块与分面（#101，`GET /api/catalog/facets`） |
+| `Browse` | 4.5 | 联想、演员卡 + 视频、8 种筛选、4 种排序、跨语言结果 | 3.4；跨语言向量见第 4 节差异 | Alpha | 已实现：类型 tab 计数与分面筛选（#101）；无结果近似匹配修复（#109）；跨语言向量见第 4 节 |
+| `Tonight` | 18 | 时长 / 感觉 / 和谁看，一次一部，理由 + 静音预告，换一个 / 稍后看 / 看过了，保留最近 3 个 | 3.5 `slot=tonight`；预告需片段地址 | V1 | 已覆盖；预告降级（无预告字段）；「想要 / 和谁看」无后端字段，只在前端（`web/app/routes/tonight.tsx`） |
 | `MobileHome` | 4.1、9 | 底部 4 Tab、继续观看、信息流、迷你播放器 | 3.13 前端播放器常驻 | Alpha | 已补充 |
 | `MobileHomeLight` | 8 | 浅色 | 3.13 外观 | Beta | 已补充 |
-| `MobileHomeVisitor` | 20 | 访客首页 | 同 `NavHomeVisitor` | Alpha | 已覆盖 |
-| `MobileDiscover` | 9 | 今晚看什么入口、即将上线预约、热门 / 新上线 / 分类 / 演员子标签 | 复用桌面接口 | Alpha | 已覆盖 |
+| `MobileHomeVisitor` | 20 | 访客首页 | 同 `NavHomeVisitor` | Alpha | 已实现：同 `NavHomeVisitor`（#98） |
+| `MobileDiscover` | 9 | 今晚看什么入口、即将上线预约、热门 / 新上线 / 分类 / 演员子标签 | 复用桌面接口 | Alpha | 已实现：即将上线 tab（#101） |
 | `MobileSearch` | 4.5 | 结果页、筛选 | 3.4 | Alpha | 已覆盖 |
-| `MobileSearchTyping` | 4.5 | 最近搜索（可清除）、大家都在搜、分类型联想（含即将上线） | 3.13 `user_search_history`；热搜来自 `search_queries` | Alpha | 已补充 |
+| `MobileSearchTyping` | 4.5 | 最近搜索（可清除）、大家都在搜、分类型联想（含即将上线） | 3.13 `user_search_history`；热搜来自 `search_queries` | Alpha | 已实现：`user_search_history` 账号同步最近搜索（#101） |
 | `MobileTonight` | 18 | 左滑换一个、上滑详情 | 同 `Tonight` | V1 | 已覆盖 |
 
 ### 3.3 播放
 
 | 画板 | PRD | 关键功能 | 技术方案落点 | 阶段 | 状态 |
 |---|---|---|---|---|---|
-| `Video` | 5.1–5.4 | 播放器（雪碧图预览、章节分段、CC、弹幕开关、倍速、画中画）、赞 / 踩 / 收藏 / 稍后看 / 分享、章节截屏、片源行、信息、主演悬停卡、评论、接下来播放 + 自动连播 | 3.3 `play-config`；3.13 赞踩、分享、评论、连播 | Alpha（评论 V1.1） | 已补充；章节截屏降级 |
+| `Video` | 5.1–5.4 | 播放器（雪碧图预览、章节分段、CC、弹幕开关、倍速、画中画）、赞 / 踩 / 收藏 / 稍后看 / 分享、章节截屏、片源行、信息、主演悬停卡、评论、接下来播放 + 自动连播 | 3.3 `play-config`；3.13 赞踩、分享、评论、连播 | Alpha（评论 V1.1） | 已实现：赞 / 踩、评论、分享 `?t=`（#102）；章节截屏、雪碧图未做（缺媒体，`web/app/components/Player.tsx`） |
 | `VideoLight` | 8 | 浅色，播放器固定深色 | 3.13 外观 | Beta | 已补充 |
 | `MobileVideo` | 5 | ±10 秒、章节、片源摘要、主演、接下来播放 | 同 `Video` | Alpha | 已覆盖 |
 | `MobileSources` | 5.2 | 片源 / 清晰度 / 字幕 / 音轨 / 倍速，线路自动，切换保进度 | 3.3 选源规则 | Alpha | 已覆盖；「会员」标签见第 2 节 #7 |
-| `MobilePlayerFull` | 5.1 | 亮度 / 音量 / 双击 ±10 秒 / 长按 2× / 拖进度、章节、选集 | 前端手势 | Alpha | 已覆盖 |
-| `DanmakuPlayer` | 5.5 | 发送、设置、列表、举报、高能波峰 | 3.8；3.14 波峰按 PRD 200 桶 | V1 | 已补充 |
+| `MobilePlayerFull` | 5.1 | 亮度 / 音量 / 双击 ±10 秒 / 长按 2× / 拖进度、章节、选集 | 前端手势 | Alpha | 已实现：「选集」抽屉（#109，`web/app/components/Episodes.tsx`） |
+| `DanmakuPlayer` | 5.5 | 发送、设置、列表、举报、高能波峰 | 3.8；3.14 波峰按 PRD 200 桶 | V1 | 已实现：语言过滤、个人屏蔽词、密度（#109，迁移 045） |
 | `MobileDanmaku` | 5.5 | 横屏弹幕 | 同上 | V1 | 已覆盖 |
 | `Ratings` | 19 | 1–5 星（显示 10 分制）、短评 140 字、剧透折叠、最有用排序、点赞、观看进度标注 | 3.8 按 PRD 规则修订 | V1 | 已补充 |
 | `MobileRatings` | 19 | 半屏评分面板 | 同上 | V1 | 已覆盖 |
-| `States` | 12 | 无结果、空状态、骨架屏 > 300ms、自动换源、断网横幅、下架 / 地区不可播 | 3.3 失败切换；地区过滤 | Alpha | 已覆盖 |
+| `States` | 12 | 无结果、空状态、骨架屏 > 300ms、自动换源、断网横幅、下架 / 地区不可播 | 3.3 失败切换；地区过滤 | Alpha | 已覆盖；下架 451 与地区不可播（#103，`region_blocked`） |
 
 ### 3.4 演员
 
 | 画板 | PRD | 关键功能 | 技术方案落点 | 阶段 | 状态 |
 |---|---|---|---|---|---|
-| `Actor` | 6.1 | 主照片、多语言名、统计（作品 / 总播放 / 粉丝 / 30 天热度）、资料、照片集、作品筛选（主演 / 客串 / 出演年龄）、随机播放全部、相似演员 + 理由 | `performer_similar`；3.13 `release_performers.role_type`、演员统计 | Alpha | 已补充 |
-| `NavActors` | 6.2 | 推荐演员大卡 + 理由、换一批、筛选（国籍 / 活跃年代 / 擅长类型 / 作品语言）、排序（热度 / 作品数 / 粉丝 / 新晋）、悬停详情 | `/api/recs?slot=performers`；3.13 演员统计 | Alpha（推荐大卡 V1） | 已补充 |
+| `Actor` | 6.1 | 主照片、多语言名、统计（作品 / 总播放 / 粉丝 / 30 天热度）、资料、照片集、作品筛选（主演 / 客串 / 出演年龄）、随机播放全部、相似演员 + 理由 | `performer_similar`；3.13 `release_performers.role_type`、演员统计 | Alpha | 已实现：统计、别名、主演 / 客串筛选、随机播放（#101，`performer_stats`）；照片集未做（缺媒体） |
+| `NavActors` | 6.2 | 推荐演员大卡 + 理由、换一批、筛选（国籍 / 活跃年代 / 擅长类型 / 作品语言）、排序（热度 / 作品数 / 粉丝 / 新晋）、悬停详情 | `/api/recs?slot=performers`；3.13 演员统计 | Alpha（推荐大卡 V1） | 已实现：热度 / 粉丝 / 新晋排序，年代 / 类型 / 语言筛选（#101）；国籍筛选无数据未做 |
 | `MobileActor` | 6.1 | 资料 / 照片 / 相似分页 | 同 `Actor` | Alpha | 已覆盖 |
 | `MobileActorSheet` | 6.3 | 半屏详情，视频继续播放 | 前端；复用演员接口 | Alpha | 已覆盖 |
 | `NewWorkAlert` | 17 | 关注铃铛三档、渠道、即将上线预约、合并与免打扰规则 | 3.7；`follows.notify_mode` | Beta | 已覆盖 |
@@ -104,53 +106,53 @@ PRD 把 REEL 定位为面向大众的视频站：第 15 节「不面向 13 岁�
 
 | 画板 | PRD | 关键功能 | 技术方案落点 | 阶段 | 状态 |
 |---|---|---|---|---|---|
-| `Account` | 7 | 邮箱 / Google / Apple、记住我、忘记密码、先逛逛、条款同意 | 3.6；3.13 `terms_acceptances` | Beta | 已补充 |
-| `NavHistory` | 7 | 按日期分组、未看完 / 已看完、单条删除、暂停记录、清除全部 | 3.13 `user_settings.history_paused`、删除接口 | Alpha | 已补充 |
-| `NavLater` | 7 | 手动排序、全部播放 / 随机、看完自动移出、移到收藏夹 | 3.13 `watch_later.position` | Beta | 已补充 |
-| `NavFavorites` | 7 | 多个收藏夹，私密 / 公开 / 链接可见，分享 | 3.13 `playlists.visibility`、`share_token` | Beta | 已补充 |
+| `Account` | 7 | 邮箱 / Google / Apple、记住我、忘记密码、先逛逛、条款同意 | 3.6；3.13 `terms_acceptances` | Beta | 已实现：记住我、忘记密码、条款同意、Google / Apple（#100）；OAuth 待真实凭据 |
+| `NavHistory` | 7 | 按日期分组、未看完 / 已看完、单条删除、暂停记录、清除全部 | 3.13 `user_settings.history_paused`、删除接口 | Alpha | 已实现：筛选、单条删除、清除、暂停（#99） |
+| `NavLater` | 7 | 手动排序、全部播放 / 随机、看完自动移出、移到收藏夹 | 3.13 `watch_later.position` | Beta | 已实现：移到收藏夹、看完自动移出（#99） |
+| `NavFavorites` | 7 | 多个收藏夹，私密 / 公开 / 链接可见，分享 | 3.13 `playlists.visibility`、`share_token` | Beta | 已实现：多收藏夹、私密 / 链接 / 公开、分享（#99，迁移 036） |
 | `MobileLibrary` | 7 | 我的：记录、稍后看、收藏夹、关注、设置入口 | 复用 | Alpha | 已覆盖 |
-| `MobileFollowing` | 7、9 | 关注演员动态流（新作 / 即将上线），按演员筛选 | 3.13 `GET /api/me/following/feed` | Beta | 已补充 |
+| `MobileFollowing` | 7、9 | 关注演员动态流（新作 / 即将上线），按演员筛选 | 3.13 `GET /api/me/following/feed` | Beta | 已实现：按演员筛选（#99） |
 | `Notifications` | 7 | 4 类通知、按类筛选、全部已读 | 3.7；3.13 收藏更新通知 | Beta | 已补充 |
-| `Onboarding` | 20 | 语言与外观 → 选 ≥ 3 类型 → 关注演员 | 3.13 `user_interests` | Beta | 已补充 |
+| `Onboarding` | 20 | 语言与外观 → 选 ≥ 3 类型 → 关注演员 | 3.13 `user_interests` | Beta | 部分：兴趣写入 `user_interests`（#100），尚未用于冷启动推荐（`web/app/routes/welcome.tsx`） |
 | `MobileOnboarding` | 20 | 第 3 步换成推送授权 | 3.7 Web Push | Beta | 已覆盖 |
-| `Settings` | 20 | 账号（设备列表、第三方、注销）、播放（画质、省流、连播倒计时、跳过片头、记住倍速）、语言、通知（渠道 / 时机 / 每日上限 / 免打扰）、隐私（记录、推荐、广告偏好、兴趣标签、屏蔽广告类别）、青少年模式 | 3.13 设备与会话、数据导出、片头标注、兴趣标签 | Beta | 已补充 |
+| `Settings` | 20 | 账号（设备列表、第三方、注销）、播放（画质、省流、连播倒计时、跳过片头、记住倍速）、语言、通知（渠道 / 时机 / 每日上限 / 免打扰）、隐私（记录、推荐、广告偏好、兴趣标签、屏蔽广告类别）、青少年模式 | 3.13 设备与会话、数据导出、片头标注、兴趣标签 | Beta | 部分：设备会话、第三方、注销、导出、提醒时机、每日上限、个性化开关（#100）；跳过片头缺片头标注，广告偏好待广告决策，不做青少年模式（`web/app/routes/settings.tsx`） |
 | `MobileSettings` | 20 | 手机设置 | 同上 | Beta | 已覆盖 |
-| `WatchStats` | 20 | 时长、看完数、完播率、常看演员 / 类型、时段热力、连续天数 | 3.13 夜间聚合 `user_watch_daily` | V1.1 | 已补充 |
+| `WatchStats` | 20 | 时长、看完数、完播率、常看演员 / 类型、时段热力、连续天数 | 3.13 夜间聚合 `user_watch_daily` | V1.1 | 已实现：`user_watch_daily`、`/me/stats`（#105，迁移 043） |
 | `I18n` | 8 | 三层语言、URL 前缀、回退、翻译表、跨语言搜索、Intl 格式、字体、RTL 预留 | 3.10 | Beta | 已覆盖；界面文字随前端内置 en / ja / ko / vi / es / th 译文（`web/app/locales`，`npm run i18n:check` 校验），已审核的 `ui_strings` 覆盖其上；zh-TW 只来自 `ui_strings` |
 
 ### 3.6 合规
 
 | 画板 | PRD | 关键功能 | 技术方案落点 | 阶段 | 状态 |
 |---|---|---|---|---|---|
-| `CookieBanner` | 15 | 首访横幅、四类 Cookie、GPC | `consent_records`（迁移 041，服务端记录 + 跨设备同步） | Beta | 已覆盖 |
-| `MobileConsent` | 15 | 手机版 | 同上 | Beta | 已覆盖 |
-| `AgeGate` | 15 | 分级视频按次确认出生年月、24 小时不可改、青少年模式时段与时长、家长密码 | `age_verifications`；3.13 青少年模式 | Beta | 需决策（第 2 节 #8） |
-| `CopyrightForm` | 15 | 侵权通知、反通知、演员信息更正入口、编号查询 | `takedown_requests`（迁移 041，`/copyright`、`/admin/takedowns`、451 页） | V1 前（关卡 3） | 已覆盖 |
-| `LegalPage` | 15 | 法律文本多语言、历史版本、页脚链接（帮助、反馈、片源报错、合作） | 3.13 `legal_documents`、`feedback`（迁移 041，`/admin/legal`、`/help`、`/feedback`） | Beta | 已覆盖 |
+| `CookieBanner` | 15 | 首访横幅、四类 Cookie、GPC | `consent_records`（迁移 041，服务端记录 + 跨设备同步） | Beta | 已实现（#103）：`consent_records`（迁移 041，服务端记录 + 跨设备同步） |
+| `MobileConsent` | 15 | 手机版 | 同上 | Beta | 已实现（#103） |
+| `AgeGate` | 15 | 分级视频按次确认出生年月、24 小时不可改、青少年模式时段与时长、家长密码 | `age_verifications`；3.13 青少年模式 | Beta | 进行中：改为进站 18+ 自我声明，不做青少年模式（见第 1 节） |
+| `CopyrightForm` | 15 | 侵权通知、反通知、演员信息更正入口、编号查询 | `takedown_requests`（迁移 041，`/copyright`、`/admin/takedowns`、451 页） | V1 前（关卡 3） | 已实现（#103）：`takedown_requests`（迁移 041，`/copyright`、`/admin/takedowns`、451 页） |
+| `LegalPage` | 15 | 法律文本多语言、历史版本、页脚链接（帮助、反馈、片源报错、合作） | 3.13 `legal_documents`、`feedback`（迁移 041，`/admin/legal`、`/help`、`/feedback`） | Beta | 已实现（#103）：`legal_documents`、`feedback`（迁移 041，`/admin/legal`、`/help`、`/feedback`）；文本待律师定稿 |
 
 ### 3.7 变现
 
 | 画板 | PRD | 关键功能 | 技术方案落点 | 阶段 | 状态 |
 |---|---|---|---|---|---|
-| `AdPlacements` | 16.1 | 6 个广告位与频控 | 3.9 | 见第 2 节 #5 | 已覆盖 |
-| `AdDepth` | 16.2–16.6 | 按时长编排、按用户状态、激励广告、边界情况、品牌安全、SSAI 中插、可见度、实验护栏 | 3.9；3.13 实验框架 | 同上 | 已补充；SSAI 降级 |
-| `MobileAds` | 16 | 手机贴片、信息流广告、「为什么看到这个广告」 | 3.9 | 同上 | 已覆盖 |
-| `AdminAds` | 16 | 广告位开关、投放、素材审核、品类屏蔽 | 3.9 `ad_*` 表 | 同上 | 已覆盖 |
+| `AdPlacements` | 16.1 | 6 个广告位与频控 | 3.9 | 见第 2 节 #5 | 未实现，待产品决策（无 `ad_*` 表） |
+| `AdDepth` | 16.2–16.6 | 按时长编排、按用户状态、激励广告、边界情况、品牌安全、SSAI 中插、可见度、实验护栏 | 3.9；3.13 实验框架 | 同上 | 未实现，待产品决策（无广告与实验框架代码） |
+| `MobileAds` | 16 | 手机贴片、信息流广告、「为什么看到这个广告」 | 3.9 | 同上 | 未实现，待产品决策 |
+| `AdminAds` | 16 | 广告位开关、投放、素材审核、品类屏蔽 | 3.9 `ad_*` 表 | 同上 | 未实现，待产品决策 |
 
 ### 3.8 后台
 
 | 画板 | PRD | 关键功能 | 技术方案落点 | 阶段 | 状态 |
 |---|---|---|---|---|---|
-| `AdminDashboard` | 11 | 播放 / 日活 / 时长 / 完播、片源健康分、收录健康分、待处理、夜间任务表 | 3.11；3.13 `nightly_runs` | Alpha | 已补充；收录健康分来自 `npm run seo:check`（`nightly_runs` job `seo.check`） |
+| `AdminDashboard` | 11 | 播放 / 日活 / 时长 / 完播、片源健康分、收录健康分、待处理、夜间任务表 | 3.11；3.13 `nightly_runs` | Alpha | 部分：片源健康、收录健康分（`seo.check`）、待处理、夜间任务；播放 / 日活 / 时长 / 完播 KPI 无后端（`web/app/routes/admin-dashboard.tsx`） |
 | `AdminPipeline` | 11 | 7 个阶段、按阶段重试、来源接入（出口、成功率） | 现有 `sources` / `jobs` + 新阶段视图 | Alpha | 已覆盖；来源 B、C 见 PRD 第 15 节和第 2 节 #6；来源许可审核、手动建任务和 checkpoint 页面已实现（#88，`AdminSourceGovernance`） |
-| `AdminVideo` | 11、14.3 | 基本信息、片源优先级与健康、演员与出演年龄、多语言、截屏章节、发布（定时、地区、分级、推荐位、版权凭证）、修改记录、数据标签（留存 / 重看 / 跳过曲线） | 3.11；3.14 播放波峰聚合 | Alpha | 已补充 |
-| `AdminDedupe` | 11 | 视频：新片源 / 其他版本 / 不是重复；演员：合并为别名 / 不是同一人，301 跳转 | `identity_candidates`；3.13 `not_duplicate_pairs`、slug 重定向 | Alpha | 已补充 |
-| `AdminAudit` | 11 | 入库检查 + 夜间 8 条规则，按播放量排序，导出 CSV | 3.11 A5 | Alpha | 已覆盖；已实现 A 片源健康、C 元数据缺失、E 繁简与标题、H 收录检查（R-SEO，读 `seo.check` 报告）、G 统计重建（R-STATS：`reviews.likes`、`danmaku_curves.valid_count`、保留期内的 `search_query_daily` 按源重算并修复；热榜 plays 与 `release_curves` 只报告，年榜和保留期外的日报因原始事件 90 天清除只做单调 / 一致性检查）；B 水印、D 字幕、F 截屏缺数据，仍为桩 |
-| `AdminSearch` | 4.5、11 | 无结果词分类处理（补片、同义词、补英文标题、建预约页、加别名、跳帮助页）、修饰词、外部热点 | 3.4；3.13 `search_synonyms`、`search_redirects` | V1 | 已补充 |
-| `AdminOps` | 11 | 首页按天排期 + 自动补位、公告条（类型、语言 / 地区、定时）、举报（含时限）、版权投诉流程、弹幕与短评审核、刷分识别 | 3.8、3.11 | V1 | 已覆盖 |
-| `AdminUsers` | 11 | 用户检索与处罚、7 种角色矩阵、操作日志（含 IP）、双人审批、两步验证、登录失败锁定 | 3.6；角色数改为 7 | V1 | 已实现：`admin_users`（migration 042）、`internal/adminauth` 角色矩阵、`/api/admin` 路由权限表、双人审批、`admin_audit_log`、`/admin/users` `/admin/approvals` `/admin/oplog`；前台用户封禁 `user_bans` |
+| `AdminVideo` | 11、14.3 | 基本信息、片源优先级与健康、演员与出演年龄、多语言、截屏章节、发布（定时、地区、分级、推荐位、版权凭证）、修改记录、数据标签（留存 / 重看 / 跳过曲线） | 3.11；3.14 播放波峰聚合 | Alpha | 部分：推荐位、版权凭证（#108）；「数据标签」tab 未做（`GET /api/admin/releases/{id}/curves` 已有），截屏章节缺媒体 |
+| `AdminDedupe` | 11 | 视频：新片源 / 其他版本 / 不是重复；演员：合并为别名 / 不是同一人，301 跳转 | `identity_candidates`；3.13 `not_duplicate_pairs`、slug 重定向 | Alpha | 部分：对比面板缺实体摘要；视频只有一种合并（`web/app/routes/admin-dedupe.tsx`） |
+| `AdminAudit` | 11 | 入库检查 + 夜间 8 条规则，按播放量排序，导出 CSV | 3.11 A5 | Alpha | 已覆盖；已实现 A 片源健康、C 元数据缺失、E 繁简与标题、H 收录检查（R-SEO，读 `seo.check` 报告）、G 统计重建（#97，R-STATS：`reviews.likes`、`danmaku_curves.valid_count`、保留期内的 `search_query_daily` 按源重算并修复；热榜 plays 与 `release_curves` 只报告，年榜和保留期外的日报因原始事件 90 天清除只做单调 / 一致性检查）；B 水印、D 字幕、F 截屏缺数据，仍为桩 |
+| `AdminSearch` | 4.5、11 | 无结果词分类处理（补片、同义词、补英文标题、建预约页、加别名、跳帮助页）、修饰词、外部热点 | 3.4；3.13 `search_synonyms`、`search_redirects` | V1 | 已实现：补片、建预约页（#108）；同义词、跳转 |
+| `AdminOps` | 11 | 首页按天排期 + 自动补位、公告条（类型、语言 / 地区、定时）、举报（含时限）、版权投诉流程、弹幕与短评审核、刷分识别 | 3.8、3.11 | V1 | 已实现：首页排期与公告（#98）、评论审核（#102）、版权投诉（#103） |
+| `AdminUsers` | 11 | 用户检索与处罚、7 种角色矩阵、操作日志（含 IP）、双人审批、两步验证、登录失败锁定 | 3.6；角色数改为 7 | V1 | 已实现（#107）：`admin_users`（migration 042）、`internal/adminauth` 角色矩阵、`/api/admin` 路由权限表、双人审批、`admin_audit_log`、`/admin/users` `/admin/approvals` `/admin/oplog`；前台用户封禁 `user_bans` |
 | `AdminActors` | 6、17 | 信息完整度、即将上线作品、相似权重（预览后次日生效）、更正与隐藏申请（批准后重算） | 3.13 `release_performers` 即将上线、`similarity_weights` | Alpha | 已补充 |
-| `AdminI18n` | 8 | 翻译工作台、术语表、界面文字、状态计数 | 3.10；3.13 `glossary_terms`、`ui_strings` | Beta | 已补充 |
+| `AdminI18n` | 8 | 翻译工作台、术语表、界面文字、状态计数 | 3.10；3.13 `glossary_terms`、`ui_strings` | Beta | 已覆盖；机器翻译 provider 未选（`internal/i18n.Translator` 无实现） |
 
 ### 3.9 技术架构画板
 
