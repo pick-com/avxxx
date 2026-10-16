@@ -32,11 +32,13 @@ import (
 	"avxxx/internal/obs"
 	"avxxx/internal/store"
 	"crypto/hmac"
+	"crypto/rand"
 	"crypto/sha256"
 	"encoding/base64"
 	"fmt"
 	"log/slog"
 	"net/http"
+	"net/url"
 	"strconv"
 	"strings"
 	"time"
@@ -73,14 +75,34 @@ type ageGate struct {
 }
 
 // newAgeGate reads AGE_GATE_KEY; unset falls back to the development key
-// (logged), so a local api and web agree without configuration.
+// (logged), so a local api and web agree without configuration. On a public
+// https deployment (BASE_URL / PUBLIC_BASE_URL https, not localhost) the
+// well-known development key would let anyone forge an "ok" cookie, so it
+// fails closed instead: a random per-process key that no other process
+// shares, which keeps every visitor at the gate until AGE_GATE_KEY is set.
 func newAgeGate(getenv func(string) string) ageGate {
 	key := strings.TrimSpace(getenv("AGE_GATE_KEY"))
 	if key == "" {
+		if publicHTTPS(getenv("PUBLIC_BASE_URL")) || publicHTTPS(getenv("BASE_URL")) {
+			slog.Error("AGE_GATE_KEY is not set on a public https deployment: the age gate refuses every cookie until it is configured")
+			b := make([]byte, 32)
+			rand.Read(b)
+			return ageGate{key: b}
+		}
 		slog.Warn("AGE_GATE_KEY is not set: age gate cookies use the development key")
 		key = ageGateDevKey
 	}
 	return ageGate{key: []byte(key)}
+}
+
+// publicHTTPS reports whether base is an https URL for a non-local host.
+func publicHTTPS(base string) bool {
+	u, err := url.Parse(strings.TrimSpace(base))
+	if err != nil || u.Scheme != "https" {
+		return false
+	}
+	h := u.Hostname()
+	return h != "" && h != "localhost" && h != "127.0.0.1" && h != "::1" && !strings.HasSuffix(h, ".localhost") && !strings.HasSuffix(h, ".test")
 }
 
 func (g ageGate) mac(payload string) string {

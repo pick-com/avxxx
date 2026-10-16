@@ -126,7 +126,7 @@ PRD 把 REEL 定位为面向大众的视频站：第 15 节「不面向 13 岁�
 |---|---|---|---|---|---|
 | `CookieBanner` | 15 | 首访横幅、四类 Cookie、GPC | `consent_records`（迁移 041，服务端记录 + 跨设备同步） | Beta | 已实现（#103）：`consent_records`（迁移 041，服务端记录 + 跨设备同步） |
 | `MobileConsent` | 15 | 手机版 | 同上 | Beta | 已实现（#103） |
-| `AgeGate` | 15 | 分级视频按次确认出生年月、24 小时不可改、青少年模式时段与时长、家长密码 | `age_verifications`；3.13 青少年模式 | Beta | 进行中：改为进站 18+ 自我声明，不做青少年模式（见第 1 节） |
+| `AgeGate` | 15 | 分级视频按次确认出生年月、24 小时不可改、青少年模式时段与时长、家长密码 | `age_verifications`；3.13 青少年模式 | Beta | 已实现（#111）：进站 18+ 自我声明，签名 cookie，SSR 门禁，注册 / OAuth 需确认 18+，不做青少年模式 |
 | `CopyrightForm` | 15 | 侵权通知、反通知、演员信息更正入口、编号查询 | `takedown_requests`（迁移 041，`/copyright`、`/admin/takedowns`、451 页） | V1 前（关卡 3） | 已实现（#103）：`takedown_requests`（迁移 041，`/copyright`、`/admin/takedowns`、451 页） |
 | `LegalPage` | 15 | 法律文本多语言、历史版本、页脚链接（帮助、反馈、片源报错、合作） | 3.13 `legal_documents`、`feedback`（迁移 041，`/admin/legal`、`/help`、`/feedback`） | Beta | 已实现（#103）：`legal_documents`、`feedback`（迁移 041，`/admin/legal`、`/help`、`/feedback`）；文本待律师定稿 |
 

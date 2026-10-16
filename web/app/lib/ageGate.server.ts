@@ -8,16 +8,40 @@
 // Cookie value: v1.<ok|denied>.<expiry unix>.<base64url HMAC-SHA256(key, "v1.<verdict>.<expiry>")>.
 // A missing, malformed, tampered or expired cookie is `none`.
 
-import {createHmac, timingSafeEqual} from 'node:crypto';
+import {createHmac, randomBytes, timingSafeEqual} from 'node:crypto';
 import {isGateExempt, type GateState} from './ageGate';
 
 const COOKIE = 'ag';
 const DEV_KEY = 'avxxx-dev-age-gate-key';
 
+// publicHTTPS mirrors internal/api/agegate.go: an https base URL for a
+// non-local host means a real deployment, where the well-known DEV_KEY would
+// let anyone forge an "ok" cookie.
+function publicHTTPS(base: string | undefined): boolean {
+  try {
+    const u = new URL((base || '').trim());
+    const h = u.hostname;
+    return u.protocol === 'https:' && h !== '' && h !== 'localhost' && h !== '127.0.0.1' && h !== '[::1]' &&
+      !h.endsWith('.localhost') && !h.endsWith('.test');
+  } catch {
+    return false;
+  }
+}
+
 let warned = false;
+let failClosedKey: string | null = null;
 function key(): string {
   const k = (process.env.AGE_GATE_KEY || '').trim();
   if (k) return k;
+  if (publicHTTPS(process.env.PUBLIC_BASE_URL) || publicHTTPS(process.env.BASE_URL)) {
+    // Fail closed: a random per-process key no cookie can match, so every
+    // visitor stays at the gate until AGE_GATE_KEY is configured.
+    if (!failClosedKey) {
+      failClosedKey = randomBytes(32).toString('hex');
+      console.error('AGE_GATE_KEY is not set on a public https deployment: the age gate refuses every cookie until it is configured');
+    }
+    return failClosedKey;
+  }
   if (!warned) {
     warned = true;
     console.warn('AGE_GATE_KEY is not set: age gate cookies use the development key');

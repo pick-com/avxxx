@@ -8,7 +8,6 @@
 
 | 画板 | 缺什么 | 原因 | 证据 |
 |---|---|---|---|
-| `AgeGate` | 年龄确认没有挂到任何页面 | 进行中：定位已定为成人站，改为进站 18+ 自我声明，不做青少年模式（另一分支在实现） | `web/app/components/AgeGate.tsx:10`、`web/app/routes/release.tsx:164`、`web/app/routes/login.tsx:42` 的 TODO；没有 `age_verifications` 表 |
 
 ## 产品决策
 

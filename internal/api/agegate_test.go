@@ -247,3 +247,23 @@ func TestAccountAdultChecks(t *testing.T) {
 		t.Errorf("confirm under 18: %d", rec.Code)
 	}
 }
+
+func TestAgeGateKeyFailsClosedOnPublicHTTPS(t *testing.T) {
+	env := func(m map[string]string) func(string) string { return func(k string) string { return m[k] } }
+	dev := newAgeGate(env(map[string]string{"BASE_URL": "http://localhost:5173"}))
+	if string(dev.key) != ageGateDevKey {
+		t.Fatalf("local dev should use the development key")
+	}
+	for _, base := range []string{"https://javpick.com", "https://www.example.org/"} {
+		g := newAgeGate(env(map[string]string{"PUBLIC_BASE_URL": base}))
+		if string(g.key) == ageGateDevKey || len(g.key) != 32 {
+			t.Errorf("%s: public https must not use the development key", base)
+		}
+	}
+	if g := newAgeGate(env(map[string]string{"BASE_URL": "https://app.localhost"})); string(g.key) != ageGateDevKey {
+		t.Errorf("https on a .localhost host is still local development")
+	}
+	if g := newAgeGate(env(map[string]string{"AGE_GATE_KEY": "k", "BASE_URL": "https://javpick.com"})); string(g.key) != "k" {
+		t.Errorf("configured key must win")
+	}
+}
