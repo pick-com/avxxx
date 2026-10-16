@@ -1,6 +1,6 @@
 # AVXXX Roadmap 状态
 
-> 状态更新时间：2026-10-14
+> 状态更新时间：2026-10-15
 >
 > 当前基础能力完成度约为 **92%**。基础架构、目录采集、调度、WebApp 浏览、Javtiful 播放映射、审核后台、生产 smoke/备份和 Ansible 部署已经可运行，剩余工作主要集中在来源覆盖、分页增量执行、图片存储和正式生产验收。
 
@@ -41,7 +41,7 @@
 - [ ] 增加 unresolved identity candidate 生成和候选匹配
 - [ ] 增加合并、拆分和撤销合并操作
 - [x] 增加 checkpoint 和分页断点数据访问层
-- [ ] 将 checkpoint 接入每个目录 adapter 的分页执行流程
+- [x] 将 checkpoint 接入每个目录 adapter 的分页执行流程
 - [x] 目录批次成功后推进 discovery checkpoint
 
 ## 待完成
@@ -58,12 +58,12 @@
 
 ### 增量调度
 
-- [ ] cron 只创建任务，不直接执行抓取
+- [x] cron 只创建任务，不直接执行抓取
 - [ ] baseline 与日常增量任务隔离
-- [ ] 分页 cursor、水位和 checkpoint 推进
-- [ ] 来源级请求次数、字节预算和限速
-- [ ] 失败批次不推进 checkpoint
-- [ ] blocked 来源隔离，不影响其它来源队列
+- [x] 分页 cursor、水位和 checkpoint 推进
+- [x] 来源级请求次数、字节预算和限速
+- [x] 失败批次不推进 checkpoint
+- [x] blocked 来源隔离，不影响其它来源队列
 
 ### 数据质量和审核
 
@@ -109,7 +109,7 @@ JAV Database adapter 已接入 scraper，可完成发现、详情抓取、解析
 
 ### 阶段 4：多来源和增量采集 — 进行中
 
-已完成 JAV Database、XCITY、Jav.Guru adapter、scheduler、来源级 discovery interval 和 crawl policy API；仍需完成更多 adapter、checkpoint 实际分页接入、限速执行和来源级失败隔离。
+已完成 JAV Database、XCITY、Jav.Guru adapter、scheduler、来源级 discovery interval 和 crawl policy API，并已完成 checkpoint 分页接入、来源级页面/字节预算与限速、Retry-After 和 blocked 来源隔离；仍需完成更多 adapter 和 baseline/增量任务隔离。
 
 ### 阶段 5：用户 WebApp 和生产化 — 进行中
 
@@ -131,6 +131,6 @@ JAV Database adapter 已接入 scraper，可完成发现、详情抓取、解析
 **单来源目录采集：已完成**  
 **关系与冲突审核：已完成**  
 **多来源规模化采集：进行中**  
-**增量调度：基础能力已完成，分页执行未完成**  
+**增量调度：分页 checkpoint、预算限速和阻断隔离已完成，baseline/增量任务隔离未完成**  
 **WebApp 完整交付：主要浏览和审核流程已完成**  
 **生产化验收：基础检查、备份和恢复已完成，正式环境验收未完成**
