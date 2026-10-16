@@ -1,0 +1,10 @@
+{
+  "source": "dmm",
+  "fixtures": [
+    {"file": "itemlist_page1.json", "url": "https://api.dmm.com/affiliate/v3/ItemList?floor=videoa&hits=100&output=json&service=digital&site=FANZA&sort=date", "entity": "discovery", "origin": "synthetic"},
+    {"file": "itemlist_page2.json", "url": "https://api.dmm.com/affiliate/v3/ItemList?floor=videoa&hits=100&offset=101&output=json&service=digital&site=FANZA&sort=date", "entity": "discovery", "origin": "synthetic"},
+    {"file": "actresssearch.json", "url": "https://api.dmm.com/affiliate/v3/ActressSearch?hits=100&output=json&sort=-id", "entity": "discovery", "origin": "synthetic"},
+    {"file": "itemlist_page1.json", "url": "https://api.dmm.com/affiliate/v3/ItemList?floor=videoa&hits=100&output=json&service=digital&site=FANZA&sort=date", "entity": "release", "origin": "synthetic"},
+    {"file": "actresssearch.json", "url": "https://api.dmm.com/affiliate/v3/ActressSearch?hits=100&output=json&sort=-id", "entity": "performer", "origin": "synthetic"}
+  ]
+}

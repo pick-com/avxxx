@@ -2,7 +2,7 @@ ifneq (,$(wildcard .env))
 include .env
 export
 endif
-.PHONY: db-up seed-demo api scheduler scraper audit notifier web test test-integration build smoke backup check-alerts monitoring
+.PHONY: db-up seed-demo api scheduler scraper audit notifier web test test-integration fixturecheck build smoke backup check-alerts monitoring
 db-up:
 	docker compose up -d db
 seed-demo:
@@ -24,6 +24,9 @@ test:
 # Disposable postgres:17 container (random port, --rm); never touches DATABASE_URL or compose db.
 test-integration:
 	./scripts/test-integration.sh
+# Parser acceptance over recorded fixtures (no network); add -strict to enforce 20/100 per source.
+fixturecheck:
+	go run ./cmd/fixturecheck
 build:
 	go build ./cmd/...
 	cd web && npm run build

@@ -23,7 +23,7 @@ func htmlDoc(t *testing.T, name, url string) Document {
 // Regression: a javdatabase idol page whose first <h1> is the site logo
 // saved "JAV Japanese Porn Actress & Idol Database" as a performer.
 func TestJAVDatabasePerformerIgnoresSiteTitle(t *testing.T) {
-	doc := htmlDoc(t, "javdatabase_idol_sitetitle.html", "https://www.javdatabase.com/idols/sena-hashimoto/")
+	doc := htmlDoc(t, "javdatabase/performers/sena-hashimoto-sitetitle.html", "https://www.javdatabase.com/idols/sena-hashimoto/")
 	r, err := JAVDatabaseAdapter{}.Parse(context.Background(), doc, Performer)
 	if err != nil {
 		t.Fatal(err)
@@ -40,7 +40,7 @@ func TestJAVDatabasePerformerIgnoresSiteTitle(t *testing.T) {
 }
 
 func TestJAVDatabasePerformerLogoOnlyIsSkipped(t *testing.T) {
-	doc := htmlDoc(t, "javdatabase_idol_logo_only.html", "https://www.javdatabase.com/idols/whoever/")
+	doc := htmlDoc(t, "javdatabase/performers/logo-only.html", "https://www.javdatabase.com/idols/whoever/")
 	_, err := JAVDatabaseAdapter{}.Parse(context.Background(), doc, Performer)
 	if !errors.Is(err, ErrSkipRecord) {
 		t.Fatalf("err = %v, want ErrSkipRecord", err)
@@ -48,7 +48,7 @@ func TestJAVDatabasePerformerLogoOnlyIsSkipped(t *testing.T) {
 }
 
 func TestJavGuruReleaseCastIgnoresNavigation(t *testing.T) {
-	doc := htmlDoc(t, "javguru_release_nav.html", "https://jav.guru/12345/abc-001-example/")
+	doc := htmlDoc(t, "javguru/releases/abc-001-nav.html", "https://jav.guru/12345/abc-001-example/")
 	doc.FinalURL = "https://jav.guru/jav/12345/abc-001-example/"
 	r, err := JavGuruAdapter{}.Parse(context.Background(), doc, Release)
 	if err != nil {
@@ -91,14 +91,14 @@ func TestXCITYDetailKeyAndName(t *testing.T) {
 			t.Errorf("xcityClassify(%s) key = %q, want %q", raw, key, want)
 		}
 	}
-	recs, err := XCITYAdapter{}.Discover(context.Background(), htmlDoc(t, "xcity_idol_list.html", "https://xxx.xcity.jp/idol/"))
+	recs, err := XCITYAdapter{}.Discover(context.Background(), htmlDoc(t, "xcity/discovery/idol_list.html", "https://xxx.xcity.jp/idol/"))
 	if err != nil {
 		t.Fatal(err)
 	}
 	if len(recs) != 2 || recs[0].SourceKey != "1001" || recs[1].SourceKey != "1002" {
 		t.Fatalf("discover = %+v, want two idols keyed 1001 and 1002", recs)
 	}
-	r, err := XCITYAdapter{}.Parse(context.Background(), htmlDoc(t, "xcity_idol_detail.html", "https://xxx.xcity.jp/idol/detail/1001/"), Performer)
+	r, err := XCITYAdapter{}.Parse(context.Background(), htmlDoc(t, "xcity/performers/idol-detail-1001.html", "https://xxx.xcity.jp/idol/detail/1001/"), Performer)
 	if err != nil {
 		t.Fatal(err)
 	}

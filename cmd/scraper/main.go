@@ -8,9 +8,12 @@ import (
 	"avxxx/internal/store"
 	"context"
 	"errors"
+	"flag"
+	"fmt"
 	"github.com/jackc/pgx/v5"
 	"log/slog"
 	"net/http"
+	"os"
 	"os/signal"
 	"strconv"
 	"syscall"
@@ -18,9 +21,20 @@ import (
 )
 
 func main() {
+	dryRun := flag.Bool("dry-run", false, "fetch one discovery page with -adapter, print the mapped records as JSON and exit without touching the database")
+	dryAdapter := flag.String("adapter", "", "adapter name for -dry-run (e.g. dmm)")
+	dryURL := flag.String("url", "", "discovery URL for -dry-run (default: the adapter's seeded start URL, if it has one)")
+	flag.Parse()
 	obs.SetupLogging("scraper")
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
+	registry := newRegistry()
+	if *dryRun {
+		if e := dryRunCatalog(ctx, os.Stdout, registry, *dryAdapter, *dryURL, os.Getenv); e != nil {
+			obs.Fatal("dry run", e)
+		}
+		return
+	}
 	s, e := store.Open(ctx)
 	if e != nil {
 		obs.Fatal("open store", e)
@@ -30,22 +44,21 @@ func main() {
 	if e := obs.ServeMetrics(ctx, obs.MetricsAddr("127.0.0.1:9092")); e != nil {
 		obs.Fatal("metrics listener", e)
 	}
-	registry := catalog.NewRegistry()
-	if e := registry.Register(catalog.NewJAVDatabaseAdapter()); e != nil {
-		obs.Fatal("register adapter", e)
+	// The crawler identifies itself honestly, with a contact operators can
+	// use (CATALOG_CONTACT or CATALOG_USER_AGENT). Without one, catalog jobs
+	// fail with config_error; RSS feeds still run.
+	ua, uaErr := catalog.UserAgentFromEnv(os.Getenv)
+	if uaErr != nil {
+		slog.Warn("catalog crawls disabled", "err", uaErr)
 	}
-	if e := registry.Register(catalog.NewXCITYAdapter()); e != nil {
-		obs.Fatal("register adapter", e)
-	}
-	if e := registry.Register(catalog.NewJavGuruAdapter()); e != nil {
-		obs.Fatal("register adapter", e)
-	}
+	robots := catalog.NewRobots(&http.Client{Timeout: 20 * time.Second}, ua)
 	for ctx.Err() == nil {
 		if e := s.ReapExpired(ctx); e != nil {
 			obs.JobClaimErrors.WithLabelValues("crawl", "reap").Inc()
 			slog.Error("reap expired jobs", "err", e)
 		}
-		id, source, e := s.Claim(ctx)
+		job, e := s.Claim(ctx)
+		id, source := job.ID, job.Source
 		if errors.Is(e, pgx.ErrNoRows) {
 			select {
 			case <-ctx.Done():
@@ -63,7 +76,7 @@ func main() {
 			continue
 		}
 		start := time.Now()
-		jl := slog.With("job_id", id, "kind", "crawl", "source_id", source.ID, "adapter", source.Adapter)
+		jl := slog.With("job_id", id, "kind", "crawl", "phase", job.Phase, "source_id", source.ID, "adapter", source.Adapter)
 		fetchCtx, stopHeartbeat := context.WithCancel(obs.WithLogger(ctx, jl))
 		doneHeartbeat := make(chan struct{})
 		go func() {
@@ -86,7 +99,11 @@ func main() {
 		var items []model.Item
 		var cause error
 		if source.Adapter != "" && source.Adapter != "rss" {
-			cause = runCatalog(fetchCtx, s, registry, source)
+			if uaErr != nil {
+				cause = &catalog.GateError{Code: catalog.CodeConfig, Reason: uaErr.Error()}
+			} else {
+				cause = runCatalog(fetchCtx, s, registry, job, ua, robots)
+			}
 		} else {
 			items, cause = scraper.Fetch(fetchCtx, source)
 			obs.CrawlRecords.WithLabelValues(strconv.FormatInt(source.ID, 10)).Add(float64(len(items)))
@@ -109,42 +126,92 @@ func main() {
 	}
 }
 
-func runCatalog(ctx context.Context, st *store.Store, registry *catalog.Registry, source model.Source) error {
+// newRegistry registers every catalog adapter (catalog.Adapters). Adapters
+// that need credentials (dmm) are registered even when unconfigured; their
+// jobs then fail with a clear "not configured" config_error instead of
+// crashing the worker.
+func newRegistry() *catalog.Registry {
+	registry := catalog.NewRegistry()
+	for _, a := range catalog.Adapters() {
+		if e := registry.Register(a); e != nil {
+			obs.Fatal("register adapter", e, "adapter", a.Name())
+		}
+	}
+	return registry
+}
+
+func runCatalog(ctx context.Context, st *store.Store, registry *catalog.Registry, job store.ClaimedJob, ua string, robots *catalog.Robots) error {
+	source := job.Source
 	adapter, ok := registry.Get(source.Adapter)
 	if !ok {
 		return errors.New("unknown catalog adapter: " + source.Adapter)
 	}
-	policy, exhausted, err := st.FetchPolicy(ctx, source.ID)
+	policy, err := st.FetchPolicy(ctx, source.ID, job.Phase)
 	if err != nil {
 		return err
 	}
 	sid := strconv.FormatInt(source.ID, 10)
 	jl := obs.L(ctx)
-	if exhausted {
+	if policy.Exhausted {
 		obs.CrawlBudgetExhausted.WithLabelValues(sid).Inc()
 		jl.Info("daily request budget exhausted; skipping run")
 		return nil
 	}
-	policy.MaxRetryWait = maxInlineRetryWait
-	fetcher := catalog.NewFetcher(&http.Client{Timeout: 30 * time.Second}, policy)
+	redactor, _ := adapter.(catalog.Redactor)
+	client, err := catalog.HTTPClientFor(adapter, &http.Client{Timeout: 30 * time.Second})
+	if err != nil {
+		// Not configured (e.g. DMM credentials missing): a config_error that
+		// the queue does not retry; nothing was fetched.
+		return &catalog.GateError{Code: catalog.CodeConfig, Reason: fmt.Sprintf("source %d (%s): %v", source.ID, source.Adapter, err)}
+	}
+	policy.Fetch.MaxRetryWait = maxInlineRetryWait
+	fetcher := catalog.NewFetcher(client, policy.Fetch)
+	fetcher.UserAgent, fetcher.Robots, fetcher.Automatic = ua, robots, job.Phase.Automatic()
 	crawl := &catalog.Crawl{
 		SourceID:    source.ID,
 		StartURL:    source.URL,
+		Phase:       job.Phase,
 		Adapter:     adapter,
 		Fetcher:     fetcher,
 		Checkpoints: store.CatalogCheckpoints{S: st},
 		Sink:        st,
+		MaxPages:    policy.MaxPages,
+	}
+	var report *catalog.ParseReport
+	if job.Phase == catalog.PhaseVerify {
+		// Verify jobs never write to the catalog: they parse into a report
+		// stored on the job for the admin to review.
+		report = catalog.NewParseReport(adapter.Name(), 10)
+		crawl.Sink, crawl.MaxPages = report, job.PageCap
+	}
+	if redactor != nil {
+		// Defence in depth: records are scrubbed before the catalog or the
+		// verify report sees them.
+		crawl.Sink = catalog.RedactingSink{Sink: crawl.Sink, Redactor: redactor}
 	}
 	res, err := crawl.Run(ctx)
-	// Usage and block state are recorded even if the job context was cancelled.
+	// Credentials must never reach job errors, block reasons or logs.
+	err = catalog.SanitizeError(err, redactor)
+	// Usage, results and block state are recorded even if the job context was cancelled.
 	bg, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	pages, bytes := fetcher.Usage()
 	obs.CrawlPages.WithLabelValues(sid).Add(float64(pages))
 	obs.CrawlBytes.WithLabelValues(sid).Add(float64(bytes))
-	obs.CrawlRecords.WithLabelValues(sid).Add(float64(res.Records))
-	if uerr := st.RecordCrawlUsage(bg, source.ID, pages, bytes); uerr != nil {
+	if report == nil {
+		// Verify runs parse into the report and save nothing.
+		obs.CrawlRecords.WithLabelValues(sid).Add(float64(res.Records))
+	}
+	if uerr := st.RecordCrawlUsage(bg, source.ID, job.Phase, pages, bytes); uerr != nil {
 		jl.Error("record crawl usage", "err", uerr)
+	}
+	counts := map[string]any{"phase": job.Phase, "pages": res.Pages, "records": res.Records, "robots_skipped": res.RobotsSkipped, "parse_skipped": res.Skipped,
+		"stop": res.Stop, "watermark_gap": res.WatermarkGap, "requests": pages, "bytes": bytes}
+	if report != nil {
+		counts["verify"] = report.Summary()
+	}
+	if rerr := st.SetJobResult(bg, job.ID, counts); rerr != nil {
+		jl.Error("record job result", "err", rerr)
 	}
 	if b, blocked := catalog.IsBlocked(err); blocked {
 		obs.CrawlBlocked.WithLabelValues(sid).Inc()
@@ -155,8 +222,18 @@ func runCatalog(ctx context.Context, st *store.Store, registry *catalog.Registry
 		if cerr := st.ClearSourceBlock(bg, source.ID); cerr != nil {
 			jl.Error("clear source block", "err", cerr)
 		}
+		if job.Phase == catalog.PhaseBaseline && res.Stop == catalog.StopComplete {
+			if merr := st.MarkBaselineComplete(bg, source.ID); merr != nil {
+				jl.Error("mark baseline complete", "err", merr)
+			}
+		}
 	}
-	jl.Info("catalog crawl", "pages", res.Pages, "records", res.Records, "stop", res.Stop, "cursor", res.Cursor, "requests", pages, "bytes", bytes, "err", err)
+	cursor := res.Cursor
+	if redactor != nil {
+		cursor = redactor.Redact(cursor)
+	}
+	jl.Info("catalog crawl", "pages", res.Pages, "records", res.Records, "parse_skipped", res.Skipped, "robots_skipped", res.RobotsSkipped,
+		"stop", res.Stop, "watermark_gap", res.WatermarkGap, "cursor", cursor, "requests", pages, "bytes", bytes, "err", err)
 	return err
 }
 

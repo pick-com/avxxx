@@ -1,0 +1,12 @@
+{
+  "source": "javdatabase",
+  "fixtures": [
+    {"file": "discovery/movies_page1.html", "url": "https://www.javdatabase.com/movies/", "entity": "discovery", "origin": "synthetic"},
+    {"file": "discovery/movies_page2.html", "url": "https://www.javdatabase.com/movies/page/2/", "entity": "discovery", "origin": "synthetic"},
+    {"file": "discovery/movies_page3.html", "url": "https://www.javdatabase.com/movies/page/3/", "entity": "discovery", "origin": "synthetic"},
+    {"file": "releases/juq-743.html", "url": "https://www.javdatabase.com/movies/juq-743/", "entity": "release", "origin": "synthetic"},
+    {"file": "performers/sena-hashimoto.html", "url": "https://www.javdatabase.com/idols/sena-hashimoto/", "entity": "performer", "origin": "synthetic"},
+    {"file": "performers/sena-hashimoto-sitetitle.html", "url": "https://www.javdatabase.com/idols/sena-hashimoto/", "entity": "performer", "origin": "synthetic"},
+    {"file": "performers/logo-only.html", "url": "https://www.javdatabase.com/idols/whoever/", "entity": "performer", "origin": "synthetic", "expect": "skip"}
+  ]
+}

@@ -158,7 +158,8 @@ func TestMiddlewareRedaction(t *testing.T) {
 
 func TestScrubString(t *testing.T) {
 	cases := map[string]string{
-		"GET /x?token=abc&lang=en":                                       "GET /x?token=[REDACTED]&lang=en",
+		"GET /x?token=abc&lang=en": "GET /x?token=[REDACTED]&lang=en",
+		"GET https://api.dmm.com/affiliate/v3/ItemList?api_id=K1&affiliate_id=a-990&hits=1": "GET https://api.dmm.com/affiliate/v3/ItemList?api_id=[REDACTED]&affiliate_id=[REDACTED]&hits=1",
 		"Authorization: Bearer abc.def":                                  "Authorization: Bearer [REDACTED]",
 		"mail bob.smith+x@mail.example.org now":                          "mail [EMAIL] now",
 		"from 203.0.113.9 via 10.0.0.5":                                  "from 203.0.113.0/24 via 10.0.0.5",

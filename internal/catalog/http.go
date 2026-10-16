@@ -15,7 +15,9 @@ import (
 
 const (
 	maxDocumentBytes = 10 << 20
-	userAgent        = "avxxx-catalog/0.1"
+	// defaultUserAgent is used only when a Fetcher has no UserAgent (tests,
+	// FetchDocument). Production crawls set UserAgentFromEnv's contact UA.
+	defaultUserAgent = RobotsToken + "/" + crawlerVersion
 	// DefaultBlockBackoff is used when a source signals a block without a
 	// usable Retry-After header.
 	DefaultBlockBackoff = time.Hour
@@ -67,6 +69,14 @@ type FetchPolicy struct {
 type Fetcher struct {
 	Client *http.Client
 	Policy FetchPolicy
+	// UserAgent is sent with every request ("" = defaultUserAgent).
+	UserAgent string
+	// Robots, when set, is consulted before every request: disallowed URLs
+	// are refused with a RobotsError and Crawl-delay raises MinInterval.
+	// Automatic marks an automatic (baseline/incremental) crawl, for which an
+	// unreachable robots.txt counts as a disallow; manual verify jobs proceed.
+	Robots    RobotsChecker
+	Automatic bool
 
 	now   func() time.Time
 	sleep func(context.Context, time.Duration) error
@@ -113,9 +123,22 @@ func (f *Fetcher) Fetch(ctx context.Context, rawURL string) (Document, error) {
 	if f.blocked != nil {
 		return Document{}, f.blocked
 	}
+	interval := f.Policy.MinInterval
+	if f.Robots != nil {
+		v := f.Robots.Check(ctx, rawURL)
+		if v.Unavailable && f.Automatic {
+			return Document{}, &RobotsError{URL: rawURL, Reason: v.Reason + "; automatic crawls treat an unavailable robots.txt as disallow"}
+		}
+		if !v.Unavailable && !v.Allowed {
+			return Document{}, &RobotsError{URL: rawURL, Reason: v.Reason}
+		}
+		if v.CrawlDelay > interval {
+			interval = v.CrawlDelay // Crawl-delay is a lower bound on spacing
+		}
+	}
 	retried := false
 	for {
-		if err := f.reserve(ctx); err != nil {
+		if err := f.reserve(ctx, interval); err != nil {
 			return Document{}, err
 		}
 		doc, resp, err := f.do(ctx, rawURL)
@@ -129,7 +152,7 @@ func (f *Fetcher) Fetch(ctx context.Context, rawURL string) (Document, error) {
 					return Document{}, err
 				}
 				// The wait already spaces the retry; don't stack MinInterval on top.
-				f.last = f.now().Add(-f.Policy.MinInterval)
+				f.last = f.now().Add(-interval)
 				continue
 			}
 			f.blocked = b
@@ -143,15 +166,15 @@ func (f *Fetcher) Fetch(ctx context.Context, rawURL string) (Document, error) {
 }
 
 // reserve checks the budget and waits for the minimum request interval.
-func (f *Fetcher) reserve(ctx context.Context) error {
+func (f *Fetcher) reserve(ctx context.Context, interval time.Duration) error {
 	if f.Policy.MaxPages > 0 && f.pages >= f.Policy.MaxPages {
 		return ErrBudgetExhausted
 	}
 	if f.Policy.MaxBytes > 0 && f.bytes >= f.Policy.MaxBytes {
 		return ErrBudgetExhausted
 	}
-	if !f.last.IsZero() && f.Policy.MinInterval > 0 {
-		if wait := f.last.Add(f.Policy.MinInterval).Sub(f.now()); wait > 0 {
+	if !f.last.IsZero() && interval > 0 {
+		if wait := f.last.Add(interval).Sub(f.now()); wait > 0 {
 			if err := f.sleep(ctx, wait); err != nil {
 				return err
 			}
@@ -165,7 +188,11 @@ func (f *Fetcher) do(ctx context.Context, rawURL string) (Document, *http.Respon
 	if err != nil {
 		return Document{}, nil, err
 	}
-	req.Header.Set("User-Agent", userAgent)
+	ua := f.UserAgent
+	if ua == "" {
+		ua = defaultUserAgent
+	}
+	req.Header.Set("User-Agent", ua)
 	f.last = f.now()
 	f.pages++
 	resp, err := f.Client.Do(req)

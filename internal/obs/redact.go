@@ -31,8 +31,9 @@ var ipKeys = map[string]bool{
 // remaining log.Printf calls arrive as a single message string).
 var (
 	bearerRe = regexp.MustCompile(`(?i)\b(bearer|basic)\s+[A-Za-z0-9._~+/=-]+`)
-	// A secret-looking query parameter: keep the name, drop the value.
-	querySecretRe = regexp.MustCompile(`(?i)([?&;](?:access_token|refresh_token|id_token|token|key|api_key|apikey|password|passwd|secret|sig|signature|auth|code|session|share_token)=)[^&\s"';]+`)
+	// A secret-looking query parameter: keep the name, drop the value
+	// (api_id / affiliate_id: DMM Affiliate API credentials).
+	querySecretRe = regexp.MustCompile(`(?i)([?&;](?:access_token|refresh_token|id_token|token|key|api_key|apikey|password|passwd|secret|sig|signature|auth|code|session|share_token|api_id|affiliate_id)=)[^&\s"';]+`)
 	// Header dumps (fmt of an http.Header, raw header lines).
 	cookieRe = regexp.MustCompile(`(?i)\b((?:set-)?cookie|x-api-key|proxy-authorization)(["']?\s*[:=]\s*\[?)[^\]\r\n]*`)
 	emailRe  = regexp.MustCompile(`[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}`)

@@ -53,7 +53,8 @@ func TestIdentityMergeIntegration(t *testing.T) {
 		}
 		return n
 	}
-	exec(`INSERT INTO sources(id,name,url) VALUES(1,'src','https://example.test/feed')`)
+	// Migrations may seed sources (025: DMM), so id 1 can already exist.
+	exec(`INSERT INTO sources(id,name,url) VALUES(1,'src','https://example.test/feed') ON CONFLICT (id) DO NOTHING`)
 	exec(`INSERT INTO users(id,email,password_hash) VALUES(1,'u@example.test','x')`)
 	exec(`INSERT INTO performers(id,slug,canonical_name,birth_date) VALUES(1,'yui-hatano','Yui Hatano','1988-05-24'),
 		(2,'yui-hatano--src2','YUI HATANO','1988-05-24'),(3,'mia','Mia',NULL),(4,'mia--2','Mia','1990-01-01')`)

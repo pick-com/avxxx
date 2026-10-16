@@ -1,0 +1,7 @@
+{
+  "source": "javguru",
+  "fixtures": [
+    {"file": "discovery/page1.html", "url": "https://jav.guru/", "entity": "discovery", "origin": "synthetic"},
+    {"file": "releases/abc-001-nav.html", "url": "https://jav.guru/jav/12345/abc-001-example/", "entity": "release", "origin": "synthetic"}
+  ]
+}
