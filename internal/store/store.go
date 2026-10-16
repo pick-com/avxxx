@@ -80,7 +80,10 @@ func (s *Store) IdentityCandidates(ctx context.Context, entityType string, limit
 	if limit <= 0 || limit > 100 {
 		limit = 50
 	}
-	r, err := s.Query(ctx, `SELECT id,entity_type,left_id,right_id,score,evidence,status FROM identity_candidates WHERE ($1='' OR entity_type=$1) AND status='pending' ORDER BY score DESC,id LIMIT $2`, entityType, limit)
+	r, err := s.Query(ctx, `SELECT id,entity_type,left_id,right_id,score,evidence,status FROM identity_candidates c WHERE ($1='' OR entity_type=$1) AND status='pending'
+		AND NOT EXISTS (SELECT 1 FROM performers p WHERE c.entity_type='performer' AND p.id IN (c.left_id,c.right_id) AND p.merged_into_id IS NOT NULL)
+		AND NOT EXISTS (SELECT 1 FROM releases r WHERE c.entity_type='release' AND r.id IN (c.left_id,c.right_id) AND r.merged_into_id IS NOT NULL)
+		ORDER BY score DESC,id LIMIT $2`, entityType, limit)
 	if err != nil {
 		return nil, err
 	}
@@ -536,6 +539,9 @@ func (s *Store) SaveCatalogRecord(ctx context.Context, sourceID int64, parserVer
 		if err != nil {
 			return 0, err
 		}
+		if id, err = survivingID(ctx, tx, "performers", id); err != nil {
+			return 0, err
+		}
 		performerID = &id
 	} else if rec.EntityType == catalog.Release {
 		title, _ := rec.Fields["title"].(string)
@@ -555,6 +561,9 @@ func (s *Store) SaveCatalogRecord(ctx context.Context, sourceID int64, parserVer
 			VALUES($1,$2,$3,$4,$5) ON CONFLICT(slug) DO UPDATE SET canonical_title=EXCLUDED.canonical_title,
 			maker_name=COALESCE(NULLIF(EXCLUDED.maker_name,''),releases.maker_name),updated_at=now() RETURNING id`, slug, title, date, maker, director).Scan(&id)
 		if err != nil {
+			return 0, err
+		}
+		if id, err = survivingID(ctx, tx, "releases", id); err != nil {
 			return 0, err
 		}
 		releaseID = &id
@@ -598,6 +607,9 @@ func (s *Store) SaveCatalogRecord(ctx context.Context, sourceID int64, parserVer
 				}
 				var performerID int64
 				if err = tx.QueryRow(ctx, `INSERT INTO performers(slug,canonical_name) VALUES($1,$2) ON CONFLICT(slug) DO UPDATE SET updated_at=now() RETURNING id`, slug, name).Scan(&performerID); err != nil {
+					return 0, err
+				}
+				if performerID, err = survivingID(ctx, tx, "performers", performerID); err != nil {
 					return 0, err
 				}
 				if _, err = tx.Exec(ctx, `INSERT INTO release_performers(release_id,performer_id,billing_order,credited_name,is_primary) VALUES($1,$2,$3,$4,$5) ON CONFLICT(release_id,performer_id) DO UPDATE SET billing_order=EXCLUDED.billing_order,credited_name=EXCLUDED.credited_name`, *releaseID, performerID, order, name, order == 0); err != nil {

@@ -38,8 +38,8 @@
 ## 进行中
 
 - [ ] 完善来源级字段优先级和规范字段更新策略
-- [ ] 增加 unresolved identity candidate 生成和候选匹配
-- [ ] 增加合并、拆分和撤销合并操作
+- [x] 增加 unresolved identity candidate 生成和候选匹配
+- [x] 增加合并、拆分和撤销合并操作
 - [x] 增加 checkpoint 和分页断点数据访问层
 - [ ] 将 checkpoint 接入每个目录 adapter 的分页执行流程
 - [x] 目录批次成功后推进 discovery checkpoint

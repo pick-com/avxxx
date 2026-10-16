@@ -42,6 +42,10 @@ var expectedRoutes = []string{
 	"GET /api/admin/crawl-policies",
 	"POST /api/admin/media-assets",
 	"GET /api/admin/identity-candidates",
+	"POST /api/admin/identity-candidates/generate",
+	"POST /api/admin/identity-candidates/{id}/merge",
+	"POST /api/admin/identity-candidates/{id}/not-duplicate",
+	"POST /api/admin/merges/{id}/undo",
 	"PUT /api/admin/sources/{id}/crawl-policy",
 	"GET /api/admin/conflicts",
 	"POST /api/admin/conflicts/{id}/resolve",
@@ -62,8 +66,8 @@ func samplePath(p string) string {
 }
 
 func TestRoutesRegistered(t *testing.T) {
-	if len(expectedRoutes) != 38 {
-		t.Fatalf("expected route list has %d entries, want 38", len(expectedRoutes))
+	if len(expectedRoutes) != 42 {
+		t.Fatalf("expected route list has %d entries, want 42", len(expectedRoutes))
 	}
 	mux := http.NewServeMux()
 	Register(mux, nil, nil)

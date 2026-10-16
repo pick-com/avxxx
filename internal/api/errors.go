@@ -57,9 +57,14 @@ func unauthorized(cause error) error {
 // Unknown errors become 500 with a generic message so internal text never leaks.
 func errorStatus(e error) (int, string) {
 	var he *httpError
+	var ce *store.ConflictError
 	switch {
 	case errors.As(e, &he):
 		return he.status, he.msg
+	case errors.As(e, &ce):
+		return http.StatusConflict, ce.Msg
+	case errors.Is(e, store.ErrInvalidMergeTarget):
+		return http.StatusBadRequest, store.ErrInvalidMergeTarget.Error()
 	case errors.Is(e, store.ErrEmailTaken):
 		return http.StatusConflict, store.ErrEmailTaken.Error()
 	case errors.Is(e, store.ErrInvalidCredentials):

@@ -22,6 +22,9 @@ type Server struct {
 	// accounts is the subset of the store used by the account and health
 	// handlers, as an interface so they can be tested without a database.
 	accounts accountStore
+	// identity is the subset of the store used by identity review and merge
+	// redirects; nil disables redirects (tests without a database).
+	identity identityStore
 	// adminToken is ADMIN_TOKEN, read once at construction. Empty disables
 	// every admin route (they all return 401).
 	adminToken string
@@ -44,6 +47,7 @@ func Register(mux *http.ServeMux, s *store.Store, mediaHandler *media.Handler) {
 	srv := &Server{store: s, media: mediaHandler, adminToken: os.Getenv("ADMIN_TOKEN")}
 	if s != nil {
 		srv.accounts = s
+		srv.identity = s
 	}
 	for _, rt := range srv.routes() {
 		mux.HandleFunc(rt.pattern, rt.handler)
@@ -60,7 +64,7 @@ func (srv *Server) routes() []route {
 	rs = append(rs, srv.playbackRoutes()...)
 	rs = append(rs, srv.adminRoutes()...)
 	rs = append(rs, srv.eventRoutes()...)
-	return rs
+	return srv.followMerges(rs)
 }
 
 // reply writes v as JSON, or maps e to a {"error": "..."} body with a status
