@@ -128,6 +128,56 @@ services:
       - ./deploy/monitoring/alerts.yml:/etc/prometheus/alerts.yml:ro
       - promdata:/prometheus
     ports: ["127.0.0.1:9095:9090"]
+  # Optional: routes Prometheus alerts to the on-call receivers
+  # (docker compose --profile monitoring up -d alertmanager). The config is
+  # rendered at start-up from the ALERT_* / SMTP_* variables by
+  # deploy/monitoring/alertmanager/render-config.sh; with none set it starts
+  # with empty receivers and logs a warning. UI on 127.0.0.1:9096 only.
+  alertmanager:
+    image: prom/alertmanager:v0.28.1
+    profiles: ["monitoring"]
+    user: "65534:65534"
+    read_only: true
+    entrypoint: ["/bin/sh", "/etc/alertmanager/render-config.sh"]
+    environment:
+      ALERTMANAGER_EXTERNAL_URL: ${ALERTMANAGER_EXTERNAL_URL:-http://127.0.0.1:9096}
+      ALERT_WEBHOOK_URL: ${ALERT_WEBHOOK_URL:-}
+      ALERT_WARNING_WEBHOOK_URL: ${ALERT_WARNING_WEBHOOK_URL:-}
+      ALERT_EMAIL_TO: ${ALERT_EMAIL_TO:-}
+      ALERT_WARNING_EMAIL_TO: ${ALERT_WARNING_EMAIL_TO:-}
+      ALERT_EMAIL_FROM: ${ALERT_EMAIL_FROM:-}
+      ALERT_SLACK_WEBHOOK_URL: ${ALERT_SLACK_WEBHOOK_URL:-}
+      ALERT_TELEGRAM_BOT_TOKEN: ${ALERT_TELEGRAM_BOT_TOKEN:-}
+      ALERT_TELEGRAM_CHAT_ID: ${ALERT_TELEGRAM_CHAT_ID:-}
+      SMTP_HOST: ${SMTP_HOST:-}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_USER: ${SMTP_USER:-}
+      SMTP_PASSWORD: ${SMTP_PASSWORD:-}
+      MAIL_FROM: ${MAIL_FROM:-}
+    volumes:
+      - ./deploy/monitoring/alertmanager/render-config.sh:/etc/alertmanager/render-config.sh:ro
+      - amdata:/alertmanager
+    tmpfs:
+      # Rendered config and secret files; never written to disk.
+      - /run/alertmanager:uid=65534,gid=65534,mode=0700,size=1m
+    ports: ["127.0.0.1:9096:9093"]
+  # Optional: host metrics (disk, memory, load) and the backup freshness
+  # textfile written by scripts/backup-db.sh. Read-only host mounts; reachable
+  # only on the compose network (no published port).
+  node-exporter:
+    image: prom/node-exporter:v1.9.1
+    profiles: ["monitoring"]
+    user: "65534:65534"
+    read_only: true
+    command:
+      - --path.rootfs=/host
+      - --path.udev.data=/host/run/udev/data
+      - --collector.textfile.directory=/textfile
+      - --collector.filesystem.mount-points-exclude=^/(dev|proc|run|sys|etc|var/lib/docker/.+|var/lib/containers/storage/.+)($$|/)
+    volumes:
+      - /:/host:ro,rslave
+      - ${BACKUP_METRICS_DIR:-./backups/metrics}:/textfile:ro
 volumes:
   pgdata:
   promdata:
+  amdata:

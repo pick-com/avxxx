@@ -2,7 +2,7 @@
 
 > 状态更新时间：2026-10-16
 >
-> 当前基础能力完成度约为 **94%**。基础架构、目录采集、调度、WebApp 浏览、Javtiful 播放映射、审核后台、生产 smoke/备份和 Ansible 部署已经可运行；来源授权/robots/terms 门禁、baseline/增量/verify 任务隔离、字段优先级策略和 fixture 验收工具已完成。剩余工作主要集中在来源覆盖（更多 adapter 和录制 fixture）、图片存储、监控告警和正式生产验收。
+> 当前基础能力完成度约为 **94%**。基础架构、目录采集、调度、WebApp 浏览、Javtiful 播放映射、审核后台、生产 smoke/备份和 Ansible 部署已经可运行；来源授权/robots/terms 门禁、baseline/增量/verify 任务隔离、字段优先级策略和 fixture 验收工具已完成。剩余工作主要集中在来源覆盖（更多 adapter 和录制 fixture）、图片存储、生产值班通道配置和正式生产验收（监控、Alertmanager 通知、主机与备份告警已就绪）。
 >
 > 注意：门禁上线后，`license_status` 未审核（`review_required` / `manual_only`）或缺少 `terms_reviewed_at` / `terms_url` 的目录来源不再自动抓取，只能手动创建 verify 任务；需管理员通过 `PUT /api/admin/sources/{id}/license` 记录条款审核后才恢复增量。爬虫必须配置 `CATALOG_CONTACT`（User-Agent 联系方式），否则目录任务以 `config_error` 失败。
 
@@ -97,7 +97,9 @@
 
 ### 生产化
 
-- [x] 结构化日志、指标和告警（`internal/obs`、`deploy/monitoring`；值班通知待接 Alertmanager）
+- [x] 结构化日志、指标和告警（`internal/obs`、`deploy/monitoring`）
+- [x] 值班通知：Alertmanager（page / warning / info 路由与抑制规则；webhook、邮件、Slack、Telegram 接收器由环境变量配置，未配置时空接收器并告警日志；`amtool check-config` 与路由测试进 CI）。生产主机的实际通道待配置
+- [x] 主机与备份监控：node_exporter（磁盘 < 15% warning / < 5% page、内存、负载），`backup-db.sh` 写 textfile 指标，备份超过 26 小时或 < 1 MiB 告警；Ansible 可选每日备份 cron（`backup_cron_enabled`）
 - [x] robots、terms、授权和配额门禁
 - [ ] 数据保留和图片使用策略
 - [ ] 部署、备份和恢复文档
@@ -132,7 +134,7 @@ JAV Database adapter 已接入 scraper，可完成发现、详情抓取、解析
 3. 用真实凭据实测 DMM adapter（dry-run → 条款审核 → 启用），再实现厂商目录 adapter（官方来源字段优先级最高）。
 4. 前端接入 checkpoint、来源证据和更新时间展示；补系列查询 API。
 5. 目录 source record 与 Javtiful media record 自动关联。
-6. 完成监控、告警和生产验收。
+6. 在生产主机配置值班通道（`ALERT_*`、`monitoring_enabled`、`backup_cron_enabled`）并完成生产验收。
 
 ## 总体状态
 

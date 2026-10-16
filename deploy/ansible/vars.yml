@@ -5,3 +5,10 @@ git_repo: git@github.com:pick-com/avxxx.git
 git_branch: main
 database_url: postgres://avxxx:avxxx@db:5432/avxxx?sslmode=disable
 compose_project: avxxx
+# Daily pg_dump (scripts/backup-db.sh) via cron; opt in with -e backup_cron_enabled=true.
+# Also copy the dumps off this host (docs/PRODUCTION_OPERATIONS.md 备份与恢复).
+backup_dir: "{{ app_dir }}/backups"
+backup_metrics_dir: "{{ app_dir }}/backups/metrics"
+backup_keep_days: 14
+backup_cron_hour: 3
+backup_cron_minute: 17
