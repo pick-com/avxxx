@@ -13,12 +13,18 @@ services:
       timeout: 3s
       retries: 10
   api:
+    # The one image every Go service runs; built once by `docker compose build api`.
+    image: avxxx-app:latest
     build:
       context: .
       dockerfile: Dockerfile.api
     command: ["/usr/local/bin/api"]
     environment:
       DATABASE_URL: ${DATABASE_URL:-postgres://avxxx:avxxx@db:5432/avxxx?sslmode=disable}
+      # Listen on all interfaces inside the container so the published port reaches it.
+      API_ADDR: 0.0.0.0:8080
+      # Empty rejects every /api/admin request.
+      ADMIN_TOKEN: ${ADMIN_TOKEN:-}
       # Web Push: public key only; empty disables the subscribe routes.
       VAPID_PUBLIC_KEY: ${VAPID_PUBLIC_KEY:-}
       PUSH_ALLOWED_HOSTS: ${PUSH_ALLOWED_HOSTS:-}
@@ -27,9 +33,8 @@ services:
         condition: service_healthy
     ports: ["127.0.0.1:8080:8080"]
   scheduler:
-    build:
-      context: .
-      dockerfile: Dockerfile.api
+    image: avxxx-app:latest
+    pull_policy: never
     command: ["/usr/local/bin/scheduler"]
     environment:
       DATABASE_URL: ${DATABASE_URL:-postgres://avxxx:avxxx@db:5432/avxxx?sslmode=disable}
@@ -38,9 +43,8 @@ services:
       db:
         condition: service_healthy
   scraper:
-    build:
-      context: .
-      dockerfile: Dockerfile.api
+    image: avxxx-app:latest
+    pull_policy: never
     command: ["/usr/local/bin/scraper"]
     environment:
       DATABASE_URL: ${DATABASE_URL:-postgres://avxxx:avxxx@db:5432/avxxx?sslmode=disable}
@@ -48,9 +52,8 @@ services:
       db:
         condition: service_healthy
   audit:
-    build:
-      context: .
-      dockerfile: Dockerfile.api
+    image: avxxx-app:latest
+    pull_policy: never
     command: ["/usr/local/bin/audit"]
     environment:
       DATABASE_URL: ${DATABASE_URL:-postgres://avxxx:avxxx@db:5432/avxxx?sslmode=disable}
@@ -58,9 +61,8 @@ services:
       db:
         condition: service_healthy
   notifier:
-    build:
-      context: .
-      dockerfile: Dockerfile.api
+    image: avxxx-app:latest
+    pull_policy: never
     command: ["/usr/local/bin/notifier"]
     # Every channel is disabled while its variables are empty.
     environment:
