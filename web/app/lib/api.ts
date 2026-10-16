@@ -54,12 +54,15 @@ export class ApiError extends Error {
 
 // play-config is public, but a user token adds `resume` (tech plan 3.3).
 const PLAY_CONFIG_PATH = /^releases\/[^/?]+\/play-config(\?|$)/;
+// Recommendations (internal/api/recs.go): public, but a user token adds the
+// viewer's history, follows and watched filter.
+const RECS_PATH = /^recs(\?|$)/;
 // Community routes (internal/api/community.go).
 const COMMUNITY_PATH = /^(releases\/[^/?]+\/(danmaku|rating|reviews)|danmaku\/\d+\/report|reviews\/\d+(\/(like|report))?|reports)(\?|$)/;
 
 function tokenFor(path: string): string | null {
   if (path.startsWith('admin/')) return tokens.admin();
-  if (path.startsWith('me/') || path === 'auth/me' || PLAY_CONFIG_PATH.test(path) || COMMUNITY_PATH.test(path)) return tokens.user();
+  if (path.startsWith('me/') || path === 'auth/me' || PLAY_CONFIG_PATH.test(path) || COMMUNITY_PATH.test(path) || RECS_PATH.test(path)) return tokens.user();
   return null;
 }
 
@@ -109,7 +112,7 @@ export function setContentLang(lang: string | null) {
   contentLang = lang;
 }
 
-const LOCALIZED_PATH = /^(releases|performers|catalog\/search)(\/|\?|$)/;
+const LOCALIZED_PATH = /^(releases|performers|catalog\/search|recs|trending)(\/|\?|$)/;
 const UNLOCALIZED_PATH = /\/(play-config|playback|danmaku|rating|reviews)(\?|$)/;
 const isLocalizedPath = (path: string) => LOCALIZED_PATH.test(path) && !UNLOCALIZED_PATH.test(path);
 
@@ -316,13 +319,13 @@ const enc = encodeURIComponent;
  */
 export type Page<T> = {items: T[]; nextCursor: string | null; paged: boolean};
 type PageBody<T> = Items<T> & {next_cursor?: string | null};
-const toPage = <T,>(data: PageBody<T> | null): Page<T> => ({
+export const toPage = <T,>(data: PageBody<T> | null): Page<T> => ({
   items: data?.items ?? [],
   nextCursor: typeof data?.next_cursor === 'string' && data.next_cursor ? data.next_cursor : null,
   paged: !!data && typeof data === 'object' && 'next_cursor' in data,
 });
 
-function query(params: Record<string, string | number | null | undefined>): string {
+export function query(params: Record<string, string | number | null | undefined>): string {
   const q = new URLSearchParams();
   for (const [k, v] of Object.entries(params)) {
     if (v !== null && v !== undefined && v !== '' && v !== 0) q.set(k, String(v));
@@ -416,6 +419,14 @@ export type PlayConfig = {
   danmaku?: {enabled?: boolean; segment_ms?: number; alt_curves?: Record<string, number[] | null> | null} | null;
   /** 高能波峰 of the main timeline (PRD 5.5.1): 200 values 0-255, null under 50 valid danmaku. */
   danmaku_curve?: number[] | null;
+  /**
+   * 播放波峰 (PRD 14.3, replay-curves backend): replay rate of the main
+   * timeline, 200 values 0-255; null under 1000 valid plays. Shown when
+   * danmaku is off or has no curve («最多重看»).
+   */
+  replay_curve?: number[] | null;
+  /** Curve to show with danmaku on: 70 % danmaku + 30 % replay, or whichever exists. */
+  peak_curve?: number[] | null;
 };
 
 /**

@@ -6,6 +6,8 @@ const paths = {
   moon: 'M21 13A9 9 0 1111 3a7 7 0 0010 10z',
   auto: 'M12 21a9 9 0 100-18 9 9 0 000 18zM12 3v18',
   globe: 'M12 21a9 9 0 100-18 9 9 0 000 18zM3 12h18M12 3c3 3 3 15 0 18M12 3c-3 3-3 15 0 18',
+  trending: 'M12 3c1 4 6 6 6 11a6 6 0 01-12 0c0-3 2-5 3-6 0 2 1 3 2 3 1-2 1-5 1-8z',
+  tonight: 'M4 7h11l-3-3M20 17H9l3 3',
   home: 'M3 11l9-7 9 7v9a1 1 0 01-1 1h-5v-6h-6v6H4a1 1 0 01-1-1z',
   new: 'M12 3v5M12 16v5M3 12h5M16 12h5M6 6l3 3M15 15l3 3M18 6l-3 3M9 15l-3 3',
   categories: 'M4 4h7v7H4zM13 4h7v7h-7zM4 13h7v7H4zM13 13h7v7h-7z',

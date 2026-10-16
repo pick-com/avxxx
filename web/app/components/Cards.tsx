@@ -26,7 +26,15 @@ export function Thumb({seed, badge, progress, className = ''}: {seed: string; ba
 }
 
 /** Video card. Signed-in users get a 稍后观看 toggle over the thumbnail (NavLater). */
-export function ReleaseCard({slug, title, meta, sub, badge, progress, later = true, slot, onOpen}: {
+/** Link state read by the root page tracker (slot) and the player (play_request reason). */
+const linkState = (slot?: string, reasonCode?: string) => (slot || reasonCode ? {slot, reason: reasonCode} : undefined);
+
+/** One-line 推荐理由 under a card (PRD 10 可解释). */
+export function CardReason({text}: {text?: string}) {
+  return text ? <span className="card-reason">{text}</span> : null;
+}
+
+export function ReleaseCard({slug, title, meta, sub, badge, progress, later = true, slot, reason, reasonCode, onOpen}: {
   slug: string;
   title: string;
   meta?: ReactNode;
@@ -36,15 +44,20 @@ export function ReleaseCard({slug, title, meta, sub, badge, progress, later = tr
   later?: boolean;
   /** Analytics entry position (PRD 14.1 `slot`, e.g. "home:r2:c3"). */
   slot?: string;
+  /** Recommendation reason shown under the card. */
+  reason?: string;
+  /** Recommendation reason code, sent as play_request `reason`. */
+  reasonCode?: string;
   onOpen?: () => void;
 }) {
   return (
     <div className="release-card-wrap">
-      <Link to={`/releases/${encodeURIComponent(slug)}`} className="release-card" state={slot ? {slot} : undefined} onClick={onOpen}>
+      <Link to={`/releases/${encodeURIComponent(slug)}`} className="release-card" state={linkState(slot, reasonCode)} onClick={onOpen}>
         <Thumb seed={slug} badge={badge} progress={progress} />
         <span className="card-title">{title}</span>
         {meta && <span className="card-meta">{meta}</span>}
         {sub && <span className="card-meta">{sub}</span>}
+        <CardReason text={reason} />
       </Link>
       {later && <LaterButton slug={slug} title={title} variant="icon" />}
     </div>
@@ -52,7 +65,7 @@ export function ReleaseCard({slug, title, meta, sub, badge, progress, later = tr
 }
 
 /** Horizontal row card (Video aside, MobileSearch results, history). */
-export function ReleaseRow({slug, title, meta, sub, badge, progress, children, query = ''}: {
+export function ReleaseRow({slug, title, meta, sub, badge, progress, children, query = '', slot, reason, reasonCode}: {
   slug: string;
   /** Appended to the link, e.g. "?list=later". */
   query?: string;
@@ -62,15 +75,19 @@ export function ReleaseRow({slug, title, meta, sub, badge, progress, children, q
   badge?: string;
   progress?: number;
   children?: ReactNode;
+  slot?: string;
+  reason?: string;
+  reasonCode?: string;
 }) {
   return (
     <div className="release-row">
-      <Link to={`/releases/${encodeURIComponent(slug)}${query}`} className="release-row-link">
+      <Link to={`/releases/${encodeURIComponent(slug)}${query}`} className="release-row-link" state={linkState(slot, reasonCode)}>
         <Thumb seed={slug} badge={badge} progress={progress} className="thumb-row" />
         <span className="release-row-text">
           <span className="card-title">{title}</span>
           {meta && <span className="card-meta">{meta}</span>}
           {sub && <span className="card-meta">{sub}</span>}
+          <CardReason text={reason} />
         </span>
       </Link>
       {children}
@@ -86,9 +103,9 @@ export function Avatar({seed, name, size = 88}: {seed: string; name: string; siz
   );
 }
 
-export function PerformerChip({slug, name, sub, size = 88}: {slug: string; name: string; sub?: ReactNode; size?: number}) {
+export function PerformerChip({slug, name, sub, size = 88, slot}: {slug: string; name: string; sub?: ReactNode; size?: number; slot?: string}) {
   return (
-    <Link to={`/performers/${encodeURIComponent(slug)}`} className="performer-chip" style={{width: size + 16}}>
+    <Link to={`/performers/${encodeURIComponent(slug)}`} className="performer-chip" style={{width: size + 16}} state={linkState(slot)}>
       <Avatar seed={slug} name={name} size={size} />
       <span className="performer-chip-name">{name}</span>
       {sub && <span className="performer-chip-sub">{sub}</span>}
