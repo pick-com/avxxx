@@ -243,7 +243,7 @@ func TestImageStorageIntegration(t *testing.T) {
 	if n := scalar(`SELECT count(*) FROM media_assets WHERE entity_type='release' AND entity_id=$1 AND suppressed_at IS NOT NULL`, r1); n != 3 {
 		t.Fatalf("suppressed rows = %d, want original + 2 variants", n)
 	}
-	if n := scalar(`SELECT count(*) FROM review_events WHERE entity_type='release' AND entity_id=$1 AND action='media_suppress' AND actor='takedown-desk'`, r1); n != 1 {
+	if n := scalar(`SELECT count(*) FROM review_events WHERE entity_type='release' AND entity_id=$1 AND action='media_suppress' AND actor='token:takedown-desk'`, r1); n != 1 {
 		t.Fatalf("media_suppress events = %d", n)
 	}
 	if code, _ = call("GET", rel.Cover.URL, ""); code != 404 {

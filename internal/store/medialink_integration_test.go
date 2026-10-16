@@ -284,7 +284,7 @@ func TestMediaLinkIntegration(t *testing.T) {
 		t.Fatalf("attempt after choose %+v", a)
 	}
 	var actor string
-	if err := s.QueryRow(ctx, `SELECT actor FROM review_events WHERE entity_type='release' AND entity_id=$1 AND action='media_link_choose' ORDER BY id DESC LIMIT 1`, r3).Scan(&actor); err != nil || actor != "link-editor" {
+	if err := s.QueryRow(ctx, `SELECT actor FROM review_events WHERE entity_type='release' AND entity_id=$1 AND action='media_link_choose' ORDER BY id DESC LIMIT 1`, r3).Scan(&actor); err != nil || actor != "token:link-editor" {
 		t.Fatalf("review event actor %q %v", actor, err)
 	}
 
