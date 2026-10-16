@@ -420,6 +420,9 @@ func (s *Store) AdminDashboard(ctx context.Context) (audit.Dashboard, error) {
 		return d, err
 	}
 	d.SetHealth(d.Releases.ByStatus["published"], withIssues)
+	if err := s.sourceHealthSummary(ctx, &d); err != nil {
+		return d, err
+	}
 	return d, nil
 }
 
@@ -442,9 +445,17 @@ func (s *Store) EnqueueAudit(ctx context.Context) (jobID int64, enqueued bool, e
 // EnqueueAuditSince queues the nightly audit for the slot starting at since,
 // unless an audit job was already created at or after it (or one is active).
 func (s *Store) EnqueueAuditSince(ctx context.Context, since time.Time) (bool, error) {
+	return s.EnqueueKindSince(ctx, JobKindAudit, since)
+}
+
+// EnqueueKindSince queues a sourceless job of kind for the slot starting at
+// since, unless a job of that kind was already created at or after it (or
+// one is pending or running: jobs_active_kind). Used for the nightly audit
+// and the 10-minute source health run.
+func (s *Store) EnqueueKindSince(ctx context.Context, kind string, since time.Time) (bool, error) {
 	var id int64
 	err := s.QueryRow(ctx, `INSERT INTO jobs(kind) SELECT $1::text WHERE NOT EXISTS
-		(SELECT 1 FROM jobs WHERE kind=$1::text AND created_at>=$2) ON CONFLICT DO NOTHING RETURNING id`, JobKindAudit, since).Scan(&id)
+		(SELECT 1 FROM jobs WHERE kind=$1::text AND created_at>=$2) ON CONFLICT DO NOTHING RETURNING id`, kind, since).Scan(&id)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return false, nil
 	}
