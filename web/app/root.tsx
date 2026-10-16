@@ -16,7 +16,10 @@ import {
   type LoaderFunctionArgs,
   type ShouldRevalidateFunctionArgs,
 } from 'react-router';
+import {AgeRestricted, SiteAgeGate} from './components/AgeGate';
 import {CookieBanner} from './components/CookieBanner';
+import {isGateExempt, type GateState} from './lib/ageGate';
+import {gateOf} from './lib/ageGate.server';
 import {pageName, setPage, startAnalytics} from './lib/analytics';
 import {siteOrigin, serverUiDict} from './lib/api.server';
 import {AuthProvider} from './lib/auth';
@@ -57,7 +60,19 @@ export type RootData = {
   origin: string;
   /** The first path segment is not a language: the shell renders 404. */
   notFound: boolean;
+  /**
+   * Site-entry 18+ gate (lib/ageGate.ts), from the signed `ag` cookie on the
+   * server. Anything but ok renders the gate or the restricted page instead
+   * of the app (exempt pages aside).
+   */
+  gate: GateState;
+  /** End of the 24-hour lock when gate is denied (ISO time). */
+  gateUntil?: string;
 };
+
+// The verdict only changes through the gate form, which reloads the page;
+// client-side root loads (a language switch) keep the server's answer.
+let knownGate: Pick<RootData, 'gate' | 'gateUntil'> = {gate: 'none'};
 
 /** Path after the raw :lang segment (/zh-tw/releases/x -> /releases/x). */
 const afterLang = (pathname: string, raw: string) => pathname.slice(raw.length + 1) || '/';
@@ -78,7 +93,16 @@ export async function loader({request, params}: LoaderFunctionArgs) {
     throw redirect(localizePath(url.pathname, cookieLang) + url.search, {status: 302, headers: {Vary: 'Cookie', 'Cache-Control': 'private, no-store'}});
   }
   const lang = p.kind === 'ok' ? p.lang : DEFAULT_LANG;
-  const body: RootData = {lang, dict: await serverUiDict(lang), hadChoice: !!cookieLang, origin: siteOrigin(request), notFound: p.kind === 'bad'};
+  const gate = gateOf(request);
+  const body: RootData = {
+    lang,
+    dict: await serverUiDict(lang),
+    hadChoice: !!cookieLang,
+    origin: siteOrigin(request),
+    notFound: p.kind === 'bad',
+    gate: gate.state,
+    gateUntil: gate.until,
+  };
   return data(body, p.kind === 'bad' ? {status: 404} : undefined);
 }
 
@@ -89,7 +113,7 @@ export async function clientLoader({request, params}: ClientLoaderFunctionArgs):
   const lang = p.kind === 'ok' ? p.lang : DEFAULT_LANG;
   const dict = await loadUiDict(lang);
   primeLang(lang, dict);
-  return {lang, dict, hadChoice: !!readLangCookie(document.cookie), origin: window.location.origin, notFound: p.kind === 'bad'};
+  return {lang, dict, hadChoice: !!readLangCookie(document.cookie), origin: window.location.origin, notFound: p.kind === 'bad', ...knownGate};
 }
 
 // The language is the only thing the root loads: keep it across navigations
@@ -148,6 +172,19 @@ function AnalyticsRoutes() {
 
 export default function App() {
   const root = useLoaderData<RootData>();
+  const location = useLocation();
+  knownGate = {gate: root.gate, gateUntil: root.gateUntil};
+  // 18+ gate: no app (player, page data fetches, analytics, banners) until
+  // the visitor is confirmed. The document head (title, description,
+  // canonical, JSON-LD) stays the page's own, and crawlers get exactly what
+  // a visitor without the cookie gets: no cloaking.
+  if (root.gate !== 'ok' && !isGateExempt(location.pathname)) {
+    return (
+      <ThemeProvider>
+        <I18nProvider route={root}>{root.gate === 'denied' ? <AgeRestricted until={root.gateUntil} /> : <SiteAgeGate />}</I18nProvider>
+      </ThemeProvider>
+    );
+  }
   return (
     <ThemeProvider>
       <AnalyticsRoutes />

@@ -1035,9 +1035,47 @@ a.notif-main:hover {
   gap: 14px;
 }
 
+.age-gate h1,
 .age-gate h2,
 .age-gate p {
   margin: 0;
+}
+
+.age-gate h1 {
+  font-size: 22px;
+  line-height: 1.35;
+}
+
+/* Site-entry gate and restricted page (root.tsx): the whole viewport. */
+.age-gate-page {
+  min-height: 100vh;
+  min-height: 100dvh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px 16px;
+  background: var(--bg);
+}
+
+.age-gate-page .age-gate {
+  width: 100%;
+}
+
+.age-gate-form {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.age-gate-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+  font-size: 13px;
+}
+
+.age-gate-links a {
+  color: var(--text2);
 }
 
 .age-badge {

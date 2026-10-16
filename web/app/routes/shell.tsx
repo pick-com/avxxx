@@ -11,6 +11,7 @@ import {PlayerHostLayer, PlayerHostProvider, useMiniActive, usePlayerHostStore} 
 import {SideNav, type NavVariant} from '../components/SideNav';
 import {TopBar} from '../components/TopBar';
 import {useI18n, useT} from '../lib/i18n';
+import {isGated} from '../lib/ageGate.server';
 import {serverApi} from '../lib/api.server';
 import {routeLang} from '../lib/langs';
 import type {Announcement} from '../lib/home';
@@ -33,6 +34,8 @@ type ShellLoad = {lang: string; announcements?: Announcement[]} | null;
 export async function loader({params, request}: LoaderFunctionArgs): Promise<ShellLoad> {
   const lang = routeLang(params);
   if (!lang) return null;
+  // 18+ gate: the shell is not rendered (root.tsx), nothing to fetch.
+  if (isGated(request)) return {lang};
   const region = (request.headers.get('cf-ipcountry') ?? '').trim().toUpperCase();
   const q = new URLSearchParams({lang});
   if (/^[A-Z]{2}$/.test(region) && region !== 'XX') q.set('region', region);

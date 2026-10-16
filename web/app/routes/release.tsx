@@ -19,6 +19,7 @@ import {ApiError, getPerformerReleases, getWatchLater, getRelease, getReleasePer
 import {track} from '../lib/analytics';
 import {useAuth} from '../lib/auth';
 import {t, useI18n, useT} from '../lib/i18n';
+import {isGated} from '../lib/ageGate.server';
 import {isGone, serverApi} from '../lib/api.server';
 import {serverCredits} from '../lib/credits.server';
 import {useCredits, type Attribution} from '../lib/evidence';
@@ -61,21 +62,40 @@ type ReleaseLoad = {
   unavailable?: boolean;
 };
 
+/** The fields meta() reads (title, description, JSON-LD), for a gated page. */
+const seoRelease = (r: ReleaseDetail): ReleaseDetail =>
+  ({
+    slug: r.slug,
+    canonical_title: r.canonical_title,
+    title_ja: r.title_ja,
+    synopsis: r.synopsis,
+    maker_name: r.maker_name,
+    director_name: r.director_name,
+    release_date: r.release_date,
+    runtime_minutes: r.runtime_minutes,
+    cover: r.cover?.url ? {url: r.cover.url} : undefined,
+    tags: (r.tags ?? []).map(tag => ({name: tag?.name})),
+  }) as ReleaseDetail;
+const seoPerformer = (p: Performer): Performer => ({slug: p.slug, canonical_name: p.canonical_name}) as Performer;
+
 export async function loader({params, request}: LoaderFunctionArgs) {
   const lang = routeLang(params);
   const slug = params.slug ?? '';
   if (!lang) return null;
   const enc = encodeURIComponent(slug);
+  const gated = isGated(request);
   try {
     const [release, cast, credits] = await Promise.all([
       serverApi<ReleaseDetail>(`releases/${enc}`, {lang, signal: request.signal}),
       serverApi<{items: Performer[] | null}>(`releases/${enc}/performers`, {lang, signal: request.signal}).catch(() => ({items: []})),
-      serverCredits({kind: 'release', slug}, request.signal),
+      gated ? undefined : serverCredits({kind: 'release', slug}, request.signal),
     ]);
     // Merged release: the API followed the 301; send crawlers to the surviving URL.
     if (release.slug && release.slug !== slug) {
       throw redirect(localizePath(`/releases/${encodeURIComponent(release.slug)}`, lang) + new URL(request.url).search, 301);
     }
+    // 18+ gate: only what meta() puts in the head reaches the document.
+    if (gated) return {lang, slug, release: seoRelease(release), performers: (cast.items ?? []).map(seoPerformer)} satisfies ReleaseLoad;
     return {lang, slug, release, performers: cast.items ?? [], credits} satisfies ReleaseLoad;
   } catch (e) {
     if (e instanceof Response) throw e;
@@ -161,8 +181,8 @@ export const meta: MetaFunction<typeof loader> = ({data: d, params, matches}) =>
 // first performer's other works.
 // 即将上线: GET /api/releases/{slug} also serves upcoming works; the page then
 // shows when it goes live and 预约 instead of the player.
-// TODO(PRD 15 AgeGate): gate playback with <AgeConfirm> once releases carry an
-// age rating; the API has no rating field yet, so the gate is not mounted.
+// 18+: the whole site sits behind the site-entry gate (root.tsx); without a
+// confirmed visitor this page (and its player) is never rendered.
 // TODO(tech plan 2.4 / 3.2 release_assets): 章节 · 截屏 strip.
 // 片源 row and versions live in Player (GET play-config). Tags, director and
 // product codes come from the catalog-filters release detail and are simply

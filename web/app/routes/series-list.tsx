@@ -4,6 +4,7 @@ import {LoadMore} from '../components/Paging';
 import {SourceCredits} from '../components/SourceCredits';
 import {CardGridSkeleton, EmptyState, ErrorBanner} from '../components/States';
 import {query, toPage, type LangCode, type Page} from '../lib/api';
+import {isGated} from '../lib/ageGate.server';
 import {serverApi} from '../lib/api.server';
 import {serverCredits} from '../lib/credits.server';
 import {useCredits, type Attribution} from '../lib/evidence';
@@ -41,11 +42,14 @@ export async function loader({params, request}: LoaderFunctionArgs) {
   const url = new URL(request.url);
   const q = url.searchParams.get('q') ?? '';
   const sort = parseSeriesSort(url.searchParams.get('sort'));
+  const gated = isGated(request);
   const [page, credits] = await Promise.all([
     serverApi<{items: SeriesListItem[] | null; next_cursor?: string | null}>(seriesListPath(q, sort), {lang, signal: request.signal}).then(toPage, () => undefined),
-    serverCredits({kind: null}, request.signal),
+    gated ? undefined : serverCredits({kind: null}, request.signal),
   ]);
-  const body: SeriesListLoad = {lang, search: url.searchParams.toString(), page, credits};
+  // 18+ gate: the list only as the names and links of the head's ItemList.
+  const listed = gated && page ? {...page, items: page.items.map(s => ({slug: s.slug, name: s.name}) as SeriesListItem)} : page;
+  const body: SeriesListLoad = {lang, search: url.searchParams.toString(), page: listed, credits};
   return page ? body : data(body, {status: 503});
 }
 
