@@ -1,15 +1,19 @@
 import {useEffect, useState} from 'react';
-import {Outlet, useMatches, useRouteLoaderData} from 'react-router';
+import {Outlet, useLoaderData, useMatches, useRouteLoaderData, type LoaderFunctionArgs, type ShouldRevalidateFunctionArgs} from 'react-router';
 import type {RootData} from '../root';
 import NotFound from './not-found';
 import {useLocation, useNavigate} from '../lib/nav';
 import {BottomTabs} from '../components/BottomTabs';
 import {Footer} from '../components/Footer';
 import {NetworkBanner} from '../components/NetworkBanner';
+import {AnnouncementBar} from '../components/AnnouncementBar';
 import {PlayerHostLayer, PlayerHostProvider, useMiniActive, usePlayerHostStore} from '../components/PlayerHost';
 import {SideNav, type NavVariant} from '../components/SideNav';
 import {TopBar} from '../components/TopBar';
-import {useT} from '../lib/i18n';
+import {useI18n, useT} from '../lib/i18n';
+import {serverApi} from '../lib/api.server';
+import {routeLang} from '../lib/langs';
+import type {Announcement} from '../lib/home';
 import {useRecsAvailable} from '../lib/recs';
 import {useMediaQuery} from '../lib/useMediaQuery';
 
@@ -19,6 +23,31 @@ export type ShellHandle = {
 };
 
 type NavMode = 'auto' | 'open' | 'collapsed';
+
+// Announcement bar (AnnouncementBar): rendered on the server for the page
+// language so it never pushes the page down after hydration. The visitor's
+// country (CF-IPCountry behind the CDN) is forwarded as ?region= for
+// region-targeted announcements. Kept across navigations within a language.
+type ShellLoad = {lang: string; announcements?: Announcement[]} | null;
+
+export async function loader({params, request}: LoaderFunctionArgs): Promise<ShellLoad> {
+  const lang = routeLang(params);
+  if (!lang) return null;
+  const region = (request.headers.get('cf-ipcountry') ?? '').trim().toUpperCase();
+  const q = new URLSearchParams({lang});
+  if (/^[A-Z]{2}$/.test(region) && region !== 'XX') q.set('region', region);
+  const announcements = await serverApi<{items: Announcement[] | null}>(`announcements?${q}`, {signal: request.signal}).then(
+    d => d?.items ?? [],
+    () => undefined,
+  );
+  return {lang, announcements};
+}
+
+export const clientLoader = () => null;
+
+export function shouldRevalidate({currentParams, nextParams}: ShouldRevalidateFunctionArgs) {
+  return currentParams.lang !== nextParams.lang;
+}
 
 /**
  * App shell: TopBar + SideNav (≥1200px), BrowseRail icon rail (768–1199px),
@@ -36,6 +65,9 @@ export default function Shell() {
 
 function ShellFrame() {
   const t = useT();
+  const {uiLang} = useI18n();
+  const shellData = useLoaderData<typeof loader>() as ShellLoad;
+  const announcements = shellData?.lang === uiLang ? shellData.announcements : undefined;
   const mini = useMiniActive();
   const matches = useMatches();
   const root = useRouteLoaderData<RootData>('root');
@@ -87,6 +119,7 @@ function ShellFrame() {
       </a>
       <TopBar onToggleNav={toggle} navExpanded={variant === 'full' || variant === 'overlay'} />
       <NetworkBanner />
+      <AnnouncementBar initial={announcements} />
       <div className="shell-body">
         <SideNav variant={variant} />
         {variant === 'overlay' && <button type="button" className="nav-backdrop" aria-label={t('nav.closeOverlay')} onClick={() => setMode('auto')} />}

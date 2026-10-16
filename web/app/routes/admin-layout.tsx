@@ -29,6 +29,7 @@ const ICONS = {
   priority: 'M4 6h10M4 12h7M4 18h4M17 4v16M14 17l3 3 3-3',
   completeness: 'M4 20V10M10 20V4M16 20v-7M22 20H2',
   links: 'M10 14a4 4 0 005.7 0l3-3a4 4 0 00-5.7-5.7l-1 1M14 10a4 4 0 00-5.7 0l-3 3a4 4 0 005.7 5.7l1-1',
+  ops: 'M4 5h16v14H4zM4 9h16M9 13h6M9 16h4',
 };
 
 type Badge = {n: number; tone: 'red' | 'amber' | 'plain'} | null;
@@ -143,6 +144,10 @@ export default function AdminLayout() {
       {
         title: '社区',
         items: [{to: '/admin/moderation', label: '举报与审核', icon: 'reports', badge: badge(moderation, counts?.reports_overdue ? 'red' : 'amber')}],
+      },
+      {
+        title: '运营',
+        items: [{to: '/admin/ops', label: '首页排期与公告', icon: 'ops'}],
       },
       {
         title: '系统',

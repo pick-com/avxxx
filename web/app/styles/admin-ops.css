@@ -1,0 +1,176 @@
+/* AdminOps (routes/admin-ops.tsx): schedule timeline, order lists, forms, preview. */
+
+.ops-tl {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  overflow-x: auto;
+}
+
+.ops-tl-head,
+.ops-tl-row {
+  display: grid;
+  grid-template-columns: 180px minmax(640px, 1fr);
+  align-items: center;
+  gap: 8px;
+}
+
+.ops-tl-days {
+  display: grid;
+  grid-template-columns: repeat(14, 1fr);
+}
+
+.ops-tl-day {
+  font-size: 11px;
+  color: var(--muted);
+  text-align: center;
+  border-left: 1px solid var(--line);
+  padding: 2px 0;
+}
+
+.ops-tl-day.is-weekend {
+  color: var(--accent);
+}
+
+.ops-tl-group {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.ops-tl-group-title {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--text2);
+  padding-top: 6px;
+}
+
+.ops-tl-empty {
+  font-size: 12px;
+  padding-left: 188px;
+}
+
+.ops-tl-label {
+  font-size: 12px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ops-tl-track {
+  position: relative;
+  height: 26px;
+  border-radius: 6px;
+  background: repeating-linear-gradient(90deg, var(--surface2) 0, var(--surface2) calc(100% / 14 - 1px), var(--line) calc(100% / 14 - 1px), var(--line) calc(100% / 14));
+}
+
+.ops-tl-now {
+  position: absolute;
+  top: -2px;
+  bottom: -2px;
+  width: 2px;
+  background: var(--badge, #d93025);
+  z-index: 1;
+}
+
+.ops-tl-bar {
+  position: absolute;
+  top: 3px;
+  height: 20px;
+  padding: 0 6px;
+  border: 0;
+  border-radius: 4px;
+  font-size: 11px;
+  text-align: left;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  cursor: pointer;
+  color: var(--on-accent, #0f1012);
+  background: var(--accent);
+}
+
+.ops-tl-bar.tone-blue {
+  background: color-mix(in srgb, var(--accent) 45%, var(--surface3));
+  color: var(--text);
+}
+
+.ops-tl-bar.tone-plain {
+  background: var(--surface3);
+  color: var(--muted);
+}
+
+.ops-tl-bar.tone-red {
+  background: repeating-linear-gradient(45deg, #7a2a24 0 6px, #5a1f1b 6px 12px);
+  color: #fff;
+}
+
+.ops-dragging {
+  opacity: 0.5;
+}
+
+.ops-form .adm-form-grid {
+  margin-top: 12px;
+}
+
+.ops-texts {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.ops-dot {
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  margin-left: 4px;
+  border-radius: 50%;
+  background: var(--accent);
+  vertical-align: middle;
+}
+
+.ops-langs {
+  border: 0;
+  padding: 0;
+  margin: 0;
+}
+
+.ops-danger {
+  margin-left: auto;
+  color: var(--badge, #d93025);
+}
+
+.ops-preview-ann {
+  padding: 8px 0;
+  border-bottom: 1px solid var(--line);
+}
+
+.ops-preview-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 12px;
+}
+
+.ops-preview-card {
+  display: grid;
+  grid-template-columns: 112px 1fr;
+  gap: 10px;
+  align-items: start;
+  font-size: 13px;
+}
+
+.ops-preview-card img,
+.ops-preview-ph {
+  width: 112px;
+  aspect-ratio: 3 / 2;
+  object-fit: cover;
+  border-radius: 6px;
+  background: var(--surface2);
+}
+
+.ops-preview-ph {
+  display: grid;
+  place-items: center;
+  font-size: 11px;
+  color: var(--muted);
+}
