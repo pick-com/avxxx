@@ -6,7 +6,10 @@
 // error pages), player controls and settings sheet, autoplay, home and the
 // settings page. Other pages still have inline zh-CN text.
 
+import {communityZhCN} from './messages.community.zh-CN';
+
 export const zhCN = {
+  ...communityZhCN,
   // app / errors
   'app.loading': '正在加载',
   'error.notFound': '页面不存在',
@@ -236,7 +239,7 @@ export const zhCN = {
   'settings.channelPush': '推送',
   'settings.channelEmail': '邮件',
   'settings.channelLabel': '{kind}：{channel}',
-  'settings.pushNote': '推送需要在设备上授权。网页推送即将支持，开关会先保存到你的账号。',
+  'settings.pushNote': '推送开关对整个账号生效，会发到每台开启了推送的设备；在这台设备上收推送需要先允许浏览器通知。',
   'settings.timing': '时机与频率',
   'settings.when': '什么时候提醒',
   'settings.whenDesc': '作品上线时提醒；「上线前一天」提醒即将支持',

@@ -15,6 +15,8 @@ export default [
     route('reservations', 'routes/reservations.tsx'),
     route('notifications', 'routes/notifications.tsx'),
     route('settings', 'routes/settings.tsx'),
+    // Deep link used by notification emails (internal/notify.SettingsPath).
+    route('settings/notifications', 'routes/settings-notifications.tsx'),
     route('legal/:doc', 'routes/legal.tsx'),
     // PRD 8 language prefix as an entry URL (/en/..., /zh-TW/...).
     route(':lang/*', 'routes/lang-prefix.tsx'),

@@ -1,11 +1,13 @@
 import {useEffect, useState, type ReactNode} from 'react';
-import {Link, useNavigate, useSearchParams} from 'react-router';
+import {Link, useLocation, useNavigate, useSearchParams} from 'react-router';
 import {Icon, type IconName} from '../components/Icon';
 import {EmptyState, ErrorBanner, BlockSkeleton} from '../components/States';
+import {PushDeviceRow} from '../components/PushOptIn';
 import {Switch, SwitchRow} from '../components/Switch';
 import {clearWatchHistory, type LangCode, type NotifyChannel, type NotifyKind, type QualityPref, type UserSettings} from '../lib/api';
 import {useAuth} from '../lib/auth';
 import {useConsent} from '../lib/consent';
+import {usePush} from '../lib/push';
 import {browserTimezone, useSettings} from '../lib/settings';
 import {themeLabels, useTheme, type ThemePref} from '../lib/theme';
 import {useMediaQuery} from '../lib/useMediaQuery';
@@ -13,7 +15,7 @@ import {LANGS, LANG_LABELS} from '../lib/langs';
 import {t as translate, useI18n, useT} from '../lib/i18n';
 import type {MessageKey} from '../lib/messages.zh-CN';
 
-export const meta = () => [{title: 'REEL · 设置'}];
+export const meta = () => [{title: translate('settings.pageTitle')}];
 
 // Settings / MobileSettings on GET / PATCH /api/me/settings. Every control
 // saves on change (optimistic, per-field error under the control).
@@ -53,6 +55,7 @@ export default function SettingsPage() {
   const t = useT();
   const SECTIONS = SECTION_DEFS.map(s => ({...s, title: t(s.title), desc: t(s.desc)}));
   const {status: auth} = useAuth();
+  const location = useLocation();
   const {status, error, reload} = useSettings();
   const [params, setParams] = useSearchParams();
   const mobile = useMediaQuery('(max-width: 767px)');
@@ -62,7 +65,7 @@ export default function SettingsPage() {
   if (auth === 'anon') {
     return (
       <div className="page">
-        <EmptyState icon="settings" title={t('settings.signInTitle')} body={t('settings.signInBody')} actions={[{to: '/login?next=%2Fsettings', label: t('auth.login')}]} />
+        <EmptyState icon="settings" title={t('settings.signInTitle')} body={t('settings.signInBody')} actions={[{to: `/login?next=${encodeURIComponent(location.pathname + location.search)}`, label: t('auth.login')}]} />
       </div>
     );
   }
@@ -360,16 +363,27 @@ function LanguageSection({s}: {s: UserSettings}) {
 function NotifySection({s}: {s: UserSettings}) {
   const t = useT();
   const {save, pending} = useSettings();
+  const push = usePush();
   const tz = browserTimezone();
-  const setChannel = (kind: NotifyKind, ch: NotifyChannel, on: boolean) =>
+  // GET /api/push/vapid-public-key 404: push is not configured, so the push
+  // channel is not offered at all.
+  const channels = push.availability === 'disabled' ? CHANNEL_LABELS.filter(([ch]) => ch !== 'push') : CHANNEL_LABELS;
+  const setChannel = async (kind: NotifyKind, ch: NotifyChannel, on: boolean) => {
+    // Turning a push channel on from this browser subscribes it first; the
+    // permission prompt comes from this click.
+    if (ch === 'push' && on && push.availability === 'available' && !push.subscribed) {
+      if (!(await push.enable())) return;
+    }
     save(`notify_prefs.${kind}`, {notify_prefs: {[kind]: {[ch]: on}}}, cur => ({
       ...cur,
       notify_prefs: {...cur.notify_prefs, [kind]: {...cur.notify_prefs[kind], [ch]: on}},
     }));
+  };
 
   return (
     <>
       <Group title={t('settings.notifyGroup')}>
+        {push.availability !== 'disabled' && <PushDeviceRow push={push} />}
         {KIND_LABELS.map(([kind, labelKey, descKey]) => {
           const label = t(labelKey);
           const desc = descKey ? t(descKey) : '';
@@ -383,7 +397,7 @@ function NotifySection({s}: {s: UserSettings}) {
               <FieldError k={`notify_prefs.${kind}`} />
             </div>
             <div className="chip-row chip-row-wrap" role="group" aria-labelledby={`kind-${kind}`}>
-              {CHANNEL_LABELS.map(([ch, chKey]) => {
+              {channels.map(([ch, chKey]) => {
                 const chLabel = t(chKey);
                 const on = s.notify_prefs?.[kind]?.[ch] ?? false;
                 return (
@@ -393,8 +407,8 @@ function NotifySection({s}: {s: UserSettings}) {
                     className={on ? 'chip chip-lg chip-on' : 'chip chip-lg'}
                     aria-pressed={on}
                     aria-label={t('settings.channelLabel', {kind: label, channel: chLabel})}
-                    aria-busy={pending.has(`notify_prefs.${kind}`) || undefined}
-                    onClick={() => setChannel(kind, ch, !on)}
+                    aria-busy={pending.has(`notify_prefs.${kind}`) || (ch === 'push' && push.busy) || undefined}
+                    onClick={() => void setChannel(kind, ch, !on)}
                   >
                     {on && <Icon name="check" size={14} />}
                     {chLabel}
@@ -405,7 +419,7 @@ function NotifySection({s}: {s: UserSettings}) {
           </div>
           );
         })}
-        <p className="set-note">{t('settings.pushNote')}</p>
+        {push.availability !== 'disabled' && <p className="set-note">{t('settings.pushNote')}</p>}
       </Group>
       <Group title={t('settings.timing')}>
         <div className="set-row">

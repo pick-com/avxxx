@@ -6,6 +6,9 @@ import {CardGridSkeleton, ErrorBanner} from '../components/States';
 import {Switch} from '../components/Switch';
 import {listPerformerPage, listTags, type LangCode, type NotifyMode} from '../lib/api';
 import {useAuth} from '../lib/auth';
+import {useT} from '../lib/i18n';
+import {usePush, type PushState} from '../lib/push';
+import {pushStatusText} from '../components/PushOptIn';
 import {formatCount} from '../lib/format';
 import {useSettings} from '../lib/settings';
 import {useSocial} from '../lib/social';
@@ -39,6 +42,7 @@ export default function Welcome() {
   const [params] = useSearchParams();
   const navigate = useNavigate();
   const mobile = useMediaQuery('(max-width: 767px)');
+  const push = usePush();
   const [step, setStep] = useState(0);
   const next = safeNext(params.get('next'));
 
@@ -55,9 +59,10 @@ export default function Welcome() {
     navigate(next, {replace: true});
   };
 
+  // Phones ask for push first, unless push is not configured on this server.
   const steps = [
-    mobile
-      ? {title: '有新作时通知你？', sub: '关注的演员有新作、预约的作品上线时提醒你。可以随时在设置里修改。', body: <PushStep />}
+    mobile && push.availability !== 'disabled'
+      ? {title: '有新作时通知你？', sub: '关注的演员有新作、预约的作品上线时提醒你。可以随时在设置里修改。', body: <PushStep push={push} />}
       : {title: '选择语言和外观', sub: '界面、内容语言和外观分开设置，之后可以在「设置」里修改。', body: <LanguageStep />},
     {title: '你喜欢看哪些类型？', sub: `选 ${MIN_TAGS} 个以上，首页会更懂你。选择只用于推荐，不公开。`, body: null},
     {title: '关注几位演员', sub: '关注后，有新作上线时会提醒你。', body: null},
@@ -174,24 +179,34 @@ function LanguageStep() {
   );
 }
 
-function PushStep() {
+function PushStep({push}: {push: PushState}) {
+  const t = useT();
   const {settings, save, status, fieldErrors} = useSettings();
-  if (status !== 'ready' || !settings) return <p className="muted">可以稍后在「设置 › 通知」里开启。</p>;
-  const on = settings.notify_prefs.new_work.push && settings.notify_prefs.reservation.push;
-  const set = (v: boolean) =>
+  if (status !== 'ready' || !settings) return <p className="muted">{t('push.laterHint')}</p>;
+  const on = settings.notify_prefs.new_work.push && settings.notify_prefs.reservation.push && (push.subscribed || push.availability !== 'available');
+  const set = async (v: boolean) => {
+    // The permission prompt comes from this tap (never on page load).
+    if (v && push.availability === 'available' && !push.subscribed && !(await push.enable())) return;
     save('notify_prefs.push', {notify_prefs: {new_work: {push: v}, reservation: {push: v}}}, cur => ({
       ...cur,
       notify_prefs: {...cur.notify_prefs, new_work: {...cur.notify_prefs.new_work, push: v}, reservation: {...cur.notify_prefs.reservation, push: v}},
     }));
+  };
+  const deviceNote = push.availability === 'available' && !push.error && push.permission !== 'denied' ? '' : pushStatusText(push, t);
   return (
     <div className="set-card">
       <div className="set-row">
         <div className="set-text">
-          <span className="set-label">允许新作推送</span>
-          <span className="set-desc">每天最多 1 条，22:00–8:00 不打扰。网页推送即将支持，开关会先保存到账号。</span>
+          <span className="set-label">{t('push.allowNew')}</span>
+          <span className="set-desc">{t('push.allowNewDesc')}</span>
+          {deviceNote && (
+            <span className={push.error ? 'field-error' : 'set-desc'} role={push.error ? 'alert' : undefined}>
+              {deviceNote}
+            </span>
+          )}
           {fieldErrors['notify_prefs.push'] && <span className="field-error">{fieldErrors['notify_prefs.push']}</span>}
         </div>
-        <Switch checked={on} onChange={set} label="允许新作推送" />
+        <Switch checked={on} busy={push.busy} disabled={push.busy} onChange={v => void set(v)} label={t('push.allowNew')} />
       </div>
     </div>
   );
