@@ -15,6 +15,9 @@ import {t} from './i18n';
 
 const USER_TOKEN_KEY = 'user_token';
 const ADMIN_TOKEN_KEY = 'admin_token';
+// 操作人 label for review_events.actor (admin auth is one shared token).
+// Stored as a JSON string; AdminDedupe reads the same key.
+const ADMIN_ACTOR_KEY = 'admin_actor';
 
 function readStorage(key: string): string | null {
   try {
@@ -38,7 +41,21 @@ export const tokens = {
   admin: () => readStorage(ADMIN_TOKEN_KEY),
   setUser: (value: string | null) => writeStorage(USER_TOKEN_KEY, value),
   setAdmin: (value: string | null) => writeStorage(ADMIN_TOKEN_KEY, value),
+  adminActor: (): string => {
+    const raw = readStorage(ADMIN_ACTOR_KEY);
+    if (!raw) return '';
+    try {
+      const v = JSON.parse(raw);
+      return typeof v === 'string' ? v : '';
+    } catch {
+      return raw;
+    }
+  },
+  setAdminActor: (value: string) => writeStorage(ADMIN_ACTOR_KEY, value.trim() ? JSON.stringify(value.trim()) : null),
 };
+
+/** HTTP header values must be ISO-8859-1; the 操作人 name is limited to printable ASCII. */
+export const validAdminActor = (v: string) => /^[\x20-\x7e]{0,100}$/.test(v.trim());
 
 export class ApiError extends Error {
   status: number;
@@ -164,6 +181,11 @@ export async function api<T>(path: string, options: RequestOptions = {}): Promis
   const headers = new Headers({...options.headers, Accept: 'application/json'});
   const token = tokenFor(clean);
   if (token) headers.set('Authorization', `Bearer ${token}`);
+  // Every admin write names its 操作人 (recorded as review_events.actor / updated_by).
+  if (clean.startsWith('admin/') && (options.method ?? 'GET') !== 'GET') {
+    const actor = tokens.adminActor();
+    if (actor && validAdminActor(actor)) headers.set('X-Admin-User', actor);
+  }
   if (options.body !== undefined) headers.set('Content-Type', 'application/json');
   let response: Response;
   try {
