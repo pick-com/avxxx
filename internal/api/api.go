@@ -48,6 +48,9 @@ type Server struct {
 	// weights and rebuild routes (recs.go).
 	recs      recsStore
 	recsAdmin recsAdmin
+	// performers backs the admin performer editor, performer requests and
+	// the similarity weights preview (admin_performer.go).
+	performerEd performerAdmin
 	// adminToken is ADMIN_TOKEN, read once at construction. Empty disables
 	// every admin route (they all return 401).
 	adminToken string
@@ -80,6 +83,7 @@ func Register(mux *http.ServeMux, s *store.Store, mediaHandler *media.Handler) {
 		srv.editor = s
 		srv.recs = s
 		srv.recsAdmin = s
+		srv.performerEd = s
 	}
 	for _, rt := range srv.routes() {
 		mux.HandleFunc(rt.pattern, rt.handler)
@@ -106,6 +110,7 @@ func (srv *Server) routes() []route {
 	rs = append(rs, srv.moderationRoutes()...)
 	rs = append(rs, srv.adminCurveRoutes()...)
 	rs = append(rs, srv.recsRoutes()...)
+	rs = append(rs, srv.adminPerformerRoutes()...)
 	return srv.followMerges(rs)
 }
 

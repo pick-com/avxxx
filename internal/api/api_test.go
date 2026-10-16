@@ -135,6 +135,18 @@ var expectedRoutes = []string{
 	"GET /api/admin/similarity-weights",
 	"PUT /api/admin/similarity-weights",
 	"POST /api/admin/recs/rebuild",
+	"GET /api/admin/performers",
+	"GET /api/admin/performers/{id}",
+	"PATCH /api/admin/performers/{id}",
+	"DELETE /api/admin/performers/{id}/overrides/{field}",
+	"POST /api/admin/performers/{id}/aliases",
+	"DELETE /api/admin/performers/{id}/aliases/{alias_id}",
+	"POST /api/admin/performers/{id}/status",
+	"GET /api/admin/performer-requests",
+	"POST /api/admin/performer-requests/{id}/approve",
+	"POST /api/admin/performer-requests/{id}/reject",
+	"POST /api/admin/similarity-weights/preview",
+	"POST /api/performer-requests",
 }
 
 var (
