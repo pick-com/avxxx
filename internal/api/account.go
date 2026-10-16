@@ -101,6 +101,18 @@ func (srv *Server) saveWatch(w http.ResponseWriter, r *http.Request) {
 		Duration int    `json:"duration_seconds"`
 	}
 	_ = json.NewDecoder(r.Body).Decode(&in)
+	// Paused history (user_settings.history_paused): accept but do not record.
+	if srv.social != nil {
+		paused, err := srv.social.HistoryPaused(r.Context(), id)
+		if err != nil {
+			reply(w, nil, err)
+			return
+		}
+		if paused {
+			reply(w, map[string]bool{"saved": false, "paused": true}, nil)
+			return
+		}
+	}
 	e = srv.accounts.SaveWatch(r.Context(), id, in.Slug, in.Progress, in.Duration)
 	reply(w, map[string]bool{"saved": e == nil}, e)
 }
