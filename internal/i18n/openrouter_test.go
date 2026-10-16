@@ -138,7 +138,7 @@ func TestOpenRouterBatchAndGlossary(t *testing.T) {
 		{Term: "人妻", Lang: ZhCN, Translation: "人妻"},
 		{Term: "人妻温泉", Lang: ZhCN, Translation: "人妻温泉旅行"},
 		{Term: "人妻", Lang: En, Translation: "Married Woman"}, // other language
-		{Term: "巨乳", Lang: ZhCN, Translation: "巨乳"},       // not in the batch
+		{Term: "巨乳", Lang: ZhCN, Translation: "巨乳"},          // not in the batch
 	}
 	res, err := o.TranslateBatch(context.Background(), Batch{To: ZhCN, Texts: []string{"人妻温泉 ABP-123", "素人の夏"}, Glossary: glossary})
 	if err != nil {

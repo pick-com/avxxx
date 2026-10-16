@@ -26,7 +26,9 @@ type fakeStore struct {
 	gotLimit int
 }
 
-func key(it Item) string { return it.Ref.EntityType + "/" + it.Ref.EntityID + "/" + it.Ref.Field + "/" + it.Lang }
+func key(it Item) string {
+	return it.Ref.EntityType + "/" + it.Ref.EntityID + "/" + it.Ref.Field + "/" + it.Lang
+}
 
 func (f *fakeStore) DueMTRequests(_ context.Context, _ time.Time, limit int) ([]Item, error) {
 	if len(f.requests) > limit {
