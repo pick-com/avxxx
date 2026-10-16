@@ -139,6 +139,11 @@ var v1 = []Schema{
 	}},
 	{Event: "review_post", Props: []Field{id("release_id"), req("spoiler", Bool), req("watched", Bool)}},
 	{Event: "review_like", Props: []Field{id("review_id")}},
+	// 互动 (PRD 5.4): 赞 / 踩, 评论, 分享
+	{Event: "release_vote", Props: []Field{id("release_id"), enum("vote", "like", "dislike", "none")}},
+	{Event: "comment_post", Props: []Field{id("release_id"), req("reply", Bool), req("spoiler", Bool)}},
+	{Event: "comment_like", Props: []Field{id("comment_id")}},
+	{Event: "share", Props: []Field{id("release_id"), enum("method", "native", "copy"), req("with_time", Bool)}},
 	// 引导与合规
 	{Event: "onboarding_step", Props: []Field{req("step", String), req("skipped", Bool)}},
 	{Event: "consent_change", Props: []Field{

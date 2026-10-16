@@ -322,6 +322,7 @@ const (
 	recallHistory   = 10
 	recallFollowed  = 60
 	watchedLimit    = 5000
+	dislikedLimit   = 1000
 )
 
 const candidateCols = `release_id, channel, raw, seed_id, seed_title, performer_id, performer_name, label, board_rank`
@@ -403,7 +404,10 @@ func (s *Store) Recall(ctx context.Context, q RecQuery) (RecallResult, error) {
 	b.Queue(`SELECT `+candidateCols+` FROM (`+strings.Join(parts, " UNION ALL ")+`) c(`+candidateCols+`)`, args)
 	b.Queue(`SELECT EXISTS (SELECT 1 FROM playback_sources)`)
 	if q.UserID > 0 {
-		b.Queue(`SELECT release_id FROM watch_history WHERE user_id=$1 ORDER BY watched_at DESC LIMIT `+itoa(watchedLimit), q.UserID)
+		// Watched, plus releases the user gave 踩 (migration 040): both are
+		// filtered out of every slot.
+		b.Queue(`(SELECT release_id FROM watch_history WHERE user_id=$1 ORDER BY watched_at DESC LIMIT `+itoa(watchedLimit)+`)
+			UNION ALL (SELECT release_id FROM release_reactions WHERE user_id=$1 AND value=-1 ORDER BY updated_at DESC LIMIT `+itoa(dislikedLimit)+`)`, q.UserID)
 	}
 	br := s.SendBatch(ctx, b)
 	defer br.Close()

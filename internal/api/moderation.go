@@ -45,6 +45,7 @@ func (srv *Server) moderationRoutes() []route {
 		{"POST /api/admin/moderation/words", srv.admin(srv.addWord)},
 		{"DELETE /api/admin/moderation/words/{word}", srv.admin(srv.deleteWord)},
 		{"DELETE /api/admin/moderation/mutes/{user_id}", srv.admin(srv.unmute)},
+		{"POST /api/admin/moderation/comments/{id}/action", srv.admin(srv.moderate("comment"))},
 	}
 }
 
@@ -107,7 +108,7 @@ func (srv *Server) moderationQueue(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		out := map[string]any{"counts": counts}
-		for _, k := range []string{store.QueueReports, store.QueueDanmaku, store.QueueReviews, store.QueueRatingFloods} {
+		for _, k := range []string{store.QueueReports, store.QueueDanmaku, store.QueueReviews, store.QueueRatingFloods, store.QueueComments} {
 			items, next, err := srv.moderation.ModerationQueue(ctx, store.QueueFilter{Kind: k, Limit: limit})
 			if err != nil {
 				reply(w, nil, err)
@@ -119,7 +120,7 @@ func (srv *Server) moderationQueue(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if !store.ValidQueueKind(kind) {
-		reply(w, nil, badRequest("kind must be reports, danmaku, reviews or rating_floods", nil))
+		reply(w, nil, badRequest("kind must be reports, danmaku, reviews, rating_floods or comments", nil))
 		return
 	}
 	items, next, err := srv.moderation.ModerationQueue(ctx, store.QueueFilter{
@@ -128,7 +129,7 @@ func (srv *Server) moderationQueue(w http.ResponseWriter, r *http.Request) {
 	reply(w, page(items, next), err)
 }
 
-// moderate: POST /api/admin/moderation/{danmaku|reviews|ratings}/{id}/action
+// moderate: POST /api/admin/moderation/{danmaku|reviews|comments|ratings}/{id}/action
 // {"action": "fold|delete|delete_mute|approve", "mute_days"?, "reason"?}.
 func (srv *Server) moderate(targetType string) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {

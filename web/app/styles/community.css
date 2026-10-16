@@ -751,6 +751,105 @@ span.dm-form {
   opacity: 0.6;
 }
 
+/* ---- 赞 / 踩 and 分享 (release action row) ---- */
+
+.vote-group {
+  display: inline-flex;
+  gap: 2px;
+}
+
+.vote-group .vote-btn:first-child {
+  border-radius: 99px 0 0 99px;
+}
+
+.vote-group .vote-btn.vote-down {
+  border-radius: 0 99px 99px 0;
+  padding: 0 14px;
+}
+
+.vote-btn:disabled {
+  opacity: 0.7;
+}
+
+.icon-flip {
+  display: inline-flex;
+  transform: rotate(180deg);
+}
+
+.share-sheet {
+  padding: 4px 16px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.share-url {
+  width: 100%;
+  min-height: 44px;
+  padding: 0 12px;
+  border: 1px solid var(--line2);
+  border-radius: 10px;
+  background: var(--bg);
+  color: var(--text);
+  font: inherit;
+  font-size: 14px;
+}
+
+.share-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.share-status {
+  margin: 0;
+  min-height: 1.4em;
+  font-size: 13px;
+}
+
+/* ---- 评论 (comments, threaded one level) ---- */
+
+.comments {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.comment-replies {
+  margin: 4px 0 0;
+  padding-left: 16px;
+  border-left: 2px solid var(--line);
+}
+
+.comment-replies .comment-reply {
+  padding: 10px 0;
+}
+
+.comment-replies .comment-reply:first-child {
+  border-top: 0;
+}
+
+.comment .review-actions .text-btn {
+  min-height: 44px;
+  display: inline-flex;
+  align-items: center;
+}
+
+.comment-deleted {
+  margin: 0;
+  font-size: 13px;
+  font-style: italic;
+}
+
+.comment-more {
+  align-self: flex-start;
+  min-height: 44px;
+}
+
+.comment-reply-composer {
+  margin-top: 4px;
+}
+
 @media (max-width: 767px) {
   .community.info-card {
     padding: 12px 16px;

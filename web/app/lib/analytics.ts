@@ -86,6 +86,11 @@ export type EventProps = {
   rating_submit: {release_id: number; score: number; watched: boolean};
   review_post: {release_id: number; spoiler: boolean; watched: boolean};
   review_like: {review_id: number};
+  // 互动 (PRD 5.4): 赞 / 踩, 评论, 分享
+  release_vote: {release_id: number; vote: 'like' | 'dislike' | 'none'};
+  comment_post: {release_id: number; reply: boolean; spoiler: boolean};
+  comment_like: {comment_id: number};
+  share: {release_id: number; method: 'native' | 'copy'; with_time: boolean};
 };
 export type EventName = keyof EventProps;
 

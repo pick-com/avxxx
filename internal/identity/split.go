@@ -220,13 +220,15 @@ func SplitUserTables(entityType string) map[string]SplitTableSpec {
 		}
 	case ReleaseType:
 		return map[string]SplitTableSpec{
-			"favorites":        {"favorites", "release_id", []string{"user_id"}},
-			"watch_history":    {"watch_history", "release_id", []string{"user_id"}},
-			"reservations":     {"reservations", "release_id", []string{"user_id"}},
-			"watch_later":      {"watch_later", "release_id", []string{"user_id"}},
-			"ratings":          {"ratings", "release_id", []string{"id"}},
-			"reviews":          {"reviews", "release_id", []string{"id"}},
-			"playback_sources": {"playback_sources", "release_id", []string{"id"}},
+			"favorites":         {"favorites", "release_id", []string{"user_id"}},
+			"watch_history":     {"watch_history", "release_id", []string{"user_id"}},
+			"reservations":      {"reservations", "release_id", []string{"user_id"}},
+			"watch_later":       {"watch_later", "release_id", []string{"user_id"}},
+			"ratings":           {"ratings", "release_id", []string{"id"}},
+			"reviews":           {"reviews", "release_id", []string{"id"}},
+			"comments":          {"comments", "release_id", []string{"id"}},
+			"release_reactions": {"release_reactions", "release_id", []string{"id"}},
+			"playback_sources":  {"playback_sources", "release_id", []string{"id"}},
 		}
 	}
 	return nil

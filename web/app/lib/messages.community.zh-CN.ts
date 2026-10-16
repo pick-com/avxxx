@@ -106,6 +106,38 @@ export const communityZhCN = {
   'report.already': '你已经举报过这条内容。',
   'report.loginFirst': '登录后才能举报',
 
+  // 赞 / 踩 (release page action row)
+  'vote.label': '赞或踩',
+  'vote.like': '赞（{n}）',
+  'vote.unlike': '取消赞（{n}）',
+  'vote.likeShort': '赞',
+  'vote.dislike': '踩',
+  'vote.undislike': '取消踩',
+  'vote.dislikeHint': '踩只有你自己知道，会少给你推荐这类作品',
+
+  // Comments (release page; distinct from reviews)
+  'comment.title': '评论',
+  'comment.sort': '评论排序',
+  'comment.sortTop': '最热',
+  'comment.sortNewest': '最新',
+  'comment.inputLabel': '写评论',
+  'comment.placeholder': '说点什么（最多 {n} 字）',
+  'comment.replyPlaceholder': '写下你的回复',
+  'comment.replyTo': '回复 {name}',
+  'comment.reply': '回复',
+  'comment.tooLong': '评论最多 {n} 个字',
+  'comment.loginToWrite': '登录后参与评论',
+  'comment.empty': '还没有评论，来说第一句吧。',
+  'comment.pending': '审核中，仅自己可见',
+  'comment.deleted': '该评论已删除',
+  'comment.deleteConfirm': '删除这条评论？',
+  'comment.like': '赞（{n}）',
+  'comment.unlike': '取消赞（{n}）',
+  'comment.report': '举报这条评论',
+  'comment.replies': '{n} 条回复',
+  'comment.moreReplies': '展开更多回复（{n}）',
+  'comment.more': '加载更多评论',
+
   // Ratings (Ratings / MobileRatings)
   'rating.title': '评分与短评',
   'rating.insufficient': '评分人数不足',

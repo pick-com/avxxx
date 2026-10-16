@@ -38,7 +38,7 @@ func ValidLang(l string) bool { return l == "" || langPattern.MatchString(l) }
 
 // Report targets and reasons (tech plan 3.8: one inbox for everything).
 var (
-	ReportTargets = []string{"danmaku", "review", "rating", "release", "performer_info", "source"}
+	ReportTargets = []string{"danmaku", "review", "rating", "release", "performer_info", "source", "comment"}
 	ReportReasons = []string{"spoiler", "spam", "abuse", "illegal", "underage", "privacy", "copyright", "misinfo", "broken", "other"}
 )
 
@@ -87,6 +87,15 @@ func ActionStatus(action string) (string, bool) {
 	}
 	return "", false
 }
+
+// Comment sorts (PRD 5.4: 评论按最热 / 最新排序).
+const (
+	CommentSortTop    = "top"    // most liked first
+	CommentSortNewest = "newest" // newest first
+)
+
+// ValidCommentSort reports whether s is a comment sort.
+func ValidCommentSort(s string) bool { return s == CommentSortTop || s == CommentSortNewest }
 
 // Review sorts (PRD 19).
 const (
