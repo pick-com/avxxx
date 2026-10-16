@@ -30,6 +30,7 @@ services:
     command: ["/usr/local/bin/scheduler"]
     environment:
       DATABASE_URL: ${DATABASE_URL:-postgres://avxxx:avxxx@db:5432/avxxx?sslmode=disable}
+      AUDIT_NIGHTLY_AT: ${AUDIT_NIGHTLY_AT:-04:30}
     depends_on:
       db:
         condition: service_healthy
@@ -38,6 +39,16 @@ services:
       context: .
       dockerfile: Dockerfile.api
     command: ["/usr/local/bin/scraper"]
+    environment:
+      DATABASE_URL: ${DATABASE_URL:-postgres://avxxx:avxxx@db:5432/avxxx?sslmode=disable}
+    depends_on:
+      db:
+        condition: service_healthy
+  audit:
+    build:
+      context: .
+      dockerfile: Dockerfile.api
+    command: ["/usr/local/bin/audit"]
     environment:
       DATABASE_URL: ${DATABASE_URL:-postgres://avxxx:avxxx@db:5432/avxxx?sslmode=disable}
     depends_on:

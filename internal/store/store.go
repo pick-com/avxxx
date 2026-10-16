@@ -672,7 +672,7 @@ func (s *Store) SaveCatalogRecord(ctx context.Context, sourceID int64, parserVer
 	return sourceRecordID, nil
 }
 func (s *Store) Jobs(ctx context.Context) ([]model.Job, error) {
-	r, e := s.Query(ctx, "SELECT id,source_id,status,error,created_at,attempt,lease_until,execution_version FROM jobs ORDER BY id DESC LIMIT 100")
+	r, e := s.Query(ctx, "SELECT id,COALESCE(source_id,0),status,error,created_at,attempt,lease_until,execution_version FROM jobs ORDER BY id DESC LIMIT 100")
 	if e != nil {
 		return nil, e
 	}

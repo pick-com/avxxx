@@ -26,6 +26,8 @@ type Server struct {
 	// redirects; nil disables redirects (tests without a database).
 	identity identityStore
 	social   socialStore // follows, reservations, watch-later, settings, notifications
+	// audit backs the admin audit and dashboard routes (admin_audit.go).
+	audit auditAdmin
 	// adminToken is ADMIN_TOKEN, read once at construction. Empty disables
 	// every admin route (they all return 401).
 	adminToken string
@@ -50,6 +52,7 @@ func Register(mux *http.ServeMux, s *store.Store, mediaHandler *media.Handler) {
 		srv.accounts = s
 		srv.identity = s
 		srv.social = s
+		srv.audit = s
 	}
 	for _, rt := range srv.routes() {
 		mux.HandleFunc(rt.pattern, rt.handler)
@@ -68,6 +71,7 @@ func (srv *Server) routes() []route {
 	rs = append(rs, srv.playbackRoutes()...)
 	rs = append(rs, srv.adminRoutes()...)
 	rs = append(rs, srv.eventRoutes()...)
+	rs = append(rs, srv.adminAuditRoutes()...)
 	return srv.followMerges(rs)
 }
 
