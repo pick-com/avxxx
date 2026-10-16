@@ -982,6 +982,7 @@
   "reason.similarTags": "Contenido similar",
   "reason.samePerformer": "Mismo intérprete · {name}",
   "reason.followedNew": "Novedad de {name}, a quien sigues",
+  "reason.interests": "Coincide con los intereses que elegiste",
   "reason.trending": "Tendencia",
   "reason.new": "Nuevo",
   "reason.hotPerformer": "Intérprete popular",

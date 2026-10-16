@@ -982,6 +982,7 @@
   "reason.similarTags": "비슷한 내용",
   "reason.samePerformer": "같은 배우 · {name}",
   "reason.followedNew": "팔로우한 {name}의 신작",
+  "reason.interests": "선택한 관심사와 일치",
   "reason.trending": "인기",
   "reason.new": "새로 공개",
   "reason.hotPerformer": "인기 배우",

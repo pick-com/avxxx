@@ -25,6 +25,7 @@ export const recsZhCN = {
   'reason.similarTags': '内容相似',
   'reason.samePerformer': '同演员 · {name}',
   'reason.followedNew': '你关注的 {name} 有新作',
+  'reason.interests': '符合你选的兴趣',
   'reason.trending': '热门',
   'reason.new': '新上线',
   'reason.hotPerformer': '热门演员',

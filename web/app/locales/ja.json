@@ -982,6 +982,7 @@
   "reason.similarTags": "似た内容",
   "reason.samePerformer": "同じ出演者 · {name}",
   "reason.followedNew": "フォロー中の {name} の新作",
+  "reason.interests": "選んだ興味に合う作品",
   "reason.trending": "人気",
   "reason.new": "新着",
   "reason.hotPerformer": "人気の出演者",

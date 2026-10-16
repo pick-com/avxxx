@@ -982,6 +982,7 @@
   "reason.similarTags": "Similar content",
   "reason.samePerformer": "Same performer · {name}",
   "reason.followedNew": "New from {name}, who you follow",
+  "reason.interests": "Matches the interests you picked",
   "reason.trending": "Trending",
   "reason.new": "New",
   "reason.hotPerformer": "Popular performer",

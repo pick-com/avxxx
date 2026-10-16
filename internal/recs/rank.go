@@ -46,6 +46,7 @@ var ChannelWeights = map[string]float64{
 	ChanFollowedNew:   0.95,
 	ReasonSeries:      0.85,
 	ChanSamePerformer: 0.8,
+	ChanInterests:     0.7,
 	ReasonMaker:       0.6,
 	ReasonTags:        0.6,
 	ChanTrending:      0.5,
@@ -62,7 +63,7 @@ type Candidate struct {
 	SeedTitle     string // ...and its title
 	PerformerID   int64  // same_performer / followed_new
 	PerformerName string
-	Label         string // trending: period; tags: the shared tag
+	Label         string // trending: period; tags: the shared tag; interests: the matched tag
 	BoardRank     int    // trending: rank on the board
 }
 
@@ -82,6 +83,7 @@ type Info struct {
 	HasLang        bool       `json:"-"`      // audio or subtitles in the request language
 	Rating         *float64   `json:"rating"` // 10-point; nil below the vote minimum
 	SharedTag      string     `json:"-"`      // related: first tag shared with the seed
+	Tags           []string   `json:"-"`      // normalized tags (soft preferences)
 }
 
 // Reason is the explanation shown with every recommendation (PRD 10 可解释).
@@ -110,6 +112,9 @@ type Options struct {
 	// Demote lowers candidates that share a maker or primary performer with
 	// these (tonight: 「换一个」会降低同类型权重).
 	Demote []Info
+	// Prefer are soft preferences (cold-start interests, Tonight mood /
+	// company): they multiply the score, never filter (prefs.go).
+	Prefer []Preference
 }
 
 // DemoteFactor multiplies the score of a demoted candidate per match.
@@ -121,6 +126,7 @@ const DemoteFactor = 0.7
 //	merged        = best channel + 0.15 · Σ other channels
 //	× 1.1 when the release has audio / subtitles in the request language
 //	× (0.9 + 0.02 · rating) when a rating is shown (8.0 → ×1.06)
+//	× each soft preference's Factor (matching tags / runtime)
 //
 // Releases missing from infos (not published, held, merged) are dropped,
 // as are the seed, watched and excluded ones, unplayable ones when
@@ -182,6 +188,9 @@ func Rank(cands []Candidate, infos map[int64]Info, opt Options) []Rec {
 		}
 		if info.Rating != nil {
 			score *= 0.9 + 0.02**info.Rating
+		}
+		for _, p := range opt.Prefer {
+			score *= p.Factor(info)
 		}
 		for _, d := range opt.Demote {
 			if (d.Maker != "" && d.Maker == info.Maker) || (d.PerformerID != 0 && d.PerformerID == info.PerformerID) {
@@ -269,6 +278,11 @@ func ReasonFor(c Candidate, info Info) Reason {
 		return Reason{"same_performer", "同演员 · " + name}
 	case ChanFollowedNew:
 		return Reason{"followed_new", "你关注的 " + c.PerformerName + " 有新作"}
+	case ChanInterests:
+		if c.Label != "" {
+			return Reason{"interests", "你选的兴趣 · " + c.Label}
+		}
+		return Reason{"interests", "符合你选的兴趣"}
 	case ChanTrending:
 		text := PeriodLabel(c.Label)
 		if c.BoardRank > 0 {

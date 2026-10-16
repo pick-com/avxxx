@@ -321,6 +321,7 @@ const (
 	recallNew       = 40
 	recallHistory   = 10
 	recallFollowed  = 60
+	recallInterests = 60
 	watchedLimit    = 5000
 	dislikedLimit   = 1000
 )
@@ -362,6 +363,18 @@ var recallSQL = map[string]string{
 			WHERE rp.performer_id=f.performer_id AND r.release_date >= current_date - 120 AND r.release_date <= current_date
 			ORDER BY r.release_date DESC, r.id DESC LIMIT 5) w
 		WHERE f.user_id=@user LIMIT ` + itoa(recallFollowed),
+	// Cold start: releases tagged with the user's onboarding interests, only
+	// while the user has fewer than recs.ColdStartHistory watched releases.
+	// More matching interests first, then newer.
+	"interests": `SELECT x.release_id, 'interests', x.m + 1.0/x.rn, 0::bigint, ''::text, 0::bigint, ''::text, x.label, 0
+		FROM (SELECT t.release_id, count(*)::float8 AS m, min(t.tag) AS label,
+				row_number() OVER (ORDER BY count(*) DESC, max(COALESCE(r.release_date, DATE '0001-01-01')) DESC, t.release_id DESC) AS rn
+			FROM user_interests ui
+			JOIN release_tags t ON t.normalized_tag=ui.tag_slug
+			JOIN releases r ON r.id=t.release_id AND ` + publishedR + ` AND COALESCE(r.release_date, DATE '0001-01-01') <= current_date
+			WHERE ui.user_id=@user
+			  AND (SELECT count(*) FROM (SELECT 1 FROM watch_history WHERE user_id=@user LIMIT ` + itoa(recs.ColdStartHistory) + `) h) < ` + itoa(recs.ColdStartHistory) + `
+			GROUP BY t.release_id ORDER BY rn LIMIT ` + itoa(recallInterests) + `) x`,
 	"trending": `SELECT t.release_id, 'trending', t.score::float8, 0::bigint, ''::text, 0::bigint, ''::text, t.period, t.rank
 		FROM trending_snapshots t WHERE t.period=@period ORDER BY t.rank LIMIT ` + itoa(recallTrending),
 	"new": `SELECT r.id, 'new', 1.0/row_number() OVER (ORDER BY COALESCE(r.release_date, DATE '0001-01-01') DESC, r.id DESC), 0::bigint, ''::text, 0::bigint, ''::text, ''::text, 0
@@ -376,7 +389,7 @@ func RecallChannels(q RecQuery) []string {
 		out = append(out, "similar", "seed_performer")
 	}
 	if q.UserID > 0 && q.Slot != recs.SlotRelated {
-		out = append(out, "history_similar", "history_performer", "followed_new")
+		out = append(out, "history_similar", "history_performer", "followed_new", "interests")
 	}
 	return append(out, "trending", "new")
 }
@@ -386,6 +399,10 @@ type RecallResult struct {
 	Candidates      []recs.Candidate
 	Watched         map[int64]bool
 	RequirePlayable bool // some playback source exists
+	// ColdStart: a signed-in user with fewer than recs.ColdStartHistory
+	// watched releases; Interests are their onboarding tags (normalized).
+	ColdStart bool
+	Interests []string
 }
 
 // Recall runs the recall branches, the watched list and the "any playback
@@ -408,6 +425,8 @@ func (s *Store) Recall(ctx context.Context, q RecQuery) (RecallResult, error) {
 		// filtered out of every slot.
 		b.Queue(`(SELECT release_id FROM watch_history WHERE user_id=$1 ORDER BY watched_at DESC LIMIT `+itoa(watchedLimit)+`)
 			UNION ALL (SELECT release_id FROM release_reactions WHERE user_id=$1 AND value=-1 ORDER BY updated_at DESC LIMIT `+itoa(dislikedLimit)+`)`, q.UserID)
+		b.Queue(`SELECT (SELECT count(*) FROM (SELECT 1 FROM watch_history WHERE user_id=$1 LIMIT $2) h) < $2,
+			COALESCE((SELECT array_agg(tag_slug ORDER BY tag_slug) FROM user_interests WHERE user_id=$1), '{}')`, q.UserID, recs.ColdStartHistory)
 	}
 	br := s.SendBatch(ctx, b)
 	defer br.Close()
@@ -439,6 +458,9 @@ func (s *Store) Recall(ctx context.Context, q RecQuery) (RecallResult, error) {
 		for _, id := range ids {
 			res.Watched[id] = true
 		}
+		if err = br.QueryRow().Scan(&res.ColdStart, &res.Interests); err != nil {
+			return res, err
+		}
 	}
 	return res, br.Close()
 }
@@ -466,7 +488,8 @@ func (s *Store) RecInfos(ctx context.Context, ids []int64, seed int64, lang stri
 			AND (@lang = ANY(ps.audio_langs || ps.subtitle_langs) OR @base = ANY(ps.audio_langs || ps.subtitle_langs)))),
 		rt.n, rt.w, rt.ws,
 		COALESCE((SELECT min(t.tag) FROM release_tags t WHERE @seed > 0 AND t.release_id=r.id
-			AND t.normalized_tag IN (SELECT normalized_tag FROM release_tags WHERE release_id=@seed)), '')
+			AND t.normalized_tag IN (SELECT normalized_tag FROM release_tags WHERE release_id=@seed)), ''),
+		COALESCE((SELECT array_agg(t.normalized_tag ORDER BY t.normalized_tag) FROM release_tags t WHERE t.release_id=r.id), '{}')
 		FROM releases r
 		LEFT JOIN LATERAL (SELECT p.id, p.slug, p.canonical_name FROM release_performers rp
 			JOIN performers p ON p.id=rp.performer_id AND `+activeP+`
@@ -484,7 +507,7 @@ func (s *Store) RecInfos(ctx context.Context, ids []int64, seed int64, lang stri
 		var agg community.RatingAggregate
 		if err := rows.Scan(&x.ReleaseID, &x.Slug, &x.Title, &x.RuntimeMinutes, &x.ReleaseDate, &x.Maker, &x.Series,
 			&x.PerformerID, &x.PerformerSlug, &x.PerformerName, &x.Playable, &x.HasLang,
-			&agg.Count, &agg.WeightSum, &agg.ScoreSum, &x.SharedTag); err != nil {
+			&agg.Count, &agg.WeightSum, &agg.ScoreSum, &x.SharedTag, &x.Tags); err != nil {
 			return nil, err
 		}
 		x.Rating = community.DisplayScore(agg, prior)

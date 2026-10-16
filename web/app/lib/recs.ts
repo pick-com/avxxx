@@ -162,9 +162,22 @@ export const getPerformerRecs = (
     signal,
   ).then(toPage);
 
-export const getTonight = (opts: {duration?: TonightDuration; exclude?: number[]}, signal?: AbortSignal): Promise<TonightResult> =>
+/** 想要 / 和谁看: soft preferences on the backend (internal/recs prefs.go), never filters. */
+export type TonightMood = 'any' | 'light' | 'thrill' | 'touching' | 'brainy';
+export type TonightCompany = 'self' | 'friends' | 'family';
+
+export const getTonight = (
+  opts: {duration?: TonightDuration; mood?: TonightMood; company?: TonightCompany; exclude?: number[]},
+  signal?: AbortSignal,
+): Promise<TonightResult> =>
   recsApi<TonightResult>(
-    `recs${query({slot: 'tonight', duration: opts.duration && opts.duration !== 'any' ? opts.duration : undefined, exclude: opts.exclude?.slice(-50).join(',')})}`,
+    `recs${query({
+      slot: 'tonight',
+      duration: opts.duration && opts.duration !== 'any' ? opts.duration : undefined,
+      mood: opts.mood && opts.mood !== 'any' ? opts.mood : undefined,
+      company: opts.company && opts.company !== 'self' ? opts.company : undefined,
+      exclude: opts.exclude?.slice(-50).join(','),
+    })}`,
     signal,
   ).then(r => ({...r, alternates: r.alternates ?? [], exclude: r.exclude ?? []}));
 
@@ -206,6 +219,7 @@ const REASON_KEYS: Record<string, MessageKey> = {
   similar_tags: 'reason.similarTags',
   same_performer: 'reason.samePerformer',
   followed_new: 'reason.followedNew',
+  interests: 'reason.interests',
   trending: 'reason.trending',
   new: 'reason.new',
   hot_performer: 'reason.hotPerformer',

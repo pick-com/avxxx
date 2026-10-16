@@ -982,6 +982,7 @@
   "reason.similarTags": "เนื้อหาคล้ายกัน",
   "reason.samePerformer": "นักแสดงคนเดียวกัน · {name}",
   "reason.followedNew": "{name} ที่คุณติดตามมีผลงานใหม่",
+  "reason.interests": "ตรงกับความสนใจที่คุณเลือก",
   "reason.trending": "มาแรง",
   "reason.new": "มาใหม่",
   "reason.hotPerformer": "นักแสดงยอดนิยม",
