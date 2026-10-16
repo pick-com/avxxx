@@ -129,7 +129,7 @@ func (h *Handler) resolve(ctx context.Context, source, id string, refresh bool) 
 	if !c.enabled() {
 		return h.service.Resolve(ctx, source, id)
 	}
-	key := "resolve:" + strings.ToLower(source) + "\x00" + id
+	key := "resolve:" + strings.ToLower(source) + ":" + id
 	if refresh && c.allowRefresh(key) {
 		c.evict(ctx, key)
 	} else if v, ok := c.get(ctx, key); ok {

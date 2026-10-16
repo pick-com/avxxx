@@ -144,7 +144,7 @@ func TestRefreshEvictsAndIsRateLimited(t *testing.T) {
 	h := newTestHandler(a, 5*time.Minute, func() time.Time { return now })
 	st := newMemStore()
 	h.UseResolveStore(st)
-	key := "resolve:fake\x00video/1/a-1"
+	key := "resolve:fake:video/1/a-1"
 
 	_, first := resolveURL(t, h, "/api/resolve/fake/video/1/a-1")
 	if _, ok := st.row(key); !ok {
@@ -217,7 +217,7 @@ func TestSharedStoreAcrossInstances(t *testing.T) {
 	if u1 != u2 || a2.calls != 0 {
 		t.Fatalf("second instance must reuse the stored result: %q vs %q, calls %d", u1, u2, a2.calls)
 	}
-	r, _ := st.row("resolve:fake\x00video/1/a-1")
+	r, _ := st.row("resolve:fake:video/1/a-1")
 	if !r.ExpiresAt.Equal(now.Add(5*time.Minute)) || !r.MaxExpiresAt.Equal(t0().Add(DefaultResolveMaxAge)) {
 		t.Fatalf("store row not slid: expires %s max %s", r.ExpiresAt, r.MaxExpiresAt)
 	}

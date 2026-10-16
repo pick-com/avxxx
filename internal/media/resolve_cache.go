@@ -36,6 +36,7 @@ const (
 	resolveExpiryMargin = 30 * time.Second
 	// MaxStoredResolveBytes caps one L2 row's JSON; bigger results stay L1-only.
 	MaxStoredResolveBytes = 64 << 10
+	maxStoredResolveKey   = 1024 // media_resolve_cache.key CHECK
 	maxResolveEntries     = 10000
 	resolvePurgeEvery     = 10 * time.Minute
 	resolveStoreTimeout   = 2 * time.Second
@@ -186,7 +187,7 @@ func (c *resolveCache) put(ctx context.Context, key string, v *ResolveResult) {
 		return
 	}
 	e := &resolveEntry{result: v, expires: exp, maxExpires: hardCap}
-	if c.store != nil && storable(v) {
+	if c.store != nil && len(key) <= maxStoredResolveKey && storable(v) {
 		if b, err := json.Marshal(v); err == nil && len(b) <= MaxStoredResolveBytes {
 			e.storedUntil = exp
 			c.storeCall(ctx, "save", func(ctx context.Context) error {

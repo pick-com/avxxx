@@ -234,7 +234,8 @@ docker compose exec alertmanager amtool --alertmanager.url=http://127.0.0.1:9093
 - 每次尝试写入 `media_link_attempts`：`not_found` 7 天后重试（连续 3 次后改为 30 天）；`ambiguous` 不自动重试，由管理员在 `GET /api/admin/media-links?status=ambiguous` 中选择候选（`POST /api/admin/media-links/{release_id}/choose`）；`error` 按 10 分钟起指数退避，最长 6 小时。`POST /api/admin/media-links/{release_id}/retry` 让某作品立即到期。
 - 礼貌限制：两次请求至少间隔 `MEDIA_LINK_MIN_INTERVAL`（默认且最小 2s），每次最多 `MEDIA_LINK_MAX_PER_RUN`（默认 200）部，24 小时内每个来源最多 `MEDIA_LINK_DAILY_CAP`（默认 2000）部。遇到 HTTP 403/429 立即停止并整体退避 1 小时，连续 3 次错误退避 30 分钟；退避时间记录在 `nightly_runs`（job = `media_link.javtiful`）的 `detail.backoff_until`。
 - `MEDIA_LINK_ON_DEMAND`（API，默认 `true`）：播放页缺映射时按同一张尝试表即时搜索一次（同样遵守退避和进程内限速）；设为 `false` 则只依赖离线任务，未映射作品的播放接口返回 404。
-- `MEDIA_RESOLVE_TTL`（API，默认 5m，0 关闭）：`POST /api/resolve/{source}/{id}` 成功结果的进程内缓存时间；流地址带过期令牌，缓存不会超过最早的 `expires_at` 前 30 秒，错误从不缓存。
+- `MEDIA_RESOLVE_TTL`（API，默认 5m，0 关闭）：`POST /api/resolve/{source}/{id}` 成功结果的缓存时间，滑动续期（每次命中延长到 now + TTL）；流地址带过期令牌，缓存不会超过最早的 `expires_at` 前 30 秒（适配器未给出时从签名 URL 的 `expires=` / `exp=` / `e=` / `validto=`、SigV4、Akamai token 中解析，含义不明确则不解析），错误从不缓存。
+- `MEDIA_RESOLVE_MAX_AGE`（API，默认 30m）：流过期时间未知时，结果自解析起最多复用这么久。结果在进程内缓存之外还写入 Postgres `media_resolve_cache`（单行 ≤ 64 KiB；带 Cookie / Authorization 头的结果不落库），重启和多个 API 实例共用；过期行由 API 每 10 分钟顺带清理。播放器在缓存地址播放失败时以 `?refresh=1` 重新解析，同一 (source, id) 每个实例每 60 秒最多强制刷新一次。
 
 ## Web 前端（SSR）与反向代理
 
