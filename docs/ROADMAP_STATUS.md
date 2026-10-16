@@ -129,7 +129,7 @@
 - [x] AdminDashboard 播放 / 日活 / 时长 / 完播 KPI（#112，f007571，迁移 047）：`internal/sitemetrics` 由 `site_metrics` 任务从 `POST /api/events` 聚合，`internal/api/admin_site_metrics.go` 提供接口，`web/app/components/AdminSiteKPIs.tsx` 展示
 - [x] 冷启动推荐（#112，472b7b3）：Onboarding 兴趣（`user_interests`）与 Tonight「想要 / 和谁看」经 `internal/recs/prefs.go` 作为软偏好进入排序（`internal/store/recs_interests_integration_test.go`）
 - [x] AdminDedupe 对比面板（#112，e16acd1）：`internal/api/admin_dedupe.go` 返回双方摘要，视频「新片源 / 其他版本 / 不是重复」三种决定（`internal/store/release_versions.go`，作品页 `OtherVersions`）
-- [ ] 机器翻译：`internal/i18n.Translator` 有意无实现，需选定翻译服务并提供凭据（需外部输入）
+- [x] 机器翻译（迁移 052）：`internal/i18n.Translator` 由 OpenRouter 免费模型实现（`internal/i18n/openrouter.go`，默认 `google/gemma-4-31b-it:free` 并按 `OPENROUTER_MODEL` 回退），批量 JSON 输出严格校验（条数、`{占位符}` / ICU plural 保持，失败重试一次），注入术语表；429 按 Retry-After 退避、`OPENROUTER_DAILY_CAP`（默认 200 次/日，`mt_usage` 共享）、并发 ≤2、单请求超时，key 不进日志。`i18n_machine` 任务（cmd/audit，cmd/scheduler 每小时）先处理 `/admin/i18n` 勾选的「机器翻译」请求，再补已发布作品缺失的标题（`I18N_MT_LANGS`）；结果只写成「机翻」草稿并记录模型与时间，不覆盖人工译文，需人工提交审校才上线。生产需在 vault 配 `openrouter_api_key`（需外部输入）
 
 ### YouTube 对齐
 
@@ -214,7 +214,7 @@ JAV Database adapter 已接入 scraper，可完成发现、详情抓取、解析
 3. **真实保存的页面**：JAV Database、XCITY、Jav.Guru 各 20 个演员、100 个作品页面作为 recorded fixture（`make fixturecheck` 达标后 CI 加 `-strict`）；厂商目录（S1、IDEA POCKET）按 `docs/MAKER_CATALOG.md` 保存真实页面、校准 profile、记录条款审核后启用。
 4. **法务答复**：[COMPLIANCE.md](COMPLIANCE.md) 与 [DATA_RETENTION_AND_IMAGES.md](DATA_RETENTION_AND_IMAGES.md) 中所有 **[法务]** 条目（含 DMM 图片转存、样图、肖像权、法律文本定稿、数据保存期限）。
 5. **生产环境**：配置值班通道（`ALERT_*`、`monitoring_enabled`、`backup_cron_enabled`），完成首次部署和目录来源条款审核（`PUT /api/admin/sources/{id}/license`、`CATALOG_CONTACT`），用 `SEO_REPORT_TOKEN` 跑 `npm run seo:check`，完成正式环境验收。
-6. **机器翻译服务**：选定 provider 并提供凭据后实现 `internal/i18n.Translator`。
+6. **机器翻译凭据**：已实现 OpenRouter 免费模型翻译；生产需在 vault 配 `openrouter_api_key`，首次可用 `audit -mt` 小批量试跑并人工抽查译文质量。
 
 ### 需要产品决策
 

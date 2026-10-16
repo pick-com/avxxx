@@ -73,6 +73,11 @@ services:
       IMAGE_URL_MODE: ${IMAGE_URL_MODE:-proxy}
       S3_PRESIGN_ENDPOINT: ${S3_PRESIGN_ENDPOINT:-}
       S3_SIGNED_URL_TTL: ${S3_SIGNED_URL_TTL:-12h}
+      # Machine translation: the api only reports "configured" / models / cap
+      # to /admin/i18n and queues requests; cmd/audit calls OpenRouter.
+      OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
+      OPENROUTER_MODEL: ${OPENROUTER_MODEL:-}
+      OPENROUTER_DAILY_CAP: ${OPENROUTER_DAILY_CAP:-200}
     depends_on:
       db:
         condition: service_healthy
@@ -125,6 +130,8 @@ services:
       # Image download / purge job slots (run by audit).
       MEDIA_FETCH_EVERY: ${MEDIA_FETCH_EVERY:-1h}
       MEDIA_PURGE_EVERY: ${MEDIA_PURGE_EVERY:-1h}
+      # Machine translation job slot (run by audit).
+      I18N_MT_EVERY: ${I18N_MT_EVERY:-1h}
     depends_on:
       db:
         condition: service_healthy
@@ -165,6 +172,18 @@ services:
       THEPORNDB_API_TOKEN: ${THEPORNDB_API_TOKEN:-}
       CROSSCHECK_MAX_PER_RUN: ${CROSSCHECK_MAX_PER_RUN:-100}
       CROSSCHECK_DAILY_CAP: ${CROSSCHECK_DAILY_CAP:-1000}
+      # Machine translation (i18n_machine job): OpenRouter free models; empty
+      # key = not_configured. The daily cap is shared with the api via mt_usage.
+      OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
+      OPENROUTER_MODEL: ${OPENROUTER_MODEL:-}
+      OPENROUTER_REFERER: ${OPENROUTER_REFERER:-}
+      OPENROUTER_TITLE: ${OPENROUTER_TITLE:-}
+      OPENROUTER_DAILY_CAP: ${OPENROUTER_DAILY_CAP:-200}
+      OPENROUTER_CONCURRENCY: ${OPENROUTER_CONCURRENCY:-1}
+      OPENROUTER_TIMEOUT: ${OPENROUTER_TIMEOUT:-90s}
+      OPENROUTER_BATCH_SIZE: ${OPENROUTER_BATCH_SIZE:-20}
+      I18N_MT_LANGS: ${I18N_MT_LANGS:-zh-CN,zh-TW,en}
+      I18N_MT_MAX_PER_RUN: ${I18N_MT_MAX_PER_RUN:-60}
       # Image jobs (media_fetch / media_purge): CATALOG_CONTACT above is
       # the crawler contact (empty = no downloads); limits and retention window.
       IMAGE_FETCH_MIN_INTERVAL: ${IMAGE_FETCH_MIN_INTERVAL:-2s}

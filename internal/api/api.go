@@ -4,6 +4,7 @@ package api
 import (
 	"avxxx/internal/clientip"
 	"avxxx/internal/community"
+	"avxxx/internal/i18n"
 	"avxxx/internal/media"
 	"avxxx/internal/medialink"
 	"avxxx/internal/obs"
@@ -40,6 +41,11 @@ type Server struct {
 	// i18n backs content translations, glossary and UI strings (i18n.go,
 	// admin_i18n.go); nil serves catalog routes untranslated.
 	i18n i18nStore
+	// mt backs 机器翻译 in the workbench (admin_i18n_mt.go); mtCfg is the
+	// OpenRouter configuration (only "configured", models and the cap are
+	// shown; the API process never calls the provider).
+	mt    mtAdmin
+	mtCfg i18n.OpenRouterConfig
 	// community backs danmaku, ratings, reviews and reports (community.go);
 	// moderation backs the AdminOps moderation routes (moderation.go).
 	community  communityStore
@@ -200,6 +206,7 @@ func Register(mux *http.ServeMux, s *store.Store, mediaHandler *media.Handler) {
 		srv.playlists = s
 		srv.audit = s
 		srv.i18n = s
+		srv.setupMT(s)
 		srv.community = s
 		srv.moderation = s
 		srv.editor = s
@@ -259,6 +266,7 @@ func (srv *Server) routes() []route {
 	rs = append(rs, srv.eventRoutes()...)
 	rs = append(rs, srv.adminAuditRoutes()...)
 	rs = append(rs, srv.adminI18nRoutes()...)
+	rs = append(rs, srv.adminI18nMTRoutes()...)
 	rs = append(rs, srv.communityRoutes()...)
 	rs = append(rs, srv.moderationRoutes()...)
 	rs = append(rs, srv.adminCurveRoutes()...)

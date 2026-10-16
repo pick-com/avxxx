@@ -114,6 +114,8 @@ var expectedRoutes = []string{
 	"DELETE /api/admin/i18n/glossary/{id}",
 	"GET /api/admin/i18n/ui",
 	"PUT /api/admin/i18n/ui/{lang}/{key}",
+	"GET /api/admin/i18n/machine-translate",
+	"POST /api/admin/i18n/machine-translate",
 	"GET /api/admin/playback-sources/health",
 	"GET /api/releases/{slug}/danmaku",
 	"POST /api/releases/{slug}/danmaku",

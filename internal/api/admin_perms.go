@@ -244,6 +244,8 @@ var adminRoutePerms = map[string]routePerm{
 	"DELETE /api/admin/i18n/glossary/{id}":         wr(gI18n),
 	"GET /api/admin/i18n/ui":                       rd(gI18n),
 	"PUT /api/admin/i18n/ui/{lang}/{key}":          wr(gI18n),
+	"GET /api/admin/i18n/machine-translate":        rd(gI18n),
+	"POST /api/admin/i18n/machine-translate":       wr(gI18n),
 }
 
 // adminRoutePerm returns the permission of a registered pattern; ok is false
