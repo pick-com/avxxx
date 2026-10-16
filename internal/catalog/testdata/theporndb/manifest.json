@@ -1,0 +1,10 @@
+{
+  "source": "theporndb",
+  "fixtures": [
+    {"file": "jav_page1.json", "url": "https://api.theporndb.net/jav?orderBy=recently_released&per_page=100", "entity": "discovery", "origin": "synthetic"},
+    {"file": "jav_page2.json", "url": "https://api.theporndb.net/jav?orderBy=recently_released&page=2&per_page=100", "entity": "discovery", "origin": "synthetic"},
+    {"file": "performers_page1.json", "url": "https://api.theporndb.net/performers?per_page=25", "entity": "discovery", "origin": "synthetic"},
+    {"file": "jav_scene.json", "url": "https://api.theporndb.net/jav/5b0d3a6e-4f1c-4c39-9a51-6f0a1f2e8c01", "entity": "release", "origin": "synthetic"},
+    {"file": "performer.json", "url": "https://api.theporndb.net/performers/32aa4b68-4dbe-49f2-92a5-0e54e5074f4b", "entity": "performer", "origin": "synthetic"}
+  ]
+}

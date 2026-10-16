@@ -1,0 +1,49 @@
+{
+  "data": {
+    "id": "32aa4b68-4dbe-49f2-92a5-0e54e5074f4b",
+    "_id": 1,
+    "slug": "jessica-jaymes",
+    "name": "Jessica Jaymes",
+    "full_name": "Jessica Jaymes (2005)",
+    "disambiguation": "2005",
+    "bio": null,
+    "rating": 5,
+    "is_parent": false,
+    "extras": {
+      "gender": "Male",
+      "birthday": "1990-01-01",
+      "birthday_timestamp": null,
+      "birthday_type": null,
+      "deathday": "2022-01-01",
+      "deathday_timestamp": null,
+      "birthplace": "Florida, USA",
+      "birthplace_code": "US",
+      "astrology": "Capricorn",
+      "ethnicity": "Caucasian",
+      "nationality": "American",
+      "hair_colour": "Blonde",
+      "eye_colour": "Green",
+      "weight": "50kg",
+      "height": "160cm",
+      "measurements": "34C-24-34",
+      "cupsize": "34C",
+      "tattoos": "Right arm",
+      "piercings": "Navel",
+      "waist": "24",
+      "hips": "34",
+      "career_start_year": 2014,
+      "career_end_year": 2024,
+      "fake_boobs": true,
+      "same_sex_only": true,
+      "links": {"IAFD": null, "Example": "https://example.com"}
+    },
+    "aliases": ["Jessi Jaymes"],
+    "image": "https://example.com/image.jpg",
+    "thumbnail": null,
+    "face": null,
+    "posters": [
+      {"id": 123, "url": "https://cdn.theporndb.net/my-big-butt.jpg", "size": 1024000, "order": 1}
+    ],
+    "site_performers": null
+  }
+}
