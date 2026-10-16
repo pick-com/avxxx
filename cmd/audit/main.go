@@ -1,10 +1,12 @@
-// Command audit runs the catalog data-quality audit and the playback source
-// health job (internal/audit).
+// Command audit runs the catalog data-quality audit, the playback source
+// health job (internal/audit) and the recommendation jobs (internal/recs).
 //
 // Default mode is a worker: it claims sourceless jobs of kind
 // 'source_health' (every 10 minutes, cmd/scheduler) and 'audit' (nightly, or
 // POST /api/admin/audit/run) from the shared jobs table, source health
-// first since it is short and frequent. It keeps the 90 s lease alive with
+// first since it is short and frequent. It also runs 'recs_trending' (hourly)
+// and 'recs_similarity' (nightly at 04:30, PRD 10, or POST
+// /api/admin/recs/rebuild). It keeps the 90 s lease alive with
 // heartbeats and marks the job succeeded/failed like the crawl worker does.
 // Expired leases are reaped by the same ReapExpired as crawl jobs.
 //
@@ -13,6 +15,7 @@
 //	audit -health      run the source health job now, print the report, exit
 //	audit -curves      run the replay / retention curve job now, print the report, exit
 //	audit -release 42  inbound check (R-AGE + R-META) for one release
+//	audit -recs        run the recommendation similarity + trending jobs now, print, exit
 //
 // The worker also claims 'release_curves' jobs (hourly, cmd/scheduler): the
 // PRD 14.3 replay peak and retention curves (internal/playcurve).
@@ -21,6 +24,7 @@ package main
 import (
 	"avxxx/internal/audit"
 	"avxxx/internal/playcurve"
+	"avxxx/internal/recs"
 	"avxxx/internal/store"
 	"context"
 	"encoding/json"
@@ -41,6 +45,7 @@ func main() {
 	release := flag.Int64("release", 0, "run the inbound check for one release id and exit")
 	health := flag.Bool("health", false, "run the source health job once and exit")
 	curves := flag.Bool("curves", false, "run the replay / retention curve job once and exit")
+	recsNow := flag.Bool("recs", false, "run the recommendation similarity and trending jobs once and exit")
 	flag.Parse()
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
@@ -70,6 +75,18 @@ func main() {
 		if err != nil {
 			log.Fatal(err)
 		}
+	case *recsNow:
+		rn := &recs.Runner{Store: s}
+		sim, err := rn.RunSimilarity(ctx)
+		printJSON(sim)
+		if err != nil {
+			log.Fatal(err)
+		}
+		tr, err := rn.RunTrending(ctx)
+		printJSON(tr)
+		if err != nil {
+			log.Fatal(err)
+		}
 	case *once:
 		rep, err := (&audit.Runner{Store: s}).Run(ctx)
 		printJSON(rep)
@@ -93,7 +110,7 @@ func work(ctx context.Context, s *store.Store) {
 			log.Printf("reap expired jobs: %v", err)
 		}
 		claimed := false
-		for _, kind := range []string{store.JobKindSourceHealth, store.JobKindReleaseCurves, store.JobKindAudit} {
+		for _, kind := range []string{store.JobKindSourceHealth, store.JobKindRecsTrending, store.JobKindReleaseCurves, store.JobKindAudit, store.JobKindRecsSimilarity} {
 			id, version, err := s.ClaimJob(ctx, kind)
 			if errors.Is(err, pgx.ErrNoRows) {
 				continue
@@ -127,6 +144,12 @@ func healthConfig() audit.HealthConfig {
 
 // execute runs one job of kind and returns its result counts.
 func execute(ctx context.Context, s *store.Store, kind string, id int64) (any, error) {
+	switch kind {
+	case store.JobKindRecsSimilarity:
+		return (&recs.Runner{Store: s, JobID: id}).RunSimilarity(ctx)
+	case store.JobKindRecsTrending:
+		return (&recs.Runner{Store: s, JobID: id}).RunTrending(ctx)
+	}
 	if kind == store.JobKindSourceHealth {
 		rep, err := (&audit.HealthRunner{Store: s, Config: healthConfig(), JobID: id}).Run(ctx)
 		return map[string]any{"sources": rep.Sources, "recorded": rep.Recorded, "scored": rep.Scored,

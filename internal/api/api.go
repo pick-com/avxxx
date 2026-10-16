@@ -44,6 +44,10 @@ type Server struct {
 	// editor backs the admin video editor and conflict resolution
 	// (admin_release.go, admin.go).
 	editor releaseEditor
+	// recs backs /api/recs and /api/trending, recsAdmin the similarity
+	// weights and rebuild routes (recs.go).
+	recs      recsStore
+	recsAdmin recsAdmin
 	// adminToken is ADMIN_TOKEN, read once at construction. Empty disables
 	// every admin route (they all return 401).
 	adminToken string
@@ -74,6 +78,8 @@ func Register(mux *http.ServeMux, s *store.Store, mediaHandler *media.Handler) {
 		srv.community = s
 		srv.moderation = s
 		srv.editor = s
+		srv.recs = s
+		srv.recsAdmin = s
 	}
 	for _, rt := range srv.routes() {
 		mux.HandleFunc(rt.pattern, rt.handler)
@@ -99,6 +105,7 @@ func (srv *Server) routes() []route {
 	rs = append(rs, srv.communityRoutes()...)
 	rs = append(rs, srv.moderationRoutes()...)
 	rs = append(rs, srv.adminCurveRoutes()...)
+	rs = append(rs, srv.recsRoutes()...)
 	return srv.followMerges(rs)
 }
 
