@@ -311,7 +311,9 @@ export default function ReleasePage() {
           onBack={back}
           theater={theater}
           onToggleTheater={() => setTheater(on => !on)}
-          autoStart={autoStart}
+          // Load the first playable source as soon as the release page opens.
+          // Browsers may still require a click for audible playback.
+          autoStart={true}
           entryReason={entryReason}
           onEnded={() => setEnded(true)}
           onReplay={() => setEnded(false)}
