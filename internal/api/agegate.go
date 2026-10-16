@@ -223,8 +223,8 @@ func (srv *Server) postAgeGate(w http.ResponseWriter, r *http.Request) {
 	}
 	var in struct {
 		Confirmed bool `json:"confirmed"`
-		Year  int `json:"year"`
-		Month int `json:"month"`
+		Year      int  `json:"year"`
+		Month     int  `json:"month"`
 	}
 	if err := readJSON(r, &in, false); err != nil {
 		obs.AgeGate.WithLabelValues("invalid").Inc()
