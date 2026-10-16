@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -148,15 +149,33 @@ func TestAccountIntegration(t *testing.T) {
 	}
 
 	// --- export ------------------------------------------------------------
+	// Comments, 赞 / 踩, recent searches and cookie choices are the user's
+	// data too (the settings row promises 评论).
+	var exportRel, commentID int64
+	must(s.QueryRow(ctx, `INSERT INTO releases(slug,canonical_title,status) VALUES('acct-export','导出作品','published') RETURNING id`).Scan(&exportRel))
+	must(s.QueryRow(ctx, `INSERT INTO comments(release_id,user_id,body) VALUES($1,$2,'导出评论') RETURNING id`, exportRel, uid).Scan(&commentID))
+	_, err = s.Exec(ctx, `INSERT INTO comment_likes(user_id,comment_id) VALUES($1,$2)`, uid, commentID)
+	must(err)
+	_, err = s.Exec(ctx, `INSERT INTO release_reactions(release_id,voter_key,user_id,value) VALUES($1,$2,$3,1)`, exportRel, fmt.Sprintf("u:%d", uid), uid)
+	must(err)
+	must(s.RecordSearch(ctx, uid, "导出搜索"))
+	_, err = s.Exec(ctx, `INSERT INTO consent_records(user_id,categories,source) VALUES($1,ARRAY['necessary'],'banner')`, uid)
+	must(err)
 	var buf bytes.Buffer
 	must(s.WriteDataExport(ctx, uid, &buf))
 	var export map[string]json.RawMessage
 	if err := json.Unmarshal(buf.Bytes(), &export); err != nil {
 		t.Fatalf("export is not JSON: %v\n%s", err, buf.String())
 	}
-	for _, sec := range []string{"account", "settings", "sessions", "terms_acceptances", "interests", "watch_history", "playlists", "reviews"} {
+	for _, sec := range []string{"account", "settings", "sessions", "terms_acceptances", "interests", "watch_history", "playlists", "reviews",
+		"comments", "comment_likes", "reactions", "search_history", "consent_records"} {
 		if _, ok := export[sec]; !ok {
 			t.Errorf("export misses %s", sec)
+		}
+	}
+	for sec, want := range map[string]string{"comments": "导出评论", "reactions": "acct-export", "search_history": "导出搜索", "consent_records": "banner", "comment_likes": "comment_id"} {
+		if !strings.Contains(string(export[sec]), want) {
+			t.Errorf("export %s = %s, want %q", sec, export[sec], want)
 		}
 	}
 	for _, secret := range []string{"password_hash", "token_hash", "$argon2id", hashToken(token(cur))} {
