@@ -4,6 +4,7 @@ package api
 import (
 	"avxxx/internal/media"
 	"avxxx/internal/store"
+	"crypto/subtle"
 	"encoding/json"
 	"errors"
 	"log"
@@ -18,6 +19,12 @@ import (
 type Server struct {
 	store *store.Store
 	media *media.Handler
+	// accounts is the subset of the store used by the account and health
+	// handlers, as an interface so they can be tested without a database.
+	accounts accountStore
+	// adminToken is ADMIN_TOKEN, read once at construction. Empty disables
+	// every admin route (they all return 401).
+	adminToken string
 }
 
 type route struct {
@@ -34,7 +41,10 @@ func New(s *store.Store, mediaHandler *media.Handler) http.Handler {
 
 // Register adds every API route to mux.
 func Register(mux *http.ServeMux, s *store.Store, mediaHandler *media.Handler) {
-	srv := &Server{store: s, media: mediaHandler}
+	srv := &Server{store: s, media: mediaHandler, adminToken: os.Getenv("ADMIN_TOKEN")}
+	if s != nil {
+		srv.accounts = s
+	}
 	for _, rt := range srv.routes() {
 		mux.HandleFunc(rt.pattern, rt.handler)
 	}
@@ -51,44 +61,53 @@ func (srv *Server) routes() []route {
 	return rs
 }
 
-// reply writes v as JSON, or maps e to a JSON error with a status code.
+// reply writes v as JSON, or maps e to a {"error": "..."} body with a status
+// code chosen by errorStatus. 5xx bodies never carry internal error text.
 func reply(w http.ResponseWriter, v any, e error) {
 	w.Header().Set("Content-Type", "application/json")
 	if e != nil {
 		log.Print(e)
-		code := http.StatusInternalServerError
-		if errors.Is(e, pgx.ErrNoRows) {
-			code = http.StatusNotFound
-		}
-		if strings.Contains(e.Error(), "source disabled") {
-			code = http.StatusConflict
-		}
-		if strings.Contains(e.Error(), "duplicate key") {
-			code = http.StatusConflict
-		}
-		http.Error(w, `{"error":"request failed"}`, code)
+		code, msg := errorStatus(e)
+		w.Header().Set("X-Content-Type-Options", "nosniff")
+		w.WriteHeader(code)
+		json.NewEncoder(w).Encode(map[string]string{"error": msg})
 		return
 	}
 	json.NewEncoder(w).Encode(v)
 }
 
-// admin guards h with the ADMIN_TOKEN bearer token.
-func admin(h http.HandlerFunc) http.HandlerFunc {
+// admin guards h with the ADMIN_TOKEN bearer token, compared in constant time.
+func (srv *Server) admin(h http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		token := os.Getenv("ADMIN_TOKEN")
-		if token == "" || r.Header.Get("Authorization") != "Bearer "+token {
-			http.Error(w, "unauthorized", 401)
+		got := bearerToken(r)
+		if srv.adminToken == "" || got == "" || subtle.ConstantTimeCompare([]byte(got), []byte(srv.adminToken)) != 1 {
+			http.Error(w, "unauthorized", http.StatusUnauthorized)
 			return
 		}
 		h(w, r)
 	}
 }
 
+// bearerToken returns the token from an "Authorization: Bearer <token>"
+// header, or "" when the header is missing or uses another scheme.
 func bearerToken(r *http.Request) string {
-	return strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")
+	token, ok := strings.CutPrefix(r.Header.Get("Authorization"), "Bearer ")
+	if !ok {
+		return ""
+	}
+	return strings.TrimSpace(token)
 }
 
-// userID resolves the bearer token on r to a user id.
+// userID resolves the bearer token on r to a user id. A missing, unknown or
+// expired token is a 401; other store failures pass through (500).
 func (srv *Server) userID(r *http.Request) (int64, error) {
-	return srv.store.UserIDByToken(r.Context(), bearerToken(r))
+	token := bearerToken(r)
+	if token == "" {
+		return 0, errUnauthorized
+	}
+	id, err := srv.accounts.UserIDByToken(r.Context(), token)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return 0, unauthorized(err)
+	}
+	return id, err
 }

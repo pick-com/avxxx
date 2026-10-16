@@ -4,7 +4,6 @@ import (
 	"avxxx/internal/model"
 	"avxxx/internal/scraper"
 	"encoding/json"
-	"errors"
 	"net/http"
 	"strconv"
 	"strings"
@@ -12,25 +11,25 @@ import (
 
 func (srv *Server) adminRoutes() []route {
 	return []route{
-		{"POST /api/admin/releases/{id}/media-link", admin(srv.linkMediaToRelease)},
-		{"POST /api/admin/media-links/by-identifier", admin(srv.linkMediaByIdentifier)},
-		{"GET /api/admin/sources", admin(srv.sources)},
-		{"GET /api/admin/jobs", admin(srv.jobs)},
-		{"GET /api/admin/crawl-policies", admin(srv.crawlPolicies)},
-		{"POST /api/admin/media-assets", admin(srv.saveMediaAsset)},
-		{"GET /api/admin/identity-candidates", admin(srv.identityCandidates)},
-		{"PUT /api/admin/sources/{id}/crawl-policy", admin(srv.upsertCrawlPolicy)},
-		{"GET /api/admin/conflicts", admin(srv.conflicts)},
-		{"POST /api/admin/conflicts/{id}/resolve", admin(srv.resolveConflict)},
-		{"POST /api/admin/sources", admin(srv.addSource)},
-		{"POST /api/admin/sources/{id}/jobs", admin(srv.enqueue)},
+		{"POST /api/admin/releases/{id}/media-link", srv.admin(srv.linkMediaToRelease)},
+		{"POST /api/admin/media-links/by-identifier", srv.admin(srv.linkMediaByIdentifier)},
+		{"GET /api/admin/sources", srv.admin(srv.sources)},
+		{"GET /api/admin/jobs", srv.admin(srv.jobs)},
+		{"GET /api/admin/crawl-policies", srv.admin(srv.crawlPolicies)},
+		{"POST /api/admin/media-assets", srv.admin(srv.saveMediaAsset)},
+		{"GET /api/admin/identity-candidates", srv.admin(srv.identityCandidates)},
+		{"PUT /api/admin/sources/{id}/crawl-policy", srv.admin(srv.upsertCrawlPolicy)},
+		{"GET /api/admin/conflicts", srv.admin(srv.conflicts)},
+		{"POST /api/admin/conflicts/{id}/resolve", srv.admin(srv.resolveConflict)},
+		{"POST /api/admin/sources", srv.admin(srv.addSource)},
+		{"POST /api/admin/sources/{id}/jobs", srv.admin(srv.enqueue)},
 	}
 }
 
 func (srv *Server) linkMediaToRelease(w http.ResponseWriter, r *http.Request) {
 	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
-	if err != nil {
-		reply(w, nil, err)
+	if err != nil || id <= 0 {
+		reply(w, nil, badRequest("invalid id", err))
 		return
 	}
 	var input struct {
@@ -39,11 +38,11 @@ func (srv *Server) linkMediaToRelease(w http.ResponseWriter, r *http.Request) {
 		MediaURL string `json:"media_url"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
-		reply(w, nil, err)
+		reply(w, nil, badRequest("invalid JSON body", err))
 		return
 	}
 	if input.Source == "" || input.MediaID == "" {
-		reply(w, nil, errors.New("source and media_id are required"))
+		reply(w, nil, badRequest("source and media_id are required", nil))
 		return
 	}
 	err = srv.store.LinkMediaToRelease(r.Context(), id, input.Source, input.MediaID, input.MediaURL)
@@ -58,11 +57,11 @@ func (srv *Server) linkMediaByIdentifier(w http.ResponseWriter, r *http.Request)
 		Identifier string `json:"identifier"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
-		reply(w, nil, err)
+		reply(w, nil, badRequest("invalid JSON body", err))
 		return
 	}
 	if input.Source == "" || input.MediaID == "" || input.Identifier == "" {
-		reply(w, nil, errors.New("source, media_id and identifier are required"))
+		reply(w, nil, badRequest("source, media_id and identifier are required", nil))
 		return
 	}
 	linked, err := srv.store.LinkMediaByIdentifier(r.Context(), input.Source, input.MediaID, input.MediaURL, input.Identifier)

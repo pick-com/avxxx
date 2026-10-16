@@ -10,11 +10,11 @@ func (srv *Server) healthRoutes() []route {
 }
 
 func (srv *Server) health(w http.ResponseWriter, r *http.Request) {
-	e := srv.store.Ping(r.Context())
-	if e != nil {
-		w.WriteHeader(http.StatusServiceUnavailable)
+	if e := srv.accounts.Ping(r.Context()); e != nil {
+		reply(w, nil, &httpError{status: http.StatusServiceUnavailable, msg: "database unavailable", err: e})
+		return
 	}
-	reply(w, map[string]bool{"ok": e == nil}, e)
+	reply(w, map[string]bool{"ok": true}, nil)
 }
 
 func (srv *Server) live(w http.ResponseWriter, r *http.Request) {
