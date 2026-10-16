@@ -12,6 +12,8 @@ import (
 	"strings"
 	"time"
 
+	"avxxx/internal/search"
+
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 	"golang.org/x/crypto/argon2"
@@ -307,8 +309,47 @@ func (s *Store) SaveWatch(ctx context.Context, userID int64, slug string, progre
 	_, err := s.Exec(ctx, `INSERT INTO watch_history(user_id,release_id,progress_seconds,duration_seconds,watched_at) VALUES($1,$2,$3,NULLIF($4,0),now()) ON CONFLICT(user_id,release_id) DO UPDATE SET progress_seconds=EXCLUDED.progress_seconds,duration_seconds=COALESCE(EXCLUDED.duration_seconds,watch_history.duration_seconds),watched_at=now()`, userID, releaseID, progress, duration)
 	return err
 }
-func (s *Store) WatchHistory(ctx context.Context, userID int64) ([]map[string]any, error) {
-	rows, err := s.Query(ctx, `SELECT r.slug,r.canonical_title,w.progress_seconds,COALESCE(w.duration_seconds,0),w.watched_at FROM watch_history w JOIN releases r ON r.id=w.release_id WHERE w.user_id=$1 ORDER BY w.watched_at DESC LIMIT 100`, userID)
+
+// historySearchScan bounds a 播放记录 search to the user's newest rows.
+const historySearchScan = 2000
+
+// WatchHistory lists the user's 100 most recent watch_history rows, newest
+// first. A non-empty q (播放记录 search) keeps the rows whose title (or
+// Japanese title, or slug) or a performer's name contains it, or whose
+// product code starts with it or has the same code_match_key ("abc123"
+// finds ABC-123). The search reads only the user's newest historySearchScan
+// rows (watch_history_recent) and probes per-release indexes, so it stays
+// bounded without a new index.
+func (s *Store) WatchHistory(ctx context.Context, userID int64, q string) ([]map[string]any, error) {
+	q = search.NormalizeQuery(q)
+	var rows pgx.Rows
+	var err error
+	if q == "" {
+		rows, err = s.Query(ctx, `SELECT r.slug,r.canonical_title,w.progress_seconds,COALESCE(w.duration_seconds,0),w.watched_at FROM watch_history w JOIN releases r ON r.id=w.release_id WHERE w.user_id=$1 ORDER BY w.watched_at DESC LIMIT 100`, userID)
+	} else {
+		// A product code: a prefix pattern ("abc-1" → abc-1%), and, when the
+		// query has digits, the code_match_key form ("abc00123" = ABC-123).
+		code, key := "", ""
+		if c := search.CodePrefix(q); c != "" {
+			code = prefixPattern(c)
+		}
+		if strings.ContainsAny(q, "0123456789") {
+			key = q
+		}
+		rows, err = s.Query(ctx, `
+			WITH recent AS (
+			  SELECT release_id,progress_seconds,duration_seconds,watched_at FROM watch_history
+			  WHERE user_id=$1 ORDER BY watched_at DESC LIMIT $5)
+			SELECT r.slug,r.canonical_title,w.progress_seconds,COALESCE(w.duration_seconds,0),w.watched_at
+			FROM recent w JOIN releases r ON r.id=w.release_id
+			WHERE r.canonical_title ILIKE $2 OR r.title_ja ILIKE $2 OR r.slug ILIKE $2
+			  OR EXISTS (SELECT 1 FROM release_performers rp JOIN performers p ON p.id=rp.performer_id
+			    WHERE rp.release_id=r.id AND (p.canonical_name ILIKE $2 OR p.canonical_name_ja ILIKE $2))
+			  OR EXISTS (SELECT 1 FROM release_identifiers i WHERE i.release_id=r.id
+			    AND (($3::text<>'' AND i.normalized_value LIKE $3) OR ($4::text<>'' AND code_match_key(i.normalized_value)=code_match_key($4))))
+			ORDER BY w.watched_at DESC LIMIT 100`,
+			userID, containsPattern(q), code, key, historySearchScan)
+	}
 	if err != nil {
 		return nil, err
 	}

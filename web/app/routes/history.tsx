@@ -1,4 +1,5 @@
 import {Fragment, useEffect, useState} from 'react';
+import {useSearchParams} from 'react-router';
 import {ReleaseRow} from '../components/Cards';
 import {Icon} from '../components/Icon';
 import {CardGridSkeleton, EmptyState, ErrorBanner} from '../components/States';
@@ -7,6 +8,7 @@ import {clearWatchHistory, deleteWatchEntry, getWatchHistory, type WatchItem} fr
 import {useAuth} from '../lib/auth';
 import {clearGuestHistory, deleteGuestEntry, guestHistory} from '../lib/guestProgress';
 import {dayLabel, formatClock} from '../lib/format';
+import {filterHistory, normalizeHistoryQuery} from '../lib/historyFilter';
 import {t, useT} from '../lib/i18n';
 import type {MessageKey} from '../lib/messages.zh-CN';
 import {useSettings} from '../lib/settings';
@@ -21,6 +23,9 @@ export const meta = () => [{title: t('title.history')}];
 // user_settings.history_paused (the same setting as 设置 → 隐私).
 // Signed out: the same list from this browser's guest history
 // (lib/guestProgress), with delete / clear and a sign-in hint; no pause switch.
+// 搜索播放记录 (?q=, debounced): signed in, GET /api/me/watch-history?q=
+// (title, performer, product code); signed out, the guest list filtered here
+// (lib/historyFilter: title and slug / code; the guest store has no cast).
 
 type Filter = 'all' | 'unfinished' | 'finished';
 const FILTERS: {key: Filter; label: MessageKey}[] = [
@@ -28,6 +33,8 @@ const FILTERS: {key: Filter; label: MessageKey}[] = [
   {key: 'unfinished', label: 'history.filterUnfinished'},
   {key: 'finished', label: 'history.filterFinished'},
 ];
+
+const SEARCH_DELAY_MS = 300;
 
 /** 已看完: within 10 s of the end or at least 90 % (the watch-later rule). */
 function isFinished(item: WatchItem): boolean {
@@ -39,7 +46,10 @@ export default function History() {
   const t = useT();
   const {status} = useAuth();
   const {status: settingsStatus, settings, save, fieldErrors, pending} = useSettings();
-  const history = useAsync(signal => getWatchHistory(signal), [status], status === 'user');
+  const [params, setParams] = useSearchParams();
+  const query = normalizeHistoryQuery(params.get('q') ?? '');
+  const [text, setText] = useState(params.get('q') ?? '');
+  const history = useAsync(signal => getWatchHistory(signal, query), [status, query], status === 'user');
   const [items, setItems] = useState<WatchItem[]>([]);
   const [filter, setFilter] = useState<Filter>('all');
   const [confirming, setConfirming] = useState(false);
@@ -56,7 +66,30 @@ export default function History() {
     if (guest) setItems(guestHistory());
   }, [guest]);
 
-  const shown = items.filter(i => filter === 'all' || (filter === 'finished') === isFinished(i));
+  // The URL follows the field after a pause (replace: no entry per keystroke)…
+  useEffect(() => {
+    if (normalizeHistoryQuery(text) === query) return;
+    const timer = window.setTimeout(() => {
+      setParams(
+        p => {
+          const next = new URLSearchParams(p);
+          if (text.trim()) next.set('q', text.trim());
+          else next.delete('q');
+          return next;
+        },
+        {replace: true, preventScrollReset: true},
+      );
+    }, SEARCH_DELAY_MS);
+    return () => window.clearTimeout(timer);
+  }, [text, query, setParams]);
+  // …and the field follows the URL (back / forward).
+  useEffect(() => {
+    setText(v => (normalizeHistoryQuery(v) === query ? v : (params.get('q') ?? '')));
+  }, [query]);
+
+  // Signed in, the server already searched; guests filter here.
+  const searched = guest ? filterHistory(items, query) : items;
+  const shown = searched.filter(i => filter === 'all' || (filter === 'finished') === isFinished(i));
   const groups: [string, WatchItem[]][] = [];
   for (const item of shown) {
     const label = dayLabel(item.watched_at);
@@ -110,7 +143,7 @@ export default function History() {
               <Switch checked={!paused} onChange={setRecording} label={t('history.record')} busy={pending.has('history_paused')} />
             </span>
           )}
-          {items.length > 0 && !confirming && (
+          {items.length > 0 && !confirming && !query && (
             <button type="button" className="btn btn-secondary btn-danger" onClick={() => setConfirming(true)}>
               <Icon name="trash" size={16} />
               {t('history.clearAll')}
@@ -149,6 +182,20 @@ export default function History() {
       <span className="sr-only" role="status" aria-live="polite">
         {announce}
       </span>
+      {(items.length > 0 || query) && (
+        <label className="lib-search">
+          <Icon name="search" size={16} />
+          <input
+            type="search"
+            value={text}
+            onChange={e => setText(e.target.value)}
+            placeholder={t('history.search')}
+            aria-label={t('history.search')}
+            maxLength={100}
+            enterKeyHint="search"
+          />
+        </label>
+      )}
       {items.length > 0 && (
         <div className="segmented segmented-sm lib-filter" role="radiogroup" aria-label={t('history.filter')}>
           {FILTERS.map(f => (
@@ -162,6 +209,8 @@ export default function History() {
         <ErrorBanner error={history.error} onRetry={history.reload} />
       ) : history.loading ? (
         history.slow && <CardGridSkeleton count={5} variant="row" />
+      ) : query && searched.length === 0 ? (
+        <EmptyState icon="search" title={t('history.noMatchTitle')} body={t('history.noMatchBody', {q: params.get('q')?.trim() || query})} />
       ) : items.length === 0 ? (
         <EmptyState icon="history" title={t('history.emptyTitle')} body={t('history.emptyBody')} actions={[{to: '/', label: t('common.goHome')}]} />
       ) : shown.length === 0 ? (
