@@ -42,9 +42,11 @@ type Adapter interface {
 }
 
 // Adapters returns every built-in catalog adapter (the scraper registry and
-// the fixture acceptance harness share this list).
+// the fixture acceptance harness share this list). The DMM adapter reads its
+// credentials from the environment; unconfigured, it still parses fixtures
+// but refuses to build an HTTP client (HTTPClientFor -> ErrNotConfigured).
 func Adapters() []Adapter {
-	return []Adapter{NewJAVDatabaseAdapter(), NewXCITYAdapter(), NewJavGuruAdapter()}
+	return []Adapter{NewJAVDatabaseAdapter(), NewXCITYAdapter(), NewJavGuruAdapter(), NewDMMAdapter()}
 }
 
 type Registry struct{ adapters map[string]Adapter }

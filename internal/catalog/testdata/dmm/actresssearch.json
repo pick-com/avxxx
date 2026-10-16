@@ -1,0 +1,55 @@
+{
+  "request": {
+    "parameters": {
+      "api_id": "{{API_ID}}",
+      "affiliate_id": "{{AFFILIATE_ID}}",
+      "keyword": "あさみ",
+      "output": "json"
+    }
+  },
+  "result": {
+    "status": "200",
+    "result_count": 2,
+    "total_count": "2",
+    "first_position": 1,
+    "actress": [
+      {
+        "id": "15365",
+        "name": "麻美ゆま",
+        "ruby": "あさみゆま",
+        "bust": "96",
+        "cup": "H",
+        "waist": "58",
+        "hip": "88",
+        "height": "158",
+        "birthday": "1987-03-24",
+        "blood_type": "AB",
+        "hobby": "香水集め、英会話、ピアノ",
+        "prefectures": "東京都",
+        "imageURL": {
+          "small": "http://pics.dmm.co.jp/mono/actjpgs/thumbnail/asami_yuma.jpg",
+          "large": "http://pics.dmm.co.jp/mono/actjpgs/asami_yuma.jpg"
+        },
+        "listURL": {
+          "digital": "https://al.fanza.co.jp/?lurl=https%3A%2F%2Fvideo.dmm.co.jp%2Fav%2Flist%2F%3Factress%3D15365&af_id={{AFFILIATE_ID}}&ch=api",
+          "monthly": "https://al.fanza.co.jp/?lurl=http%3A%2F%2Fwww.dmm.co.jp%2Fmonthly%2Fpremium%2F-%2Flist%2F%3D%2Farticle%3Dactress%2Fid%3D15365%2F&af_id={{AFFILIATE_ID}}&ch=api",
+          "mono": "https://al.fanza.co.jp/?lurl=http%3A%2F%2Fwww.dmm.co.jp%2Fmono%2Fdvd%2F-%2Flist%2F%3D%2Farticle%3Dactress%2Fid%3D15365%2F&af_id={{AFFILIATE_ID}}&ch=api"
+        }
+      },
+      {
+        "id": "1099472",
+        "name": "Fixture actress with empty fields",
+        "ruby": "",
+        "bust": null,
+        "cup": null,
+        "waist": "",
+        "hip": "",
+        "height": "",
+        "birthday": null,
+        "blood_type": null,
+        "hobby": null,
+        "prefectures": null
+      }
+    ]
+  }
+}

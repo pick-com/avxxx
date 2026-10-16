@@ -51,6 +51,8 @@ services:
       # Contact URL or email in the crawler User-Agent; empty disables catalog crawls.
       CATALOG_CONTACT: ${CATALOG_CONTACT:-}
       CATALOG_USER_AGENT: ${CATALOG_USER_AGENT:-}
+      DMM_API_ID: ${DMM_API_ID:-}
+      DMM_AFFILIATE_ID: ${DMM_AFFILIATE_ID:-}
     depends_on:
       db:
         condition: service_healthy

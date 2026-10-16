@@ -142,6 +142,19 @@ func (c *Crawl) Run(ctx context.Context) (CrawlResult, error) {
 	page := c.StartURL
 	if phase == PhaseBaseline && cp.Cursor != "" && SameSite(c.StartURL, cp.Cursor) {
 		page = cp.Cursor
+	} else if s, ok := c.Adapter.(IncrementalStarter); ok && phase == PhaseIncremental && cp.Watermark != nil {
+		// Incremental only: the incremental checkpoint's watermark is the
+		// time of the last completed incremental run, so an adapter that can
+		// filter by date (DMM gte_date) narrows the head to what changed
+		// since then. The head marks below still stop the run. Baseline and
+		// verify always start from their own cursor / the start URL.
+		if u := s.IncrementalStart(c.StartURL, *cp.Watermark); u != "" && SameSite(c.StartURL, u) {
+			page = u
+		}
+	}
+	inline := false
+	if d, ok := c.Adapter.(InlineDiscoverer); ok {
+		inline = d.InlineRecords()
 	}
 	oldMarks := map[string]bool{}
 	if phase == PhaseIncremental {
@@ -209,6 +222,17 @@ func (c *Crawl) Run(ctx context.Context) (CrawlResult, error) {
 				if res.Pages == 0 && len(newMarks) < incrementalMarkKeys {
 					newMarks = append(newMarks, recordMark(discovered))
 				}
+			}
+			if inline {
+				// Structured APIs: the discovery payload is the record. The
+				// discovery page itself already went through the Fetcher
+				// (robots.txt, budget); verify runs save into the report.
+				if _, err := c.Sink.SaveCatalogRecord(ctx, c.SourceID, parser, discovered); err != nil {
+					failDetail(CheckpointKey{SourceID: c.SourceID, TaskType: TaskDetail, Partition: discovered.SourceKey, ParserVersion: parser}, "record_save_failed")
+					return fail(key, "record_save_failed", err)
+				}
+				res.Records++
+				continue
 			}
 			detailKey := CheckpointKey{SourceID: c.SourceID, TaskType: TaskDetail, Partition: discovered.SourceKey, ParserVersion: parser}
 			doc, err := c.Fetcher.Fetch(ctx, discovered.URL)
