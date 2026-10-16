@@ -1,7 +1,10 @@
 import {createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode} from 'react';
 import {AuthForm, type AuthMode} from './AuthForm';
 import {Sheet} from './Sheet';
+import {mergeWatchProgress} from '../lib/api';
 import {useAuth} from '../lib/auth';
+import {selectGuestMerge, uploadGuestHistory} from '../lib/guestMerge';
+import {clearGuestHistory, deleteGuestEntry, guestStore} from '../lib/guestProgress';
 import {useT} from '../lib/i18n';
 import type {MessageKey} from '../lib/messages.zh-CN';
 import {useLocation} from '../lib/nav';
@@ -82,8 +85,30 @@ export function usePendingAction(
   }, [status, ready, kind, target, notify]);
 }
 
+/**
+ * On sign-in, uploads this browser's guest 播放记录 to the account (newest
+ * 100, one request at a time; the server keeps newer account progress) and
+ * removes what was uploaded. Once per sign-in.
+ */
+function useGuestMerge() {
+  const {status} = useAuth();
+  const started = useRef(false);
+  useEffect(() => {
+    if (status === 'anon') started.current = false;
+    if (status !== 'user' || started.current) return;
+    const entries = selectGuestMerge(guestStore());
+    if (entries.length === 0) return;
+    started.current = true;
+    void uploadGuestHistory(entries, mergeWatchProgress).then(({done, complete}) => {
+      if (complete) clearGuestHistory();
+      else done.forEach(deleteGuestEntry);
+    });
+  }, [status]);
+}
+
 export function AuthPromptProvider({children}: {children: ReactNode}) {
   const {status} = useAuth();
+  useGuestMerge();
   const [action, setAction] = useState<AuthAction | null>(null);
   const [toast, setToast] = useState<{text: string; id: number} | null>(null);
 
