@@ -27,6 +27,7 @@ const ICONS = {
   actors: 'M12 12a4 4 0 100-8 4 4 0 000 8zM4 21c1-4 4-6 8-6s7 2 8 6',
   search: 'M11 18a7 7 0 100-14 7 7 0 000 14zM20 20l-4-4',
   priority: 'M4 6h10M4 12h7M4 18h4M17 4v16M14 17l3 3 3-3',
+  links: 'M10 14a4 4 0 005.7 0l3-3a4 4 0 00-5.7-5.7l-1 1M14 10a4 4 0 00-5.7 0l-3 3a4 4 0 005.7 5.7l1-1',
 };
 
 type Badge = {n: number; tone: 'red' | 'amber' | 'plain'} | null;
@@ -132,7 +133,10 @@ export default function AdminLayout() {
       },
       {
         title: '数据治理',
-        items: [{to: '/admin/field-policies', label: '字段优先级', icon: 'priority'}],
+        items: [
+          {to: '/admin/field-policies', label: '字段优先级', icon: 'priority'},
+          {to: '/admin/media-links', label: '片源映射', icon: 'links'},
+        ],
       },
       {
         title: '社区',
