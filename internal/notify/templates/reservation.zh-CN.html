@@ -1,0 +1,11 @@
+<!doctype html>
+<html lang="zh-CN"><head><meta charset="utf-8"><title>{{.Subject}}</title></head>
+<body style="font-family:-apple-system,'PingFang SC','Microsoft YaHei',sans-serif;color:#222;line-height:1.6">
+<p>{{if .Name}}{{.Name}}，你好：{{else}}你好：{{end}}</p>
+<p>{{if eq .Count 1}}你预约的作品已上线：{{else}}你预约的 {{.Count}} 部作品已上线：{{end}}</p>
+<ul>
+{{range .Items}}<li><a href="{{.URL}}">{{.Title}}</a>{{if .Performers}}（{{.Performers}}）{{end}}</li>
+{{end}}</ul>
+{{if .More}}<p>……还有 {{.More}} 部，<a href="{{.ListURL}}">查看全部</a></p>{{end}}
+<p style="color:#888;font-size:12px">不想再收到此类邮件？<a href="{{.SettingsURL}}">在通知设置中关闭</a>。</p>
+</body></html>

@@ -19,6 +19,9 @@ services:
     command: ["/usr/local/bin/api"]
     environment:
       DATABASE_URL: ${DATABASE_URL:-postgres://avxxx:avxxx@db:5432/avxxx?sslmode=disable}
+      # Web Push: public key only; empty disables the subscribe routes.
+      VAPID_PUBLIC_KEY: ${VAPID_PUBLIC_KEY:-}
+      PUSH_ALLOWED_HOSTS: ${PUSH_ALLOWED_HOSTS:-}
     depends_on:
       db:
         condition: service_healthy
@@ -51,6 +54,27 @@ services:
     command: ["/usr/local/bin/audit"]
     environment:
       DATABASE_URL: ${DATABASE_URL:-postgres://avxxx:avxxx@db:5432/avxxx?sslmode=disable}
+    depends_on:
+      db:
+        condition: service_healthy
+  notifier:
+    build:
+      context: .
+      dockerfile: Dockerfile.api
+    command: ["/usr/local/bin/notifier"]
+    # Every channel is disabled while its variables are empty.
+    environment:
+      DATABASE_URL: ${DATABASE_URL:-postgres://avxxx:avxxx@db:5432/avxxx?sslmode=disable}
+      BASE_URL: ${BASE_URL:-}
+      VAPID_PUBLIC_KEY: ${VAPID_PUBLIC_KEY:-}
+      VAPID_PRIVATE_KEY: ${VAPID_PRIVATE_KEY:-}
+      VAPID_SUBJECT: ${VAPID_SUBJECT:-}
+      SMTP_HOST: ${SMTP_HOST:-}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_USER: ${SMTP_USER:-}
+      SMTP_PASSWORD: ${SMTP_PASSWORD:-}
+      MAIL_FROM: ${MAIL_FROM:-}
+      NOTIFY_MAX_ATTEMPTS: ${NOTIFY_MAX_ATTEMPTS:-6}
     depends_on:
       db:
         condition: service_healthy

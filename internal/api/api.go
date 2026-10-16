@@ -38,6 +38,9 @@ type Server struct {
 	moderation moderationStore
 	// limiter enforces the danmaku / review posting limits (PRD 5.5).
 	limiter community.Limiter
+	// push stores Web Push subscriptions (push.go); pushCfg is read from env.
+	push    pushStore
+	pushCfg pushConfig
 	// adminToken is ADMIN_TOKEN, read once at construction. Empty disables
 	// every admin route (they all return 401).
 	adminToken string
@@ -57,8 +60,9 @@ func New(s *store.Store, mediaHandler *media.Handler) http.Handler {
 
 // Register adds every API route to mux.
 func Register(mux *http.ServeMux, s *store.Store, mediaHandler *media.Handler) {
-	srv := &Server{store: s, media: mediaHandler, adminToken: os.Getenv("ADMIN_TOKEN"), limiter: community.NewMemoryLimiter()}
+	srv := &Server{store: s, media: mediaHandler, adminToken: os.Getenv("ADMIN_TOKEN"), limiter: community.NewMemoryLimiter(), pushCfg: pushConfigFromEnv(os.Getenv)}
 	if s != nil {
+		srv.push = s
 		srv.accounts = s
 		srv.identity = s
 		srv.social = s
@@ -79,6 +83,7 @@ func (srv *Server) routes() []route {
 	rs = append(rs, srv.accountRoutes()...)
 	rs = append(rs, srv.socialRoutes()...)
 	rs = append(rs, srv.notificationRoutes()...)
+	rs = append(rs, srv.pushRoutes()...)
 	rs = append(rs, srv.catalogRoutes()...)
 	rs = append(rs, srv.mediaRoutes()...)
 	rs = append(rs, srv.playbackRoutes()...)

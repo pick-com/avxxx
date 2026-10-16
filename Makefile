@@ -2,7 +2,7 @@ ifneq (,$(wildcard .env))
 include .env
 export
 endif
-.PHONY: db-up seed-demo api scheduler scraper audit web test test-integration build smoke backup
+.PHONY: db-up seed-demo api scheduler scraper audit notifier web test test-integration build smoke backup
 db-up:
 	docker compose up -d db
 seed-demo:
@@ -15,6 +15,8 @@ scheduler:
 	go run ./cmd/scheduler
 audit:
 	go run ./cmd/audit
+notifier:
+	go run ./cmd/notifier
 web:
 	cd web && npm run dev
 test:

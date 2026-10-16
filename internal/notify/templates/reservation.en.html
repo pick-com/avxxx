@@ -1,0 +1,11 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>{{.Subject}}</title></head>
+<body style="font-family:-apple-system,Helvetica,Arial,sans-serif;color:#222;line-height:1.6">
+<p>Hi{{if .Name}} {{.Name}}{{end}},</p>
+<p>{{if eq .Count 1}}A release you reserved is now available:{{else}}{{.Count}} releases you reserved are now available:{{end}}</p>
+<ul>
+{{range .Items}}<li><a href="{{.URL}}">{{.Title}}</a>{{if .Performers}} ({{.Performers}}){{end}}</li>
+{{end}}</ul>
+{{if .More}}<p>...and {{.More}} more. <a href="{{.ListURL}}">See all</a></p>{{end}}
+<p style="color:#888;font-size:12px">Don't want these emails? <a href="{{.SettingsURL}}">Turn them off in your notification settings</a>.</p>
+</body></html>
