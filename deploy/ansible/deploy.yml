@@ -31,7 +31,7 @@
         chdir: "{{ app_dir }}"
     - name: Start application services
       ansible.builtin.command:
-        cmd: docker compose up -d api scheduler scraper
+        cmd: docker compose up -d api scheduler scraper audit
         chdir: "{{ app_dir }}"
     - name: Check API health
       ansible.builtin.uri:
