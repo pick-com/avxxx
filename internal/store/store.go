@@ -664,7 +664,12 @@ func (s *Store) SaveCatalogRecord(ctx context.Context, sourceID int64, parserVer
 		if code != "" {
 			// Never the bare "maker:" (Japanese maker names have no ASCII slug).
 			scope := catalog.MakerScope(maker, recordText(rec.Fields["maker_id"]))
-			_, err = tx.Exec(ctx, `INSERT INTO release_identifiers(release_id,identifier_type,identifier_value,normalized_value,identifier_scope,source_id) VALUES($1,'dvd_code',$2,$3,$4,$5) ON CONFLICT DO NOTHING`, id, code, catalog.NormalizeIdentifier(code), scope, sourceID)
+			// A fallback-only source fills a missing code but never adds
+			// another maker scope for a code the release already has: its
+			// studio naming ("Madonna TPDB") is not an identity key.
+			_, err = tx.Exec(ctx, `INSERT INTO release_identifiers(release_id,identifier_type,identifier_value,normalized_value,identifier_scope,source_id)
+				SELECT $1,'dvd_code',$2,$3,$4,$5 WHERE NOT ($6 AND EXISTS (SELECT 1 FROM release_identifiers WHERE release_id=$1 AND identifier_type='dvd_code' AND normalized_value=$3))
+				ON CONFLICT DO NOTHING`, id, code, catalog.NormalizeIdentifier(code), scope, sourceID, fallback)
 			if err != nil {
 				return 0, err
 			}
