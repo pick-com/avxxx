@@ -13,25 +13,47 @@ import {t, useI18n, useT} from '../lib/i18n';
 import {formatDate, formatRuntime} from '../lib/format';
 import {useAsync} from '../lib/useAsync';
 import {getPerformerHeat, getRecs, getTrending, performerName, reasonText, recTitle, useRecsAvailable, type RecItem} from '../lib/recs';
+import {HomeHero} from '../components/HomeHero';
+import {getHomeSlots, getTopRatedShort, releaseTitle, type HomeSlot, type HomeSlots, type TopRatedShort} from '../lib/home';
 
 export const handle: SeoHandle = {seo: true};
 
-// Server rendering (PRD 13 SEO): 新上线, the performer shelf and the tag chips
-// come from the loader, so the home page links every new release and
-// performer without JavaScript. Personal shelves load in the browser.
-type HomeLoad = {lang: LangCode; releases?: Release[]; performers?: Page<PerformerListItem>; tags?: Tag[]};
+// Server rendering (PRD 13 SEO): 主推横幅 and the curated shelf (home_slots),
+// 新上线, 高分短片, the performer shelf and the tag chips come from the
+// loader, so the home page links every new release and performer without
+// JavaScript and the hero never shifts the page. Personal shelves load in
+// the browser.
+type HomeLoad = {
+  lang: LangCode;
+  releases?: Release[];
+  performers?: Page<PerformerListItem>;
+  tags?: Tag[];
+  slots?: HomeSlots;
+  short?: TopRatedShort;
+};
+
+const SHORT_LIMIT = 10;
 
 export async function loader({params, request}: LoaderFunctionArgs) {
   const lang = routeLang(params);
   if (!lang) return null;
   const opts = {lang, signal: request.signal};
   type Items<T> = {items: T[] | null; next_cursor?: string | null};
-  const [releases, performers, tags] = await Promise.all([
+  // Region-targeted slots: the visitor's country from the CDN (CF-IPCountry).
+  const region = (request.headers.get('cf-ipcountry') ?? '').trim().toUpperCase();
+  const slotQuery = new URLSearchParams({lang});
+  if (/^[A-Z]{2}$/.test(region) && region !== 'XX') slotQuery.set('region', region);
+  const [releases, performers, tags, slots, short] = await Promise.all([
     serverApi<Items<Release>>('releases?limit=10', opts).then(d => d.items ?? [], () => undefined),
     serverApi<Items<PerformerListItem>>('performers?sort=works&limit=12', opts).then(toPage, () => undefined),
     serverApi<Items<Tag>>('tags?limit=12', opts).then(d => d.items ?? [], () => undefined),
+    serverApi<HomeSlots>(`home/slots?${slotQuery}`, opts).then(d => ({...d, hero: d?.hero ?? [], shelf: d?.shelf ?? []}), () => undefined),
+    serverApi<TopRatedShort>(`home/top-rated-short?lang=${encodeURIComponent(lang)}&limit=${SHORT_LIMIT}`, opts).then(
+      d => ({...d, items: d?.items ?? []}),
+      () => undefined,
+    ),
   ]);
-  const body: HomeLoad = {lang, releases, performers, tags};
+  const body: HomeLoad = {lang, releases, performers, tags, slots, short};
   // Without the catalog the page still renders; 503 tells crawlers to come back.
   return data(body, releases ? undefined : {status: 503});
 }
@@ -73,15 +95,20 @@ export const meta: MetaFunction<typeof loader> = ({matches}) => {
 // Without the recs routes (404 / 503) these shelves are hidden and the page
 // keeps 新上线 and the 演员 shelf (sort=works).
 //
-// Shelves without a backend are left out rather than filled with sample data:
-// TODO(tech plan 3.2 home_slots + 3.11 运营排期): 主推横幅.
-// TODO(tech plan 3.8 ratings): visitor 高分短片.
+// 主推横幅 (first, above the chips) is the live hero slots of GET
+// /api/home/slots (AdminOps 运营排期); with none scheduled, 新上线 releases
+// with a stored cover fill it (推荐补位). Curated shelf slots form 编辑精选.
+// Visitors also get 高分短片 (GET /api/home/top-rated-short): short releases
+// by Bayesian rating, with a lower vote threshold and then the newest short
+// releases when ratings are thin (the sub-title says which).
 export default function Home() {
   const t = useT();
   const {status} = useAuth();
   const {contentLang} = useI18n();
   const loaded = useLoaderData<typeof loader>() as HomeLoad | null;
   const own = loaded?.lang === contentLang ? loaded : null;
+  const slots = useAsync(signal => getHomeSlots(contentLang, signal), [contentLang], true, own?.slots);
+  const short = useAsync(signal => getTopRatedShort(contentLang, SHORT_LIMIT, signal), [contentLang], status !== 'user', own?.short);
   const releases = useAsync(signal => listReleases(10, signal), [], true, own?.releases);
   const performers = useAsync(signal => listPerformerPage('works', 12, null, undefined, signal), [], true, own?.performers);
 
@@ -100,10 +127,22 @@ export default function Home() {
   const hotActors = heat.data?.items ?? [];
   // 热门演员 replaces the sort=works shelf once the heat board answers with rows.
   const showHeat = hotActors.length > 0;
+  const curatedHero = slots.data?.hero ?? [];
+  const heroFill = curatedHero.length === 0 && !slots.loading ? fillHero(releases.data ?? []) : [];
+  const picks = slots.data?.shelf ?? [];
+  const shortItems = short.data?.items ?? [];
+  const shortSub =
+    short.data?.basis === 'fallback'
+      ? t('home.shortFallback')
+      : short.data?.basis === 'few_votes'
+        ? t('home.shortFewVotes')
+        : t('home.shortTopSub', {n: short.data?.max_minutes ?? 60});
 
   return (
     <div className="page home">
       <h1 className="sr-only">{t('seo.homeHeading')}</h1>
+      {curatedHero.length > 0 ? <HomeHero slots={curatedHero} /> : heroFill.length > 0 && <HomeHero slots={heroFill} fill />}
+
       {status === 'anon' && (
         <section className="visitor-card">
           <span className="visitor-text">
@@ -136,6 +175,17 @@ export default function Home() {
           </span>
         )}
       </div>
+
+      {picks.length > 0 && (
+        <section className="shelf">
+          <SectionHeader title={t('home.picks')} sub={t('home.picksSub')} />
+          <div className="card-grid">
+            {picks.map((s, col) => (
+              <PickCard key={s.id} slot={s} col={col + 1} />
+            ))}
+          </div>
+        </section>
+      )}
 
       {status === 'user' && (history.loading || (history.data && history.data.length > 0) || history.error) && (
         <section className="shelf">
@@ -220,6 +270,37 @@ export default function Home() {
         )}
       </section>
 
+      {status !== 'user' && shortItems.length > 0 && (
+        <section className="shelf">
+          <SectionHeader
+            title={t('home.shortTop')}
+            sub={shortSub}
+            action={<Link to={discoverHref({max_runtime: short.data?.max_minutes ?? 60})} className="section-link">{t('home.viewAll')}</Link>}
+          />
+          <div className="card-grid">
+            {shortItems.map((r, col) => (
+              <ReleaseCard
+                slot={`home:short:c${col + 1}`}
+                key={r.id}
+                slug={r.slug}
+                title={releaseTitle(r)}
+                cover={r.cover}
+                badge={r.runtime_minutes ? t('card.minutes', {n: r.runtime_minutes}) : undefined}
+                meta={
+                  r.score !== null ? (
+                    <span className="short-score">{t('home.shortScore', {score: r.score.toFixed(1)})}</span>
+                  ) : r.votes > 0 ? (
+                    t('home.shortVotes', {n: r.votes})
+                  ) : (
+                    [r.maker_name, formatDate(r.release_date)].filter(Boolean).join(' · ')
+                  )
+                }
+              />
+            ))}
+          </div>
+        </section>
+      )}
+
       {showHeat && (
         <section className="shelf">
           <SectionHeader title={t('home.hotActors')} action={<Link to="/discover?tab=actors" className="section-link">{t('home.actorLibrary')}</Link>} />
@@ -280,5 +361,58 @@ function RecGrid({items, slot}: {items: RecItem[]; slot: string}) {
         />
       ))}
     </div>
+  );
+}
+
+/** 推荐补位: up to 3 新上线 releases with a stored cover stand in for an empty 主推横幅. */
+function fillHero(releases: Release[]): HomeSlot[] {
+  return releases
+    .filter(r => r.cover)
+    .slice(0, 3)
+    .map(r => ({
+      id: -r.id,
+      slot_type: 'hero',
+      target_type: 'release',
+      title: r.canonical_title,
+      href: `/releases/${encodeURIComponent(r.slug)}`,
+      release: {id: r.id, slug: r.slug, canonical_title: r.canonical_title, release_date: r.release_date, runtime_minutes: r.runtime_minutes, maker_name: r.maker_name, cover: r.cover},
+      cover: r.cover,
+      starts_at: '',
+      ends_at: null,
+      priority: 0,
+    }));
+}
+
+/** 编辑精选 card: a release or series with its cover, or a link tile. */
+function PickCard({slot, col}: {slot: HomeSlot; col: number}) {
+  const t = useT();
+  const r = slot.release;
+  if (slot.target_type === 'release' && r) {
+    return (
+      <ReleaseCard
+        slot={`home:picks:c${col}`}
+        slug={r.slug}
+        title={slot.title}
+        cover={slot.cover}
+        badge={r.runtime_minutes ? t('card.minutes', {n: r.runtime_minutes}) : undefined}
+        meta={slot.subtitle || [r.maker_name, formatDate(r.release_date)].filter(Boolean).join(' · ')}
+      />
+    );
+  }
+  const body = (
+    <>
+      <span className="card-title">{slot.title}</span>
+      {slot.subtitle && <span className="card-meta">{slot.subtitle}</span>}
+      {slot.series && <span className="card-meta">{t('home.heroSeriesCount', {n: slot.series.release_count})}</span>}
+    </>
+  );
+  return slot.external ? (
+    <a className="home-pick-link" href={slot.href} target="_blank" rel="noopener noreferrer">
+      {body}
+    </a>
+  ) : (
+    <Link className="home-pick-link" to={slot.href} state={{slot: `home:picks:c${col}`}}>
+      {body}
+    </Link>
   );
 }
