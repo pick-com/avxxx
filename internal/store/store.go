@@ -733,7 +733,7 @@ func (s *Store) SaveCatalogRecord(ctx context.Context, sourceID int64, parserVer
 				// Japanese-only names (DMM) resolve by actress id or name
 				// match, or are created under a romaji / source-scoped slug.
 				var slug string
-				performerID, slug, err = resolvePerformer(ctx, tx, sourceID, ref)
+				performerID, slug, err = resolveCredit(ctx, tx, sourceID, ref, prev)
 				if err != nil {
 					return 0, err
 				}

@@ -864,15 +864,30 @@ func releaseRecordSlug(ctx context.Context, tx pgx.Tx, sourceID int64, key, slug
 }
 
 // previousCredit is the (surviving) performer this release record credited
-// under name before, or 0.
+// under name before, or 0. Names compare by identity.NormalizeName, so a
+// re-crawl that spells the credit with other spacing, width or casing
+// ("山田 花子", "YURINE TSUKINO") still finds it.
 func previousCredit(ctx context.Context, tx pgx.Tx, sourceRecordID int64, name string) (int64, error) {
-	var prev int64
-	err := tx.QueryRow(ctx, `SELECT performer_id FROM release_performer_sources WHERE source_record_id=$1 AND credited_name=$2 ORDER BY performer_id LIMIT 1`,
-		sourceRecordID, name).Scan(&prev)
-	if errors.Is(err, pgx.ErrNoRows) {
-		return 0, nil
-	}
+	key := identity.NormalizeName(name)
+	rows, err := tx.Query(ctx, `SELECT performer_id,COALESCE(credited_name,'') FROM release_performer_sources WHERE source_record_id=$1 ORDER BY credited_name=$2 DESC,performer_id`,
+		sourceRecordID, name)
 	if err != nil {
+		return 0, err
+	}
+	var prev int64
+	for rows.Next() {
+		var id int64
+		var credited string
+		if err = rows.Scan(&id, &credited); err != nil {
+			rows.Close()
+			return 0, err
+		}
+		if prev == 0 && (credited == name || (key != "" && identity.NormalizeName(credited) == key)) {
+			prev = id
+		}
+	}
+	rows.Close()
+	if err = rows.Err(); err != nil || prev == 0 {
 		return 0, err
 	}
 	return survivingID(ctx, tx, "performers", prev)
