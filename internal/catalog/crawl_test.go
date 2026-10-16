@@ -57,7 +57,7 @@ func (f *fakeCheckpoints) FailCheckpoint(_ context.Context, k CheckpointKey, cod
 func (f *fakeCheckpoints) discovery(sourceID int64) Checkpoint {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	return f.rows[CheckpointKey{SourceID: sourceID, TaskType: TaskDiscovery, ParserVersion: "javdatabase"}]
+	return f.rows[CheckpointKey{SourceID: sourceID, TaskType: TaskDiscovery, Partition: string(PhaseBaseline), ParserVersion: "javdatabase"}]
 }
 
 // fakeSink records saved records; failOn makes saves for that key fail.
@@ -186,7 +186,7 @@ func TestCrawlFullPassAdvancesPerPage(t *testing.T) {
 func TestCrawlResumesFromCursor(t *testing.T) {
 	s := newJAVDatabaseSite(t)
 	cps, sink := newFakeCheckpoints(), &fakeSink{}
-	key := CheckpointKey{SourceID: 1, TaskType: TaskDiscovery, ParserVersion: "javdatabase"}
+	key := CheckpointKey{SourceID: 1, TaskType: TaskDiscovery, Partition: string(PhaseBaseline), ParserVersion: "javdatabase"}
 	cps.rows[key] = Checkpoint{Cursor: s.URL + "/movies/page/3/", CompletedPages: 2}
 	res, err := newCrawl(1, s, cps, sink, FetchPolicy{}).Run(context.Background())
 	if err != nil {
@@ -206,7 +206,7 @@ func TestCrawlResumesFromCursor(t *testing.T) {
 func TestCrawlIgnoresForeignCursor(t *testing.T) {
 	s := newJAVDatabaseSite(t)
 	cps, sink := newFakeCheckpoints(), &fakeSink{}
-	cps.rows[CheckpointKey{SourceID: 1, TaskType: TaskDiscovery, ParserVersion: "javdatabase"}] = Checkpoint{Cursor: "https://elsewhere.invalid/movies/page/9/"}
+	cps.rows[CheckpointKey{SourceID: 1, TaskType: TaskDiscovery, Partition: string(PhaseBaseline), ParserVersion: "javdatabase"}] = Checkpoint{Cursor: "https://elsewhere.invalid/movies/page/9/"}
 	if _, err := newCrawl(1, s, cps, sink, FetchPolicy{MaxPages: 1}).Run(context.Background()); err != nil {
 		t.Fatal(err)
 	}
