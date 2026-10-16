@@ -1,6 +1,7 @@
 package api
 
 import (
+	"avxxx/internal/store"
 	"context"
 	"encoding/json"
 	"net/http"
@@ -35,9 +36,11 @@ func (srv *Server) accountRoutes() []route {
 
 func (srv *Server) register(w http.ResponseWriter, r *http.Request) {
 	var in struct {
-		Email       string `json:"email"`
-		Password    string `json:"password"`
-		DisplayName string `json:"display_name"`
+		Email        string `json:"email"`
+		Password     string `json:"password"`
+		DisplayName  string `json:"display_name"`
+		Remember     *bool  `json:"remember"`
+		TermsVersion string `json:"terms_version"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&in); err != nil {
 		reply(w, nil, badRequest("invalid JSON body", err))
@@ -48,6 +51,16 @@ func (srv *Server) register(w http.ResponseWriter, r *http.Request) {
 		reply(w, nil, badRequest("email and password (min 8 characters) are required", nil))
 		return
 	}
+	if srv.auth != nil {
+		if !srv.allow(r, "register:"+srv.ip(r), limitRegisterIP) {
+			reply(w, nil, tooManyRequests("too many requests"))
+			return
+		}
+		v, e := srv.auth.RegisterSession(r.Context(), in.Email, in.Password, in.DisplayName, in.TermsVersion,
+			store.SessionMeta{Remember: rememberOr(in.Remember), UserAgent: userAgent(r)})
+		reply(w, v, e)
+		return
+	}
 	v, e := srv.accounts.Register(r.Context(), in.Email, in.Password, in.DisplayName)
 	reply(w, v, e)
 }
@@ -56,9 +69,22 @@ func (srv *Server) login(w http.ResponseWriter, r *http.Request) {
 	var in struct {
 		Email    string `json:"email"`
 		Password string `json:"password"`
+		Remember *bool  `json:"remember"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&in); err != nil {
 		reply(w, nil, badRequest("invalid JSON body", err))
+		return
+	}
+	if srv.auth != nil {
+		// Failed-login throttling per address and per account (tech plan 3.6).
+		email := strings.ToLower(strings.TrimSpace(in.Email))
+		if !srv.allow(r, "login-ip:"+srv.ip(r), limitLoginIP) || !srv.allow(r, "login-email:"+email, limitLoginEmail) {
+			reply(w, nil, tooManyRequests("too many login attempts, try again later"))
+			return
+		}
+		v, e := srv.auth.LoginSession(r.Context(), in.Email, in.Password,
+			store.SessionMeta{Remember: rememberOr(in.Remember), UserAgent: userAgent(r)})
+		reply(w, v, e)
 		return
 	}
 	v, e := srv.accounts.Login(r.Context(), in.Email, in.Password)
