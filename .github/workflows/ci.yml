@@ -108,3 +108,5 @@ jobs:
         run: npm run build
       - name: UI string completeness (i18n:check)
         run: npm run i18n:check
+      - name: Unit checks (node --test)
+        run: npm test
