@@ -2,6 +2,7 @@ package main
 
 import (
 	"avxxx/internal/api"
+	"avxxx/internal/clientip"
 	"avxxx/internal/media"
 	"avxxx/internal/obs"
 	"avxxx/internal/store"
@@ -47,7 +48,14 @@ func main() {
 	mediaRegistry.Register(media.NewJavhdpornAdapter())
 	mediaRegistry.Register(media.NewMissavAdapter())
 	mediaHandler := media.NewHandler(media.NewService(mediaRegistry))
-	handler := obs.Middleware(api.New(s, mediaHandler), logger)
+	clientIPs, e := clientip.FromEnv(os.Getenv)
+	if e != nil {
+		obs.Fatal("client ip config", e)
+	}
+	if clientIPs.Trusts() {
+		slog.Info("client ip from X-Forwarded-For behind trusted proxies", "trusted_proxies", os.Getenv(clientip.EnvVar))
+	}
+	handler := obs.MiddlewareWithClientIP(api.New(s, mediaHandler), logger, clientIPs.IP)
 	addr := os.Getenv("API_ADDR")
 	if addr == "" {
 		addr = "127.0.0.1:8080"

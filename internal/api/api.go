@@ -2,6 +2,7 @@
 package api
 
 import (
+	"avxxx/internal/clientip"
 	"avxxx/internal/community"
 	"avxxx/internal/media"
 	"avxxx/internal/medialink"
@@ -40,6 +41,9 @@ type Server struct {
 	moderation moderationStore
 	// limiter enforces the danmaku / review posting limits (PRD 5.5).
 	limiter community.Limiter
+	// clientIP derives the client address for per-address limits: the TCP
+	// peer, or X-Forwarded-For behind a TRUSTED_PROXIES proxy.
+	clientIP clientip.Resolver
 	// push stores Web Push subscriptions (push.go); pushCfg is read from env.
 	push    pushStore
 	pushCfg pushConfig
@@ -100,6 +104,13 @@ func New(s *store.Store, mediaHandler *media.Handler) http.Handler {
 // Register adds every API route to mux.
 func Register(mux *http.ServeMux, s *store.Store, mediaHandler *media.Handler) {
 	srv := &Server{store: s, media: mediaHandler, adminToken: os.Getenv("ADMIN_TOKEN"), limiter: community.NewMemoryLimiter(), pushCfg: pushConfigFromEnv(os.Getenv)}
+	// cmd/api refuses to start on an invalid TRUSTED_PROXIES; elsewhere an
+	// invalid value falls back to the TCP peer (trust no proxy).
+	if ips, err := clientip.FromEnv(os.Getenv); err != nil {
+		slog.Error("client ip config, trusting no proxy", "err", err)
+	} else {
+		srv.clientIP = ips
+	}
 	if s != nil {
 		srv.push = s
 		srv.accounts = s

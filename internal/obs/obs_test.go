@@ -46,6 +46,29 @@ func accessLine(t *testing.T, lines []map[string]any) map[string]any {
 	return nil
 }
 
+// TestMiddlewareClientIP: the access log takes client_ip from the resolver
+// (still reduced to its network), and the default ignores X-Forwarded-For.
+func TestMiddlewareClientIP(t *testing.T) {
+	mux := http.NewServeMux()
+	mux.HandleFunc("GET /x", func(http.ResponseWriter, *http.Request) {})
+	for _, c := range []struct {
+		clientIP func(*http.Request) string
+		want     string
+	}{
+		{nil, "127.0.0.0/24"},
+		{func(r *http.Request) string { return r.Header.Get("X-Forwarded-For") }, "198.51.100.0/24"},
+	} {
+		var buf bytes.Buffer
+		req := httptest.NewRequest("GET", "/x", nil)
+		req.RemoteAddr = "127.0.0.1:40000"
+		req.Header.Set("X-Forwarded-For", "198.51.100.7")
+		MiddlewareWithClientIP(mux, NewLogger(&buf, "api", LogConfig{}), c.clientIP).ServeHTTP(httptest.NewRecorder(), req)
+		if got := accessLine(t, logLines(t, &buf))["client_ip"]; got != c.want {
+			t.Errorf("client_ip = %v, want %s", got, c.want)
+		}
+	}
+}
+
 func TestMiddlewareFields(t *testing.T) {
 	var buf bytes.Buffer
 	logger := NewLogger(&buf, "api", LogConfig{})
