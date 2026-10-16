@@ -91,7 +91,7 @@ export default function PerformerPage() {
           <div className="performer-head">
             <h1>{p.canonical_name}</h1>
             {p.canonical_name_ja && <p className="muted">{p.canonical_name_ja}</p>}
-            <FollowButton slug={p.slug} name={p.canonical_name} />
+            <FollowButton slug={p.slug} name={p.canonical_name} performerId={p.id} source="actor_page" />
             {countLabel && (
               <div className="stat-row">
                 <div className="stat">

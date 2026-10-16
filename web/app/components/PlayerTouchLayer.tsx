@@ -219,6 +219,7 @@ export function PlayerTouchLayer({videoRef, title, rate, qualityLabel, onExit, o
       window.clearTimeout(singleTapTimer.current);
       lastTap.current = {at: now, side};
       const delta = side === 'left' ? -10 : 10;
+      video.dataset.seekMethod = 'double_tap';
       video.currentTime = clamp(video.currentTime + delta, 0, clock.duration || video.currentTime + delta);
       flashHud({kind: 'skip', side, key: now}, 600);
       return;

@@ -1,8 +1,10 @@
-import {useCallback, useEffect, useId, useMemo, useRef, useState} from 'react';
+import {useCallback, useEffect, useId, useMemo, useRef, useState, type ReactNode} from 'react';
 import type HlsType from 'hls.js';
 import {getPlayConfig, getPlayback, resolvePlayback, saveWatchProgress} from '../lib/api';
+import {currentPage, entryFrom, track} from '../lib/analytics';
 import {useAuth} from '../lib/auth';
 import {formatClock} from '../lib/format';
+import {PlayTracker, takeEndReason, takeEntryOverride} from '../lib/playAnalytics';
 import {entriesFromConfig, entriesFromStreams, isHlsEntry, type PlayEntry} from '../lib/playSources';
 import {useAsync} from '../lib/useAsync';
 import {useMediaQuery} from '../lib/useMediaQuery';
@@ -52,16 +54,25 @@ type LockableOrientation = ScreenOrientation & {lock?: (orientation: string) => 
  * Progress: only shared-progress video sources save watch progress; an
  * alternate version would otherwise overwrite the main version's position
  * (watch_history has one row per release).
+ *
+ * Analytics (PRD 14.2): a PlayTracker per playback of a play-config <video>
+ * source, when the release id is known (lib/playAnalytics.ts).
  */
-export function Player({slug, title, resumeAt, onBack, theater = false, onToggleTheater, onEnded}: {
+export function Player({slug, releaseId, title, resumeAt, onBack, theater = false, onToggleTheater, onEnded, autoStart = false, overlay}: {
   slug: string;
+  /** releases.id for analytics (play_request / progress); no tracking without it. */
+  releaseId?: number;
   title: string;
   resumeAt?: number;
   onBack?: () => void;
   theater?: boolean;
   onToggleTheater?: () => void;
-  /** Called when a <video> source plays to the end (play queues). */
+  /** Called when a <video> source plays to the end (play queues, autoplay). */
   onEnded?: () => void;
+  /** Start playing as soon as sources are known (autoplay next, PRD 5.4). */
+  autoStart?: boolean;
+  /** Rendered over the video area (the autoplay countdown). */
+  overlay?: ReactNode;
 }) {
   const {status} = useAuth();
   // play-config first; null (404 / not deployed / any failure) means legacy.
@@ -77,6 +88,10 @@ export function Player({slug, title, resumeAt, onBack, theater = false, onToggle
   const videoRef = useRef<HTMLVideoElement>(null);
   const shellRef = useRef<HTMLDivElement>(null);
   const hlsRef = useRef<HlsType | null>(null);
+  const trackerRef = useRef<PlayTracker | null>(null);
+  const fullscreenRef = useRef(false);
+  const pipRef = useRef(false);
+  const levelRef = useRef(AUTO);
   const lastSaved = useRef({at: 0, position: -1});
   // Position to restore once the next video's metadata loads (resume point, or
   // the shared position when switching sources).
@@ -106,12 +121,28 @@ export function Player({slug, title, resumeAt, onBack, theater = false, onToggle
   const [pip, setPip] = useState(false);
   const [pipSupported, setPipSupported] = useState(false);
   const [settings, setSettings] = useState<{open: boolean; tab: SettingsTab}>({open: false, tab: 'quality'});
+  const rateRef = useRef(rate);
+  rateRef.current = rate;
+  fullscreenRef.current = fullscreen;
+  pipRef.current = pip;
+  levelRef.current = level;
   const [flash, setFlash] = useState('');
   const flashTimer = useRef<number | undefined>(undefined);
 
   const coarse = useMediaQuery('(pointer: coarse)');
   const reducedMotion = useMediaQuery('(prefers-reduced-motion: reduce)');
   const touchMode = fullscreen && coarse;
+
+  // play_end when the release changes or the player goes away.
+  useEffect(
+    () => () => {
+      const tracker = trackerRef.current;
+      trackerRef.current = null;
+      const forced = takeEndReason();
+      tracker?.end(forced ?? (tracker.hasEnded ? 'completed' : 'closed'));
+    },
+    [slug],
+  );
 
   useEffect(() => {
     setPhase('idle');
@@ -166,6 +197,25 @@ export function Player({slug, title, resumeAt, onBack, theater = false, onToggle
     };
   }, [save]);
 
+  const beginTracking = (e: PlayEntry | undefined) => {
+    if (!releaseId || !e || e.render !== 'video' || !e.sourceId) return;
+    trackerRef.current?.end('closed');
+    const playlist = typeof window !== 'undefined' && new URLSearchParams(window.location.search).has('list');
+    const override = takeEntryOverride();
+    trackerRef.current = new PlayTracker(
+      {
+        releaseId,
+        entry: override ?? entryFrom(currentPage().refPage, {playlist}),
+        durationHint: config.data?.release.duration_seconds,
+        getFullscreen: () => fullscreenRef.current,
+        getPip: () => pipRef.current,
+        isAutoQuality: () => levelRef.current === AUTO,
+      },
+      {id: e.sourceId, alt: e.alt},
+      rateRef.current,
+    );
+  };
+
   const start = async (index?: number) => {
     setFailure('');
     setNotice('');
@@ -176,6 +226,7 @@ export function Player({slug, title, resumeAt, onBack, theater = false, onToggle
       if (i < 0) i = configEntries.findIndex(e => e.render !== 'external');
       if (i < 0) i = 0;
       pendingSeek.current = configEntries[i]?.alt ? 0 : resumeFrom;
+      beginTracking(configEntries[i]);
       setEntries(configEntries);
       setCurrent(i);
       setPhase('ready');
@@ -196,6 +247,16 @@ export function Player({slug, title, resumeAt, onBack, theater = false, onToggle
     }
   };
 
+  // Autoplay next (PRD 5.4): start once the sources are known.
+  const autoStarted = useRef('');
+  useEffect(() => {
+    if (!autoStart || phase !== 'idle' || autoStarted.current === slug) return;
+    if (mode === 'config' || (mode === 'legacy' && info.data)) {
+      autoStarted.current = slug;
+      void start();
+    }
+  });
+
   // Shared-progress versions continue from the shared position; alternate
   // versions start from 0 (PRD 5.2).
   const switchTo = (index: number, auto = false) => {
@@ -208,7 +269,18 @@ export function Player({slug, title, resumeAt, onBack, theater = false, onToggle
       save(false);
       setNotice('');
     }
+    const tracker = trackerRef.current;
+    if (tracker && !tracker.isClosed && to.render === 'video' && to.sourceId) {
+      tracker.switchSource({id: to.sourceId, alt: to.alt}, auto ? 'auto' : 'manual', auto ? 'error' : 'user');
+    } else if (tracker && !tracker.isClosed) {
+      // Embeds and partner pages cannot be observed: this playback ends here.
+      tracker.end('closed');
+      trackerRef.current = null;
+    } else if (mode === 'config') {
+      beginTracking(to);
+    }
     pendingSeek.current = to.alt ? 0 : sharedPos.current;
+    if (videoRef.current && pendingSeek.current > 0) videoRef.current.dataset.seekMethod = 'skip';
     setCurrent(index);
   };
 
@@ -223,6 +295,9 @@ export function Player({slug, title, resumeAt, onBack, theater = false, onToggle
       switchTo(nextIndex, true);
       return;
     }
+    const code = videoRef.current?.error?.code;
+    trackerRef.current?.end('error', code ? `media_err_${code}` : 'all_sources_failed');
+    trackerRef.current = null;
     setFailure(mode === 'config' ? '所有片源都加载失败' : '所有线路都加载失败');
     setPhase('failed');
   };
@@ -297,6 +372,12 @@ export function Player({slug, title, resumeAt, onBack, theater = false, onToggle
     };
   }, [stream]);
 
+  // Each source renders a new <video>; the tracker follows it.
+  useEffect(() => {
+    const video = videoRef.current;
+    if (stream && video) trackerRef.current?.attach(video);
+  }, [stream]);
+
   useEffect(() => {
     const video = videoRef.current;
     if (!stream || !video) return;
@@ -347,6 +428,7 @@ export function Player({slug, title, resumeAt, onBack, theater = false, onToggle
       const video = videoRef.current;
       if (!video) return;
       const end = Number.isFinite(video.duration) ? video.duration : Infinity;
+      video.dataset.seekMethod = 'keyboard';
       video.currentTime = Math.min(end, Math.max(0, video.currentTime + delta));
       showFlash(delta < 0 ? `后退 ${-delta} 秒` : `前进 ${delta} 秒`);
     },
@@ -391,14 +473,20 @@ export function Player({slug, title, resumeAt, onBack, theater = false, onToggle
     }
   }, [showFlash]);
 
+  const captionRef = useRef(CAPTIONS_OFF);
   const chooseCaption = useCallback(
     (index: number) => {
       const video = videoRef.current;
       if (!video) return;
-      Array.from(video.textTracks).forEach((track, i) => {
-        track.mode = i === index ? 'showing' : 'disabled';
+      const tracks = Array.from(video.textTracks);
+      const langOf = (i: number) => (i === CAPTIONS_OFF ? 'off' : tracks[i]?.language || tracks[i]?.label || `track_${i}`);
+      const from = captionRef.current;
+      tracks.forEach((t, i) => {
+        t.mode = i === index ? 'showing' : 'disabled';
       });
+      captionRef.current = index;
       setCaption(index);
+      if (from !== index) track('subtitle_change', {lang: langOf(index), from: langOf(from)});
     },
     [],
   );
@@ -414,12 +502,21 @@ export function Player({slug, title, resumeAt, onBack, theater = false, onToggle
   }, [caption, chooseCaption, showFlash, textTracks]);
 
   const chooseLevel = (index: number) => {
+    const label = (i: number) => {
+      if (i === AUTO) return 'auto';
+      const l = levels.find(x => x.index === i);
+      return l ? levelLabel(l) : String(i);
+    };
+    trackerRef.current?.manualQuality(label(level), label(index));
+    levelRef.current = index;
     setLevel(index);
     const hls = hlsRef.current;
     if (hls) hls.currentLevel = index; // -1 = auto (ABR)
   };
 
   const chooseAudio = (id: number) => {
+    const name = (x: number) => audioTracks.find(t => t.id === x)?.name ?? String(x);
+    if (id !== audioTrack) track('audio_change', {lang: name(id), from: name(audioTrack)});
     setAudioTrack(id);
     const hls = hlsRef.current;
     if (hls) hls.audioTrack = id;
@@ -531,6 +628,7 @@ export function Player({slug, title, resumeAt, onBack, theater = false, onToggle
                 const target = pendingSeek.current;
                 pendingSeek.current = 0;
                 if (target > 0 && (!Number.isFinite(video.duration) || target < video.duration - 10)) {
+                  video.dataset.seekMethod = 'skip';
                   video.currentTime = target;
                 }
               }}
@@ -613,6 +711,8 @@ export function Player({slug, title, resumeAt, onBack, theater = false, onToggle
               reducedMotion={reducedMotion}
             />
           )}
+
+          {overlay}
 
           <div className="player-flash" role="status" aria-live="polite">
             {flash && <span>{flash}</span>}

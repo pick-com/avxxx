@@ -91,6 +91,7 @@ export default function ReleasePage() {
       <div className="video-main">
         <Player
           slug={slug}
+          releaseId={release?.id}
           title={release?.canonical_title ?? ''}
           resumeAt={resumeAt}
           onBack={back}

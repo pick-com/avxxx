@@ -1,6 +1,7 @@
-import type {ReactNode} from 'react';
-import {Link, Links, Meta, Outlet, Scripts, ScrollRestoration, isRouteErrorResponse, useRouteError} from 'react-router';
+import {useEffect, type ReactNode} from 'react';
+import {Link, Links, Meta, Outlet, Scripts, ScrollRestoration, isRouteErrorResponse, useLocation, useRouteError} from 'react-router';
 import {CookieBanner} from './components/CookieBanner';
+import {pageName, setPage, startAnalytics} from './lib/analytics';
 import {AuthProvider} from './lib/auth';
 import {ConsentProvider} from './lib/consent';
 import {SettingsProvider} from './lib/settings';
@@ -40,9 +41,21 @@ export function Layout({children}: {children: ReactNode}) {
   );
 }
 
+/** PRD 14.1 page / ref_page / slot: one page view per pathname; links may pass state {slot}. */
+function AnalyticsRoutes() {
+  const location = useLocation();
+  useEffect(() => startAnalytics(), []);
+  useEffect(() => {
+    const slot = (location.state as {slot?: unknown} | null)?.slot;
+    setPage(pageName(location.pathname), typeof slot === 'string' ? slot : undefined);
+  }, [location.pathname, location.state]);
+  return null;
+}
+
 export default function App() {
   return (
     <ThemeProvider>
+      <AnalyticsRoutes />
       <AuthProvider>
         <SettingsProvider>
           <SocialProvider>

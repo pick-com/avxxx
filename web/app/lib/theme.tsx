@@ -1,4 +1,5 @@
 import {createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode} from 'react';
+import {track} from './analytics';
 
 export type ThemePref = 'system' | 'dark' | 'light';
 const STORAGE_KEY = 'theme';
@@ -36,7 +37,10 @@ export function ThemeProvider({children}: {children: ReactNode}) {
 
   const setPref = useCallback((next: ThemePref, origin: 'user' | 'sync' = 'user') => {
     setPrefState(next);
-    if (origin === 'user') setUserChange(prev => ({pref: next, n: (prev?.n ?? 0) + 1}));
+    if (origin === 'user') {
+      setUserChange(prev => ({pref: next, n: (prev?.n ?? 0) + 1}));
+      track('theme_change', {theme: next});
+    }
     const root = document.documentElement;
     if (next === 'system') root.removeAttribute('data-theme');
     else root.setAttribute('data-theme', next);

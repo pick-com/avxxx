@@ -60,11 +60,12 @@ export default function Home() {
             <CardGridSkeleton count={5} />
           ) : (
             <div className="card-grid card-grid-scroll">
-              {(history.data ?? []).slice(0, 10).map(item => {
+              {(history.data ?? []).slice(0, 10).map((item, col) => {
                 const ratio = item.duration_seconds > 0 ? item.progress_seconds / item.duration_seconds : undefined;
                 const left = item.duration_seconds > 0 ? Math.max(0, Math.ceil((item.duration_seconds - item.progress_seconds) / 60)) : null;
                 return (
                   <ReleaseCard
+                    slot={`home:continue:c${col + 1}`}
                     key={item.slug}
                     slug={item.slug}
                     title={item.title}
@@ -88,8 +89,9 @@ export default function Home() {
           <p className="muted">还没有已发布的作品。</p>
         ) : (
           <div className="card-grid">
-            {(releases.data ?? []).map(r => (
+            {(releases.data ?? []).map((r, col) => (
               <ReleaseCard
+                slot={`home:new:c${col + 1}`}
                 key={r.id}
                 slug={r.slug}
                 title={r.canonical_title}
