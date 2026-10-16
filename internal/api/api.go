@@ -59,6 +59,7 @@ func (srv *Server) routes() []route {
 	rs = append(rs, srv.mediaRoutes()...)
 	rs = append(rs, srv.playbackRoutes()...)
 	rs = append(rs, srv.adminRoutes()...)
+	rs = append(rs, srv.eventRoutes()...)
 	return rs
 }
 
