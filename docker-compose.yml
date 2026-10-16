@@ -25,8 +25,12 @@ services:
       API_ADDR: 0.0.0.0:8080
       # Reverse proxies whose X-Forwarded-For is trusted (CIDRs); empty = TCP peer.
       TRUSTED_PROXIES: ${TRUSTED_PROXIES:-}
-      # Empty rejects every /api/admin request.
+      # Break-glass bearer for /api/admin (scripts, emergencies; every use is
+      # logged with the hashed IP). Admins sign in with their own accounts
+      # (docker compose run --rm -it api admin create ...; docs/DEPLOYMENT.md 2.7).
       ADMIN_TOKEN: ${ADMIN_TOKEN:-}
+      ADMIN_TOKEN_DISABLED: ${ADMIN_TOKEN_DISABLED:-false}
+      ADMIN_TOTP_KEY: ${ADMIN_TOTP_KEY:-}
       # Web Push: public key only; empty disables the subscribe routes.
       VAPID_PUBLIC_KEY: ${VAPID_PUBLIC_KEY:-}
       PUSH_ALLOWED_HOSTS: ${PUSH_ALLOWED_HOSTS:-}

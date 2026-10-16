@@ -22,6 +22,9 @@
           POSTGRES_PASSWORD={{ postgres_password | default('change-me') }}
           DATABASE_URL={{ database_url }}
           ADMIN_TOKEN={{ admin_token | default('') }}
+          # Break-glass off once personal admin accounts exist (docs/DEPLOYMENT.md 2.7).
+          ADMIN_TOKEN_DISABLED={{ admin_token_disabled | default(false) | bool | lower }}
+          ADMIN_TOTP_KEY={{ admin_totp_key | default('') }}
           BASE_URL={{ base_url | default('') }}
           VAPID_PUBLIC_KEY={{ vapid_public_key | default('') }}
           VAPID_PRIVATE_KEY={{ vapid_private_key | default('') }}
