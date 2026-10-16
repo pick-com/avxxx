@@ -74,6 +74,7 @@ var expectedRoutes = []string{
 	"POST /api/admin/audit/issues/{id}/dismiss",
 	"POST /api/admin/audit/run",
 	"GET /api/admin/dashboard",
+	"GET /api/admin/playback-sources/health",
 }
 
 var (
