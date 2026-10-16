@@ -13,6 +13,7 @@ import (
 	"sort"
 	"strings"
 	"testing"
+	"time"
 )
 
 // skipPublicRoutes need live third-party media adapters (none in tests).
@@ -108,10 +109,40 @@ func TestPublicAPINeverLeaksIntegration(t *testing.T) {
 		}
 	}
 
+	// Compliance personal data (PRD 15, migration 041): a copyright notice
+	// with a counter-notice that took a release down, feedback with a
+	// contact address, and consent records. None of it is ever public; the
+	// taken-down release answers 451 without naming itself.
+	const (
+		tdName, tdEmail, tdPhone, tdAddress = "Claimant Canary-7Q", "claimant-canary@studio.example", "+81-3-0000-7777", "Canary Street 7"
+		tdWork, tdSignature                 = "Work Canary-7Q description", "Signature Canary-7Q"
+		counterName, counterEmail           = "Counter Canary-7Q", "counter-canary@distributor.example"
+		fbMessage, fbEmail                  = "Feedback Canary-7Q message", "feedback-canary@example.com"
+	)
+	tdRelease := e.int64(`INSERT INTO releases(slug,canonical_title,status) VALUES('td-canary-001','Taken Down Canary Title','published') RETURNING id`)
+	receipt, err := e.s.CreateTakedown(ctx, store.TakedownInput{ClaimantName: tdName, ClaimantEmail: tdEmail, ClaimantPhone: tdPhone, ClaimantAddress: tdAddress,
+		RightsOwner: "Studio", Relationship: "agent", WorkDescription: tdWork, InfringingURLs: []string{"https://reel.example/releases/td-canary-001"},
+		GoodFaith: true, Accuracy: true, Signature: tdSignature}, time.Now())
+	must(err)
+	tdID := e.int64(`SELECT id FROM takedown_requests WHERE ticket='` + receipt.Ticket + `'`)
+	_, err = e.s.TakedownAction(ctx, tdID, store.TakedownActionInput{Action: store.TakedownUnpublishRelease, ReleaseID: tdRelease, Reason: overrideNote}, overrideActor)
+	must(err)
+	_, err = e.s.SubmitCounterNotice(ctx, receipt.Ticket, store.CounterNoticeInput{Name: counterName, Email: counterEmail, Address: tdAddress, Statement: tdWork, Consent: true, Signature: counterName})
+	must(err)
+	_, err = e.s.CreateFeedback(ctx, store.FeedbackInput{Category: "bug", Message: fbMessage, Email: fbEmail, PageURL: "/releases/juq-743"})
+	must(err)
+	_, err = e.s.RecordConsent(ctx, store.ConsentRecord{DeviceHash: "consent-device-hash-canary", Input: store.ConsentInput{Analytics: true, Source: "banner"}})
+	must(err)
+
 	leaks := map[string]string{
 		"raw_data": "the raw_data column", rawCanary: "a source payload canary", "raw_html": "raw HTML",
 		dmmAPIID: "the DMM API id", dmmAffiliate: "the DMM affiliate id", "api_id=": "a DMM credential parameter", "affiliate_id=": "a DMM credential parameter",
 		overrideNote: "an override / review reason", overrideActor: "an override / review actor", "1995-01-01": "a hidden birthday",
+		tdName: "a takedown claimant name", tdEmail: "a takedown claimant email", tdPhone: "a takedown claimant phone", tdAddress: "a takedown address",
+		tdWork: "a takedown work description", tdSignature: "a takedown signature", receipt.Ticket: "a takedown ticket number",
+		counterName: "a counter-notifier name", counterEmail: "a counter-notifier email",
+		fbMessage: "a feedback message", fbEmail: "a feedback contact email", "consent-device-hash-canary": "a consent device hash",
+		"td-canary-001": "slug of a taken-down release", "Taken Down Canary Title": "title of a taken-down release",
 	}
 	for k, v := range notPublic {
 		leaks[k] = v
@@ -188,6 +219,29 @@ func TestPublicAPINeverLeaksIntegration(t *testing.T) {
 			if rec.Code != http.StatusNotFound {
 				t.Errorf("GET %s = %d, want 404 for a non-public release", p, rec.Code)
 			}
+		}
+	}
+	// A release held down by a copyright ticket is 451, its sub-resources 404.
+	for p, want := range map[string]int{
+		"/api/releases/td-canary-001":            http.StatusUnavailableForLegalReasons,
+		"/api/releases/td-canary-001/evidence":   http.StatusNotFound,
+		"/api/releases/td-canary-001/performers": http.StatusNotFound,
+	} {
+		rec := httptest.NewRecorder()
+		h.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, p, nil))
+		if rec.Code != want {
+			t.Errorf("GET %s = %d, want %d", p, rec.Code, want)
+		}
+	}
+	// The ticket lookup needs the email (header) and returns the status only.
+	for email, want := range map[string]int{"": http.StatusNotFound, "wrong@example.com": http.StatusNotFound, strings.ToUpper(tdEmail): http.StatusOK} {
+		req := httptest.NewRequest(http.MethodGet, "/api/takedowns/"+receipt.Ticket, nil)
+		req.Header.Set("X-Takedown-Email", email)
+		rec := httptest.NewRecorder()
+		h.ServeHTTP(rec, req)
+		body := rec.Body.String()
+		if rec.Code != want || strings.Contains(body, tdName) || strings.Contains(body, counterEmail) || strings.Contains(body, "td-canary-001") {
+			t.Errorf("ticket lookup with %q = %d %s", email, rec.Code, body)
 		}
 	}
 	for p, want := range map[string]string{
