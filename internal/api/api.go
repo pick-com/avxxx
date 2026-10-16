@@ -93,6 +93,9 @@ type Server struct {
 	// routes (home.go); homeCache holds their short-lived public responses.
 	home      homeStore
 	homeCache *respCache
+	// compliance backs consent records, legal documents, feedback and
+	// copyright takedowns (consent.go, legal.go, feedback.go, takedowns.go).
+	compliance complianceStore
 	// adminToken is ADMIN_TOKEN, read once at construction. Empty disables
 	// every admin route (they all return 401).
 	adminToken string
@@ -173,6 +176,7 @@ func Register(mux *http.ServeMux, s *store.Store, mediaHandler *media.Handler) {
 		srv.setupImages(s)
 		srv.home = s
 		srv.homeCache = newRespCache()
+		srv.compliance = s
 	}
 	srv.linkOnDemand = medialink.OnDemandFromEnv(os.Getenv("MEDIA_LINK_ON_DEMAND"))
 	for _, rt := range srv.routes() {
@@ -214,6 +218,10 @@ func (srv *Server) routes() []route {
 	rs = append(rs, srv.playlistRoutes()...)
 	rs = append(rs, srv.homeRoutes()...)
 	rs = append(rs, srv.adminOpsRoutes()...)
+	rs = append(rs, srv.consentRoutes()...)
+	rs = append(rs, srv.legalRoutes()...)
+	rs = append(rs, srv.feedbackRoutes()...)
+	rs = append(rs, srv.takedownRoutes()...)
 	return srv.followMerges(rs)
 }
 

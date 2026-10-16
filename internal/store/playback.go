@@ -117,6 +117,9 @@ type PlaybackPlan struct {
 	DurationSeconds *int
 	// Sources are playable for the region, in the order the player should try them.
 	Sources []PlaybackSource
+	// RegionBlocked: the region is known and licensing, not the lack of
+	// sources, is why nothing plays (PRD 15 地区限制; States 06).
+	RegionBlocked bool
 }
 
 // PlanPlayback applies the tech plan 3.3 selection rules to all sources of a
@@ -131,12 +134,13 @@ func PlanPlayback(rel PlaybackRelease, all []PlaybackSource, region string, qual
 	for i := range srcs {
 		ApplyAltVersionRule(&srcs[i], ref)
 	}
+	anywhere := slices.ContainsFunc(srcs, func(x PlaybackSource) bool { return x.Status == "active" || x.Status == "degraded" })
 	srcs = FilterPlayable(srcs, region)
 	if !RegionAllowed(PlaybackSource{RegionAllow: rel.RegionAllow, RegionDeny: rel.RegionDeny}, region) {
 		srcs = nil // the release itself is not licensed for this region
 	}
 	OrderPlaybackSources(srcs, quality)
-	return PlaybackPlan{DurationSeconds: ref, Sources: srcs}
+	return PlaybackPlan{DurationSeconds: ref, Sources: srcs, RegionBlocked: region != "" && len(srcs) == 0 && anywhere}
 }
 
 // ReferenceDuration is the duration other versions are compared against: the
