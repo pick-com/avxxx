@@ -19,7 +19,7 @@ import (
 
 func main() {
 	dryRun := flag.Bool("dry-run", false, "fetch one discovery page with -adapter, print the mapped records as JSON and exit without touching the database")
-	dryAdapter := flag.String("adapter", "", "adapter name for -dry-run (e.g. dmm)")
+	dryAdapter := flag.String("adapter", "", "adapter name for -dry-run (e.g. dmm, theporndb, maker:s1)")
 	dryURL := flag.String("url", "", "discovery URL for -dry-run (default: the adapter's seeded start URL, if it has one)")
 	flag.Parse()
 	obs.SetupLogging("scraper")
@@ -117,9 +117,17 @@ func main() {
 // that need credentials (dmm) are registered even when unconfigured; their
 // jobs then fail with a clear "not configured" config_error instead of
 // crashing the worker.
+//
+// Official maker catalogs register as "maker:<slug>" from the built-in
+// profiles, merged with MAKER_PROFILES_FILE when set (an unreadable or
+// invalid file stops the worker: a typo must not silently drop a studio).
 func newRegistry() *catalog.Registry {
 	registry := catalog.NewRegistry()
-	for _, a := range catalog.Adapters() {
+	adapters, err := catalog.AdaptersFromEnv(os.Getenv)
+	if err != nil {
+		obs.Fatal("maker profiles", err)
+	}
+	for _, a := range adapters {
 		if e := registry.Register(a); e != nil {
 			obs.Fatal("register adapter", e, "adapter", a.Name())
 		}

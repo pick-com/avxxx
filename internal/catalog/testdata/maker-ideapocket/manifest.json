@@ -1,0 +1,49 @@
+{
+  "source": "maker:ideapocket",
+  "fixtures": [
+    {
+      "file": "listing_page1.html",
+      "url": "https://ideapocket.com/works/date",
+      "entity": "discovery",
+      "origin": "synthetic"
+    },
+    {
+      "file": "listing_page2.html",
+      "url": "https://ideapocket.com/works/date?page=2",
+      "entity": "discovery",
+      "origin": "synthetic"
+    },
+    {
+      "file": "release_ipzz00901.html",
+      "url": "https://ideapocket.com/works/detail/ipzz00901",
+      "entity": "release",
+      "origin": "synthetic"
+    },
+    {
+      "file": "release_ipzz00900.html",
+      "url": "https://ideapocket.com/works/detail/ipzz00900",
+      "entity": "release",
+      "origin": "synthetic"
+    },
+    {
+      "file": "release_sone00123_foreign.html",
+      "url": "https://ideapocket.com/works/detail/sone00123",
+      "entity": "release",
+      "origin": "synthetic",
+      "expect": "skip"
+    },
+    {
+      "file": "actress_50001.html",
+      "url": "https://ideapocket.com/actress/detail/50001",
+      "entity": "performer",
+      "origin": "synthetic"
+    },
+    {
+      "file": "actress_no_name.html",
+      "url": "https://ideapocket.com/actress/detail/1",
+      "entity": "performer",
+      "origin": "synthetic",
+      "expect": "skip"
+    }
+  ]
+}

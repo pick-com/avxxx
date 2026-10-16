@@ -4,6 +4,7 @@ go 1.26.4
 
 require (
 	github.com/PuerkitoBio/goquery v1.10.2
+	github.com/andybalholm/cascadia v1.3.3
 	github.com/jackc/pgx/v5 v5.10.0
 	github.com/prometheus/client_golang v1.24.1
 	golang.org/x/crypto v0.54.0
@@ -12,7 +13,6 @@ require (
 )
 
 require (
-	github.com/andybalholm/cascadia v1.3.3 // indirect
 	github.com/beorn7/perks v1.0.1 // indirect
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
 	github.com/jackc/pgpassfile v1.0.0 // indirect

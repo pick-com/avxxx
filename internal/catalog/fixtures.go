@@ -101,10 +101,21 @@ func LoadFixtureManifest(dir, source string) (FixtureManifest, error) {
 	return m, nil
 }
 
-// RunFixtures parses every fixture of one adapter from root/<adapter name>/.
+// FixtureDirNamer is implemented by adapters whose name is not a portable
+// directory name ("maker:s1"): FixtureDir names their testdata directory.
+type FixtureDirNamer interface {
+	FixtureDir() string
+}
+
+// RunFixtures parses every fixture of one adapter from root/<adapter name>/
+// (root/<FixtureDir()>/ for a FixtureDirNamer).
 func RunFixtures(ctx context.Context, a Adapter, root string) (FixtureResult, error) {
 	name := a.Name()
-	dir := filepath.Join(root, name)
+	dirName := name
+	if f, ok := a.(FixtureDirNamer); ok {
+		dirName = f.FixtureDir()
+	}
+	dir := filepath.Join(root, dirName)
 	res := FixtureResult{Source: name, Recorded: map[string]int{}, Synthetic: map[string]int{}, Report: NewParseReport(name, 5)}
 	m, err := LoadFixtureManifest(dir, name)
 	if err != nil {
