@@ -1,5 +1,5 @@
 import {useCallback, useEffect, useMemo, useState, type FormEvent} from 'react';
-import {Link, NavLink, Outlet, useLocation} from 'react-router';
+import {Link, Navigate, NavLink, Outlet, useLocation} from 'react-router';
 import {ThemeToggle} from '../components/TopBar';
 import {ApiError, isAbort, tokens, validAdminActor} from '../lib/api';
 import {adminErrorText, getDashboard, getModerationOverview, getPerformerRequests, type Dashboard, type QueueCounts} from '../lib/adminApi';
@@ -240,6 +240,9 @@ export default function AdminLayout() {
   }, [dash, counts, openRequests, takedowns, pendingApprovals, hasToken, can]);
 
   const session = useMemo(() => ({hasToken, epoch, refreshBadges, me, can}), [hasToken, epoch, refreshBadges, me, can]);
+  // 总览 needs dashboard:read: a role without it (外部译者, 广告销售) lands on
+  // its first permitted page instead of a dashboard full of 403 errors.
+  const landing = hasToken && location.pathname.replace(/\/+$/, '') === '/admin' && !can('dashboard:read') ? groups[0]?.items[0]?.to : undefined;
   const next = encodeURIComponent(location.pathname + location.search);
 
   return (
@@ -341,6 +344,8 @@ export default function AdminLayout() {
                 </form>
               )}
             </section>
+          ) : landing && landing !== '/admin' ? (
+            <Navigate to={landing} replace />
           ) : (
             <Outlet />
           )}
