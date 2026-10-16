@@ -125,11 +125,46 @@
 - [x] 进站 18+ 自我声明（#111）：签名 cookie `ag`（`AGE_GATE_KEY`，公网 https 未配置时拒绝所有 cookie），SSR 未确认只渲染确认页（head 保留 SEO 字段，不 cloak），未满 18 岁锁 24 h；注册与 OAuth 需确认 18+（migration 046）；不做青少年模式。严格地区核验见 COMPLIANCE.md §6
 - [ ] 广告与会员 — **待产品决策**：没有任何 `ad_*` 表、广告位或会员逻辑；PRD 第 1、16、21 节对上线阶段自相矛盾（DESIGN_ALIGNMENT 第 2 节 #5、#7），成人站定位下还要选广告网络
 - [ ] 依赖媒体资产的功能：演员照片集、雪碧图预览、章节截屏、预告片段、字幕轨、跳过片头，以及审计规则 B 水印 / D 字幕 / F 截屏（仍为桩）——需要自营媒体或授权素材，见 [IMPLEMENTATION_GAPS.md](IMPLEMENTATION_GAPS.md)
-- [ ] AdminVideo「数据标签」tab：`GET /api/admin/releases/{id}/curves`（`internal/api/admin_curves.go`）已提供留存 / 重看 / 跳过曲线，`web/app/routes/admin-video.tsx` 没有该 tab
-- [ ] AdminDashboard 播放 / 日活 / 时长 / 完播 KPI：`POST /api/events` 已入库，缺聚合与接口（`web/app/routes/admin-dashboard.tsx` 注明未做）
-- [ ] 冷启动推荐：Onboarding 选的类型（`user_interests`，只在 `internal/store/account.go` 读写）和 Tonight 的「想要 / 和谁看」（`web/app/routes/tonight.tsx`，无后端字段）都没有进入 `internal/recs`
-- [ ] AdminDedupe 对比面板：候选只返回 id 与打分证据，缺双方实体摘要（标题、封面、作品）；视频「合并为新片源 / 合并为其他版本」后端只有一种合并（`web/app/routes/admin-dedupe.tsx`）
+- [x] AdminVideo「数据标签」tab（#112，9b36b04）：`web/app/components/AdminVideoCurves.tsx` 在 `admin-video.tsx` 展示 `GET /api/admin/releases/{id}/curves` 的留存 / 重看 / 跳过曲线
+- [x] AdminDashboard 播放 / 日活 / 时长 / 完播 KPI（#112，f007571，迁移 047）：`internal/sitemetrics` 由 `site_metrics` 任务从 `POST /api/events` 聚合，`internal/api/admin_site_metrics.go` 提供接口，`web/app/components/AdminSiteKPIs.tsx` 展示
+- [x] 冷启动推荐（#112，472b7b3）：Onboarding 兴趣（`user_interests`）与 Tonight「想要 / 和谁看」经 `internal/recs/prefs.go` 作为软偏好进入排序（`internal/store/recs_interests_integration_test.go`）
+- [x] AdminDedupe 对比面板（#112，e16acd1）：`internal/api/admin_dedupe.go` 返回双方摘要，视频「新片源 / 其他版本 / 不是重复」三种决定（`internal/store/release_versions.go`，作品页 `OtherVersions`）
 - [ ] 机器翻译：`internal/i18n.Translator` 有意无实现，需选定翻译服务并提供凭据（需外部输入）
+
+### YouTube 对齐
+
+对照 YouTube 观看页的常用功能；已获批的 9 项各自一个 PR。
+
+已完成：
+
+- [x] 键盘快捷键（#138）：↑ / ↓ 音量、T 影院模式、I 画中画、Shift+N / P 下一部 / 上一部
+- [x] Media Session（#130）：系统媒体控件 / 锁屏的标题、演员、封面与上一部 / 下一部 / 快进快退
+- [x] 投屏（#131 Remote Playback / AirPlay，#139 Google Cast 发送端，#140 投屏时隐藏页面不暂停）
+- [x] 续播（#121 账号观看记录续播，#129 未登录访客本地续播与播放记录）
+- [x] 页面隐藏时暂停（#132）
+- [x] 「不感兴趣」推荐反馈（#141，迁移 051）：推荐卡片「⋯」菜单的不感兴趣 / 不推荐此演员，设置页可撤销
+
+进行中（已获批）：
+
+- [ ] 循环播放
+- [ ] 睡眠定时器
+- [ ] 氛围模式（播放器背后的画面取色光晕）
+- [ ] 片段（截取一段分享）
+- [ ] 评论、短评与弹幕列表中的时间戳可点击跳转
+- [ ] 添加到播放队列（卡片菜单，`?list=queue`，会话内、未登录可用）
+- [ ] `/` 聚焦搜索框
+- [ ] 播放记录内搜索（片名、演员、番号）
+
+不适用：
+
+- 上传、创作者工作室、频道与订阅、社区帖子：本站是目录 + 第三方 / 授权播放源，没有用户上传或创作者；「关注演员」承担订阅的作用
+- 直播、首映、直播聊天、Shorts：没有直播或竖屏短片内容
+- 后台播放 / 画中画外的隐藏播放：#132 有意在页面隐藏时暂停（投屏除外）
+- 离线下载：播放源属于第三方或授权方，无下载权利
+- 嵌入代码（iframe）：成人内容且播放源授权不允许站外嵌入
+- 受限模式 / 儿童模式：成人站定位，进站 18+ 已上线（#111），不做青少年模式
+- 会员、Super Chat、广告：属于「广告与会员」产品决策，见上
+- 自动字幕、章节、悬停预览缩略图：依赖媒体资产，见上「依赖媒体资产的功能」
 
 ### 生产化
 
