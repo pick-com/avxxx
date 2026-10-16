@@ -8,6 +8,7 @@ import {useT} from '../lib/i18n';
 import {formatClock} from '../lib/format';
 import {PlayTracker, takeEndReason, takeEntryOverride} from '../lib/playAnalytics';
 import {heightCap, prefHeight, qualityParam, rememberRate, rememberedRate, usePlayerPrefs} from '../lib/playerPrefs';
+import {guestResume, saveGuestProgress} from '../lib/guestProgress';
 import {entriesFromConfig, entriesFromStreams, isHlsEntry, type PlayEntry, type SourceDetailKey} from '../lib/playSources';
 import {useAsync} from '../lib/useAsync';
 import {useMediaQuery} from '../lib/useMediaQuery';
@@ -168,9 +169,17 @@ export function Player({slug, releaseId, title, resumeAt, startAt, onBack, theat
   // Last known position of the shared-progress versions (PRD 5.2).
   const sharedPos = useRef(0);
   // play-config resume (needs the user token) wins over the history-derived prop.
+  // Signed-out viewers resume from this browser's saved position, read after
+  // mount (the server render has no localStorage); auto-start waits for it.
+  const guestPos = useRef(0);
+  const [guestReady, setGuestReady] = useState(false);
+  useEffect(() => {
+    guestPos.current = guestResume(slug);
+    setGuestReady(true);
+  }, [slug]);
   const resumeFrom = (() => {
     if (startAt && startAt > 0) return startAt;
-    const at = config.data?.resume?.position_seconds ?? resumeAt;
+    const at = config.data?.resume?.position_seconds ?? resumeAt ?? (status === 'anon' && guestPos.current > 0 ? guestPos.current : undefined);
     return at && at > 5 ? at : 0;
   })();
 
@@ -319,7 +328,7 @@ export function Player({slug, releaseId, title, resumeAt, startAt, onBack, theat
   // page hidden / leaving the page (keepalive so the request survives unload).
   const save = useCallback(
     (keepalive: boolean) => {
-      if (status !== 'user') return;
+      if (status !== 'user' && status !== 'anon') return;
       // Alternate versions keep their own progress; never overwrite the shared one.
       const playing = entryRef.current;
       if (!playing || playing.alt || playing.render !== 'video') return;
@@ -329,6 +338,10 @@ export function Player({slug, releaseId, title, resumeAt, startAt, onBack, theat
       if (position === lastSaved.current.position) return;
       lastSaved.current = {at: Date.now(), position};
       const duration = Number.isFinite(video.duration) ? video.duration : 0;
+      if (status === 'anon') {
+        saveGuestProgress(slug, position, duration, title);
+        return;
+      }
       saveWatchProgress(slug, position, duration, keepalive).then(
         // 看完自动移出: the server dropped it from 稍后观看; refresh the
         // release page's button (and any list) from the server.
@@ -340,7 +353,7 @@ export function Player({slug, releaseId, title, resumeAt, startAt, onBack, theat
         },
       );
     },
-    [slug, status, refreshLater],
+    [slug, status, title, refreshLater],
   );
 
   useEffect(() => {
@@ -413,7 +426,7 @@ export function Player({slug, releaseId, title, resumeAt, startAt, onBack, theat
   // Autoplay next (PRD 5.4): start once the sources are known.
   const autoStarted = useRef('');
   useEffect(() => {
-    if (!autoStart || phase !== 'idle' || autoStarted.current === slug || resumePending) return;
+    if (!autoStart || phase !== 'idle' || autoStarted.current === slug || resumePending || !guestReady) return;
     if (mode === 'config' || (mode === 'legacy' && info.data)) {
       autoStarted.current = slug;
       void start();
