@@ -736,8 +736,8 @@ func (s *Store) SaveCatalogRecord(ctx context.Context, sourceID int64, parserVer
 		if names, ok := rec.Fields["performers"].([]string); ok {
 			for order, name := range names {
 				name = strings.TrimSpace(name)
-				if name == "" {
-					continue
+				if name == "" || catalog.BoilerplateName(name) != "" {
+					continue // never create a performer from site chrome text
 				}
 				slug := catalog.Slug(name)
 				if slug == "" {
@@ -795,6 +795,9 @@ func (s *Store) SaveCatalogRecord(ctx context.Context, sourceID int64, parserVer
 		}
 		if fieldOverridden(string(rec.EntityType), field, overridden) {
 			continue // the admin's value stands; no new conflict for it
+		}
+		if field == catalog.FieldPageTitle {
+			continue // evidence for R-PERFORMER-NAME; differs per source by design
 		}
 		var distinct int
 		var candidates []byte

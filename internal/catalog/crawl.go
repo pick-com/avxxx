@@ -69,6 +69,8 @@ type Crawl struct {
 type CrawlResult struct {
 	Pages   int
 	Records int
+	// Skipped counts detail pages without a usable entity (ErrSkipRecord).
+	Skipped int
 	Cursor  string
 	Stop    StopReason
 }
@@ -136,6 +138,13 @@ func (c *Crawl) Run(ctx context.Context) (CrawlResult, error) {
 				return fail(key, "detail_fetch_failed", err)
 			}
 			record, err := c.Adapter.Parse(ctx, doc, discovered.EntityType)
+			if errors.Is(err, ErrSkipRecord) {
+				// Nothing to save (e.g. only a site-title heading): note it on
+				// the detail checkpoint and keep crawling.
+				_ = c.Checkpoints.FailCheckpoint(ctx, detailKey, "parse_skipped")
+				res.Skipped++
+				continue
+			}
 			if err != nil {
 				_ = c.Checkpoints.FailCheckpoint(ctx, detailKey, "parse_failed")
 				return fail(key, "parse_failed", err)
