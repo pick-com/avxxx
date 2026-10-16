@@ -50,6 +50,15 @@ func main() {
 		} else if res.Promoted > 0 || res.Releases > 0 {
 			log.Printf("notify fan-out: promoted=%d releases=%d notifications=%d outbox=%d", res.Promoted, res.Releases, res.Notifications, res.Outbox)
 		}
+		// Danmaku peak curves (PRD 5.5.1). Runs inline like the fan-out: a
+		// bounded, DB-only pass over releases queued by new danmaku, moderation
+		// or mutes; the store applies the cadence (1 min for releases younger
+		// than 7 days, 10 min otherwise), so this 60 s tick is the 1 min clock.
+		if res, err := s.RecomputeDanmakuCurves(ctx, 200); err != nil {
+			log.Printf("danmaku curves: %v", err)
+		} else if res.Releases > 0 {
+			log.Printf("danmaku curves: releases=%d curves=%d", res.Releases, res.Curves)
+		}
 		select {
 		case <-ctx.Done():
 			return

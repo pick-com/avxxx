@@ -18,6 +18,7 @@ type stubPlaybackStore struct {
 	err     error
 	tokens  map[string]int64
 	resume  map[int64]int
+	curves  map[string][]int16
 }
 
 func (s *stubPlaybackStore) PlaybackForRelease(_ context.Context, slug string) (store.PlaybackRelease, []store.PlaybackSource, error) {
@@ -40,6 +41,10 @@ func (s *stubPlaybackStore) UserIDByToken(_ context.Context, token string) (int6
 		return id, nil
 	}
 	return 0, pgx.ErrNoRows
+}
+
+func (s *stubPlaybackStore) DanmakuCurves(context.Context, int64) (map[string][]int16, error) {
+	return s.curves, nil
 }
 
 func ptr[T any](v T) *T { return &v }
@@ -104,7 +109,7 @@ func TestPlayConfigShape(t *testing.T) {
 	if body["resume"] != nil || body["ads"] != nil {
 		t.Errorf("resume/ads should be null: %v %v", body["resume"], body["ads"])
 	}
-	if d := body["danmaku"].(map[string]any); d["enabled"] != false {
+	if d := body["danmaku"].(map[string]any); d["enabled"] != true {
 		t.Errorf("danmaku %v", d)
 	}
 	if s, ok := body["subtitles"].([]any); !ok || len(s) != 0 {

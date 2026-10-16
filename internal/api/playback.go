@@ -1,6 +1,7 @@
 package api
 
 import (
+	"avxxx/internal/community"
 	"avxxx/internal/store"
 	"context"
 	"encoding/json"
@@ -26,6 +27,7 @@ type playbackStore interface {
 	PlaybackForRelease(ctx context.Context, slug string) (store.PlaybackRelease, []store.PlaybackSource, error)
 	ResumePosition(ctx context.Context, userID, releaseID int64) (int, bool, error)
 	UserIDByToken(ctx context.Context, token string) (int64, error)
+	DanmakuCurves(ctx context.Context, releaseID int64) (map[string][]int16, error)
 }
 
 func (srv *Server) playConfig(w http.ResponseWriter, r *http.Request) {
@@ -38,13 +40,17 @@ type playResume struct {
 }
 
 type playConfigResponse struct {
-	Release   store.PlaybackRelease  `json:"release"`
-	Sources   []store.PlaybackSource `json:"sources"`
-	Resume    *playResume            `json:"resume"`
-	Ads       any                    `json:"ads"`
-	Danmaku   map[string]any         `json:"danmaku"`
-	Subtitles []any                  `json:"subtitles"`
-	Chapters  []any                  `json:"chapters"`
+	Release store.PlaybackRelease  `json:"release"`
+	Sources []store.PlaybackSource `json:"sources"`
+	Resume  *playResume            `json:"resume"`
+	Ads     any                    `json:"ads"`
+	Danmaku map[string]any         `json:"danmaku"`
+	// DanmakuCurve is the peak curve of the main timeline (PRD 5.5.1: 200
+	// values 0-255), null with fewer than 50 valid danmaku. Alternate
+	// versions' curves are in danmaku.alt_curves keyed by source id.
+	DanmakuCurve []int16 `json:"danmaku_curve"`
+	Subtitles    []any   `json:"subtitles"`
+	Chapters     []any   `json:"chapters"`
 }
 
 var regionCode = regexp.MustCompile(`^[A-Za-z]{2}$`)
@@ -86,10 +92,11 @@ func servePlayConfig(w http.ResponseWriter, r *http.Request, ps playbackStore) {
 	resp := playConfigResponse{
 		Release:   rel,
 		Sources:   plan.Sources,
-		Danmaku:   map[string]any{"enabled": false},
+		Danmaku:   map[string]any{"enabled": true, "segment_ms": danmakuSegmentMS},
 		Subtitles: []any{},
 		Chapters:  []any{},
 	}
+	resp.DanmakuCurve, resp.Danmaku["alt_curves"] = danmakuCurves(r.Context(), ps, rel.ID, plan.Sources)
 	if resp.Sources == nil {
 		resp.Sources = []store.PlaybackSource{}
 	}
@@ -115,6 +122,24 @@ func servePlayConfig(w http.ResponseWriter, r *http.Request, ps playbackStore) {
 		}
 	}
 	writePlayJSON(w, http.StatusOK, resp)
+}
+
+// danmakuCurves loads the release's peak curves: the main timeline's, and
+// those of alternate-version sources in play order keyed by source id. A
+// failure only drops the curves (logged); playback must not depend on them.
+func danmakuCurves(ctx context.Context, ps playbackStore, releaseID int64, sources []store.PlaybackSource) ([]int16, map[string][]int16) {
+	alt := map[string][]int16{}
+	curves, err := ps.DanmakuCurves(ctx, releaseID)
+	if err != nil {
+		log.Print(err)
+		return nil, alt
+	}
+	for _, x := range sources {
+		if c, ok := curves[community.AltVersionKey(x.ID)]; ok && x.IsAltVersion {
+			alt[strconv.FormatInt(x.ID, 10)] = c
+		}
+	}
+	return curves[community.DefaultVersion], alt
 }
 
 func writePlayJSON(w http.ResponseWriter, code int, v any) {
