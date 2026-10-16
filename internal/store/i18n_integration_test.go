@@ -223,7 +223,8 @@ func TestI18nIntegration(t *testing.T) {
 	publish(pname, "en", "Perf EN")
 	var conflictID int64
 	must(s.QueryRow(ctx, `INSERT INTO field_conflicts(entity_type,entity_id,field_name,current_value,candidates) VALUES('performer',$1,'canonical_name','"Perf"','[]') RETURNING id`, perfID).Scan(&conflictID))
-	must(s.ResolveConflict(ctx, conflictID, 0, []byte(`"Perf Renamed"`), "fix"))
+	_, err = s.ResolveConflict(ctx, conflictID, 0, []byte(`"Perf Renamed"`), "fix", "admin")
+	must(err)
 	if st := status(t, s, pname, "en"); st != "stale" {
 		t.Errorf("ResolveConflict: performer name/en %s, want stale", st)
 	}

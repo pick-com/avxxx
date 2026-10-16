@@ -1,13 +1,16 @@
 package store
 
 import (
+	"avxxx/internal/audit"
 	"avxxx/internal/catalog"
 	"avxxx/internal/i18n"
 	"avxxx/internal/model"
 	"avxxx/migrations"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"os"
 	"strconv"
@@ -479,39 +482,153 @@ func (s *Store) PendingConflicts(ctx context.Context, limit int) ([]map[string]a
 	return out, r.Err()
 }
 
-func (s *Store) ResolveConflict(ctx context.Context, conflictID, sourceRecordID int64, value json.RawMessage, note string) error {
+// ConflictResolution is the outcome of ResolveConflict.
+type ConflictResolution struct {
+	ConflictID int64           `json:"conflict_id"`
+	EntityType string          `json:"entity_type"`
+	EntityID   int64           `json:"entity_id"`
+	Field      string          `json:"field"`
+	Column     string          `json:"column"`
+	Before     json.RawMessage `json:"before"`
+	After      json.RawMessage `json:"after"`
+	// Audit is the inbound R-AGE / R-META re-check of the affected releases,
+	// run when the resolved column feeds age at filming.
+	Audit []audit.InboundResult `json:"audit,omitempty"`
+}
+
+// ResolveConflict settles a pending field conflict. The conflict's field name
+// (a parser field such as "title" or "maker", or a column name) is mapped to
+// its canonical column by ConflictField and the value is typed for that
+// column. value is the JSON value to keep; when it is empty, the current
+// value of sourceRecordID ("采用来源值") is used. The column is updated, an
+// override is written so the next crawl does not revert it, reviewed
+// translations of the entity are marked stale, and a review_events row
+// records before / after and actor. Unknown conflict: pgx.ErrNoRows; already
+// resolved: *ConflictError; bad field or value: *ValidationError.
+func (s *Store) ResolveConflict(ctx context.Context, conflictID, sourceRecordID int64, value json.RawMessage, note, actor string) (ConflictResolution, error) {
+	res := ConflictResolution{ConflictID: conflictID}
+	if actor == "" {
+		actor = "admin"
+	}
 	tx, err := s.Begin(ctx)
 	if err != nil {
-		return err
+		return res, err
 	}
 	defer tx.Rollback(ctx)
-	var typ, field string
-	var entityID int64
-	var before []byte
-	if err = tx.QueryRow(ctx, `SELECT entity_type,entity_id,field_name,current_value FROM field_conflicts WHERE id=$1 AND status='pending' FOR UPDATE`, conflictID).Scan(&typ, &entityID, &field, &before); err != nil {
-		return err
+	var status string
+	if err = tx.QueryRow(ctx, `SELECT entity_type,entity_id,field_name,status FROM field_conflicts WHERE id=$1 FOR UPDATE`, conflictID).Scan(&res.EntityType, &res.EntityID, &res.Field, &status); err != nil {
+		return res, err
 	}
-	allowed := map[string]bool{"canonical_name": true, "canonical_name_ja": true, "birth_date": true, "height_cm": true, "title": true, "title_ja": true, "release_date": true, "maker_name": true, "director_name": true}
-	if !allowed[field] {
-		return fmt.Errorf("field is not reviewable: %s", field)
+	if status != "pending" {
+		return res, conflict("conflict is already %s", status)
+	}
+	spec, ok := ConflictField(res.EntityType, res.Field)
+	if !ok {
+		return res, &ValidationError{Msg: fmt.Sprintf("%s: %s", ErrNotReviewable, res.Field)}
+	}
+	res.Column = spec.Column
+	if sourceRecordID > 0 {
+		var belongs bool
+		if err = tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM source_records WHERE id=$1 AND entity_type=$2
+			AND (($2='release' AND release_id=$3) OR ($2='performer' AND performer_id=$3)))`, sourceRecordID, res.EntityType, res.EntityID).Scan(&belongs); err != nil {
+			return res, err
+		}
+		if !belongs {
+			return res, invalid("source_record_id is not a source of this %s", res.EntityType)
+		}
+		if len(value) == 0 {
+			var raw []byte
+			err = tx.QueryRow(ctx, `SELECT normalized_value FROM source_field_values WHERE source_record_id=$1 AND field_name=$2 AND is_current`, sourceRecordID, res.Field).Scan(&raw)
+			if errors.Is(err, pgx.ErrNoRows) {
+				return res, invalid("source record has no current value for %s", res.Field)
+			}
+			if err != nil {
+				return res, err
+			}
+			value = raw
+		}
+	}
+	if len(value) == 0 {
+		return res, invalid("value or source_record_id is required")
+	}
+	text, err := CoerceFieldValue(spec, value)
+	if err != nil {
+		return res, err
 	}
 	table := "performers"
-	if typ == "release" {
+	if res.EntityType == "release" {
 		table = "releases"
 	}
-	if _, err = tx.Exec(ctx, fmt.Sprintf("UPDATE %s SET %s=$1,updated_at=now() WHERE id=$2", table, field), string(value), entityID); err != nil {
-		return err
+	var before, after []byte
+	if err = tx.QueryRow(ctx, fmt.Sprintf(`SELECT to_jsonb(%s) FROM %s WHERE id=$1 FOR UPDATE`, spec.Column, table), res.EntityID).Scan(&before); err != nil {
+		return res, err
 	}
-	if err = markStale(ctx, tx, typ, strconv.FormatInt(entityID, 10)); err != nil {
-		return err
+	if err = tx.QueryRow(ctx, fmt.Sprintf(`UPDATE %[1]s SET %[2]s=$1::%[3]s,updated_at=now(),version=version+1 WHERE id=$2 RETURNING to_jsonb(%[2]s)`,
+		table, spec.Column, spec.Kind.sqlType()), text, res.EntityID).Scan(&after); err != nil {
+		return res, err
 	}
-	if _, err = tx.Exec(ctx, `UPDATE field_conflicts SET status='resolved',selected_source_record_id=NULLIF($2,0),resolution_note=$3,resolved_at=now(),updated_at=now() WHERE id=$1`, conflictID, sourceRecordID, note); err != nil {
-		return err
+	// to_jsonb(NULL) is SQL NULL, not JSON null: never build ''::jsonb from it.
+	res.Before, res.After = rawOrNull(before), rawOrNull(after)
+	before, after = res.Before, res.After
+	if err = upsertOverride(ctx, tx, res.EntityType, res.EntityID, spec.Column, after, note, actor, conflictID); err != nil {
+		return res, err
 	}
-	if _, err = tx.Exec(ctx, `INSERT INTO review_events(conflict_id,entity_type,entity_id,action,before_value,after_value,reason) VALUES($1,$2,$3,'resolve',$4::jsonb,$5::jsonb,$6)`, conflictID, typ, entityID, string(before), string(value), note); err != nil {
-		return err
+	if err = markStale(ctx, tx, res.EntityType, strconv.FormatInt(res.EntityID, 10)); err != nil {
+		return res, err
 	}
-	return tx.Commit(ctx)
+	if _, err = tx.Exec(ctx, `UPDATE field_conflicts SET status='resolved',current_value=$4::jsonb,selected_source_record_id=NULLIF($2,0),
+		resolution_note=$3,resolved_at=now(),updated_at=now() WHERE id=$1`, conflictID, sourceRecordID, note, string(after)); err != nil {
+		return res, err
+	}
+	if _, err = tx.Exec(ctx, `INSERT INTO review_events(conflict_id,entity_type,entity_id,action,before_value,after_value,reason,actor)
+		VALUES($1,$2,$3,'resolve',jsonb_build_object('field',$4::text,'value',$5::jsonb),
+		jsonb_build_object('field',$4::text,'value',$6::jsonb,'source_record_id',NULLIF($7::bigint,0)),NULLIF($8,''),$9)`,
+		conflictID, res.EntityType, res.EntityID, spec.Column, string(before), string(after), sourceRecordID, note, actor); err != nil {
+		return res, err
+	}
+	if err = tx.Commit(ctx); err != nil {
+		return res, err
+	}
+	res.Audit, err = s.recheckAfterEdit(ctx, res.EntityType, res.EntityID, spec.Column)
+	return res, err
+}
+
+// recheckAfterEdit re-runs the inbound audit (R-AGE + R-META) for the
+// releases whose age at filming depends on the edited column: the release
+// itself for release_date / shoot_year, every credited release for a
+// performer's birth_date. R-AGE may hold them.
+func (s *Store) recheckAfterEdit(ctx context.Context, entityType string, id int64, column string) ([]audit.InboundResult, error) {
+	var ids []int64
+	switch {
+	case entityType == "release" && (column == "release_date" || column == "shoot_year"):
+		ids = []int64{id}
+	case entityType == "performer" && column == "birth_date":
+		rows, err := s.Query(ctx, `SELECT DISTINCT release_id FROM release_performers WHERE performer_id=$1 ORDER BY 1`, id)
+		if err != nil {
+			return nil, err
+		}
+		for rows.Next() {
+			var rid int64
+			if err = rows.Scan(&rid); err != nil {
+				rows.Close()
+				return nil, err
+			}
+			ids = append(ids, rid)
+		}
+		rows.Close()
+		if err = rows.Err(); err != nil {
+			return nil, err
+		}
+	}
+	var out []audit.InboundResult
+	for _, rid := range ids {
+		r, err := audit.CheckRelease(ctx, s, rid, audit.DefaultAgeConfig, time.Now())
+		if err != nil {
+			return out, err
+		}
+		out = append(out, r)
+	}
+	return out, nil
 }
 
 // SaveCatalogRecord persists one parsed source record and its normalized entity
@@ -540,7 +657,7 @@ func (s *Store) SaveCatalogRecord(ctx context.Context, sourceID int64, parserVer
 		height, _ := rec.Fields["height_cm"].(any)
 		cup, _ := rec.Fields["cup_size"].(string)
 		err = tx.QueryRow(ctx, `INSERT INTO performers(slug,canonical_name,canonical_name_ja,birth_date,birth_place,debut_date,height_cm,cup_size) VALUES($1,$2,NULLIF($3,''),NULLIF($4,'')::date,NULLIF($5,''),NULLIF($6,'')::date,NULLIF($7,'')::numeric,NULLIF($8,''))
-			ON CONFLICT(slug) DO UPDATE SET canonical_name_ja=COALESCE(NULLIF(EXCLUDED.canonical_name_ja,''),performers.canonical_name_ja),birth_date=COALESCE(EXCLUDED.birth_date,performers.birth_date),birth_place=COALESCE(NULLIF(EXCLUDED.birth_place,''),performers.birth_place),debut_date=COALESCE(EXCLUDED.debut_date,performers.debut_date),height_cm=COALESCE(EXCLUDED.height_cm,performers.height_cm),cup_size=COALESCE(NULLIF(EXCLUDED.cup_size,''),performers.cup_size),updated_at=now() RETURNING id`, slug, name, nameJA, birthDate, birthPlace, debutDate, height, cup).Scan(&id)
+			ON CONFLICT(slug) DO UPDATE SET `+performerIngestUpdate+`,updated_at=now() RETURNING id`, slug, name, nameJA, birthDate, birthPlace, debutDate, height, cup).Scan(&id)
 		if err != nil {
 			return 0, err
 		}
@@ -566,8 +683,7 @@ func (s *Store) SaveCatalogRecord(ctx context.Context, sourceID int64, parserVer
 		maker, _ := rec.Fields["maker"].(string)
 		director, _ := rec.Fields["director"].(string)
 		err = tx.QueryRow(ctx, `INSERT INTO releases(slug,canonical_title,release_date,maker_name,director_name)
-			VALUES($1,$2,$3,$4,$5) ON CONFLICT(slug) DO UPDATE SET canonical_title=EXCLUDED.canonical_title,
-			maker_name=COALESCE(NULLIF(EXCLUDED.maker_name,''),releases.maker_name),updated_at=now() RETURNING id`, slug, title, date, maker, director).Scan(&id)
+			VALUES($1,$2,$3,$4,$5) ON CONFLICT(slug) DO UPDATE SET `+releaseIngestUpdate+`,updated_at=now() RETURNING id`, slug, title, date, maker, director).Scan(&id)
 		if err != nil {
 			return 0, err
 		}
@@ -597,6 +713,17 @@ func (s *Store) SaveCatalogRecord(ctx context.Context, sourceID int64, parserVer
 	} else {
 		return 0, fmt.Errorf("unsupported entity type %q", rec.EntityType)
 	}
+	entityID := performerID
+	if rec.EntityType == catalog.Release {
+		entityID = releaseID
+	}
+	// Manual overrides win over every source (FINAL_DATA_DESIGN 6): the
+	// upserts above already keep overridden columns; relations and conflicts
+	// below skip overridden fields. Source evidence is still recorded.
+	overridden, err := overriddenFields(ctx, tx, string(rec.EntityType), *entityID)
+	if err != nil {
+		return 0, err
+	}
 	var sourceRecordID int64
 	err = tx.QueryRow(ctx, `INSERT INTO source_records(source_id,entity_type,source_record_key,source_url,performer_id,release_id,raw_data,parser_version,resolution_status)
 		VALUES($1,$2,$3,$4,$5,$6,$7,$8,'resolved') ON CONFLICT(source_id,entity_type,source_record_key)
@@ -623,8 +750,10 @@ func (s *Store) SaveCatalogRecord(ctx context.Context, sourceID int64, parserVer
 				if performerID, err = survivingID(ctx, tx, "performers", performerID); err != nil {
 					return 0, err
 				}
-				if _, err = tx.Exec(ctx, `INSERT INTO release_performers(release_id,performer_id,billing_order,credited_name,is_primary) VALUES($1,$2,$3,$4,$5) ON CONFLICT(release_id,performer_id) DO UPDATE SET billing_order=EXCLUDED.billing_order,credited_name=EXCLUDED.credited_name`, *releaseID, performerID, order, name, order == 0); err != nil {
-					return 0, err
+				if !overridden[OverridePerformers] {
+					if _, err = tx.Exec(ctx, `INSERT INTO release_performers(release_id,performer_id,billing_order,credited_name,is_primary) VALUES($1,$2,$3,$4,$5) ON CONFLICT(release_id,performer_id) DO UPDATE SET billing_order=EXCLUDED.billing_order,credited_name=EXCLUDED.credited_name`, *releaseID, performerID, order, name, order == 0); err != nil {
+						return 0, err
+					}
 				}
 				if _, err = tx.Exec(ctx, `INSERT INTO release_performer_sources(release_id,performer_id,source_record_id,billing_order,credited_name) VALUES($1,$2,$3,$4,$5) ON CONFLICT DO NOTHING`, *releaseID, performerID, sourceRecordID, order, name); err != nil {
 					return 0, err
@@ -638,10 +767,13 @@ func (s *Store) SaveCatalogRecord(ctx context.Context, sourceID int64, parserVer
 				if normalized == "" {
 					continue
 				}
-				if _, err = tx.Exec(ctx, `INSERT INTO release_tags(release_id,tag,normalized_tag) VALUES($1,$2,$3) ON CONFLICT(release_id,normalized_tag) DO UPDATE SET tag=EXCLUDED.tag`, *releaseID, tag, normalized); err != nil {
+				if _, err = tx.Exec(ctx, `INSERT INTO release_tag_sources(release_id,normalized_tag,source_record_id,source_tag) VALUES($1,$2,$3,$4) ON CONFLICT DO NOTHING`, *releaseID, normalized, sourceRecordID, tag); err != nil {
 					return 0, err
 				}
-				if _, err = tx.Exec(ctx, `INSERT INTO release_tag_sources(release_id,normalized_tag,source_record_id,source_tag) VALUES($1,$2,$3,$4) ON CONFLICT DO NOTHING`, *releaseID, normalized, sourceRecordID, tag); err != nil {
+				if overridden[OverrideTags] {
+					continue
+				}
+				if _, err = tx.Exec(ctx, `INSERT INTO release_tags(release_id,tag,normalized_tag) VALUES($1,$2,$3) ON CONFLICT(release_id,normalized_tag) DO UPDATE SET tag=EXCLUDED.tag`, *releaseID, tag, normalized); err != nil {
 					return 0, err
 				}
 				if err = markStale(ctx, tx, i18n.EntityTag, normalized); err != nil {
@@ -661,9 +793,8 @@ func (s *Store) SaveCatalogRecord(ctx context.Context, sourceID int64, parserVer
 		if _, err = tx.Exec(ctx, `INSERT INTO source_field_values(source_record_id,field_name,raw_value,normalized_value,confidence,captured_at,is_current) VALUES($1,$2,$3::jsonb,$3::jsonb,'verified',now(),true)`, sourceRecordID, field, string(raw)); err != nil {
 			return 0, err
 		}
-		entityID := performerID
-		if rec.EntityType == catalog.Release {
-			entityID = releaseID
+		if fieldOverridden(string(rec.EntityType), field, overridden) {
+			continue // the admin's value stands; no new conflict for it
 		}
 		var distinct int
 		var candidates []byte
