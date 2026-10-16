@@ -817,9 +817,10 @@ func splitSide(ctx context.Context, q dbtx, entityType string, id int64) (bool, 
 }
 
 // releaseRecordSlug is the slug a release record upserts under. Normally its
-// code / title slug; but when the record already belongs to a release that
-// was split from the release owning that slug (a not-duplicate pair), it
-// keeps updating its own release.
+// code / title slug; but a record seen before keeps updating its own release
+// when nobody owns that slug (no new release from a page that lost its code
+// or a retitled code-less release), or when its release was split from the
+// release owning that slug (a not-duplicate pair).
 func releaseRecordSlug(ctx context.Context, tx pgx.Tx, sourceID int64, key, slug string) (string, error) {
 	var prev int64
 	err := tx.QueryRow(ctx, `SELECT release_id FROM source_records WHERE source_id=$1 AND entity_type='release' AND source_record_key=$2 AND release_id IS NOT NULL`,
@@ -833,7 +834,16 @@ func releaseRecordSlug(ctx context.Context, tx pgx.Tx, sourceID int64, key, slug
 	var owner int64
 	err = tx.QueryRow(ctx, `SELECT id FROM releases WHERE slug=$1`, slug).Scan(&owner)
 	if errors.Is(err, pgx.ErrNoRows) {
-		return slug, nil
+		// Nobody owns the slug the record computes now: its page lost the
+		// code (a degraded or partial response), or a release without a code
+		// changed its title. The record keeps updating the release it
+		// resolved to instead of creating a second one.
+		if prev, err = survivingID(ctx, tx, "releases", prev); err != nil {
+			return "", err
+		}
+		var own string
+		err = tx.QueryRow(ctx, `SELECT slug FROM releases WHERE id=$1`, prev).Scan(&own)
+		return own, err
 	}
 	if err != nil {
 		return "", err
