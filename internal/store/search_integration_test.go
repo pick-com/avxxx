@@ -1,8 +1,11 @@
 package store_test
 
 // Search integration test (PRD 4.5, AdminSearch). Runs only under
-// `make test-integration` (AVXXX_TEST_DATABASE_URL); every row it creates
-// carries a per-run suffix and assertions are scoped to those rows.
+// `make test-integration` (AVXXX_TEST_DATABASE_URL) in its own database
+// (store.OpenIsolatedTestDB): the zero-result triage looks for near-matches
+// across the whole catalog, so rows other tests leave behind (e.g. the
+// "Bench 1000" titles of TestRecsLatencyIntegration) must not be visible.
+// Every row it creates still carries a per-run suffix.
 
 import (
 	"avxxx/internal/api"
@@ -52,10 +55,19 @@ func items(out map[string]any) []map[string]any {
 }
 
 func TestSearchIntegration(t *testing.T) {
-	s, ctx := openRecsDB(t)
+	store.OpenIsolatedTestDB(t, "search")
+	ctx := context.Background()
+	s, err := store.Open(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(s.Close)
 	t.Setenv("ADMIN_TOKEN", "search-admin")
 	h := api.New(s, nil)
-	sfx := fmt.Sprintf("%d", time.Now().UnixNano()%1_000_000_000)
+	// Zero-padded: an unpadded sub-second suffix can be as short as "81000"
+	// (macOS clocks tick in microseconds), and a short all-digit tail is
+	// what made "没有的片81000" look like "Bench 1000".
+	sfx := fmt.Sprintf("%09d", time.Now().UnixNano()%1_000_000_000)
 	// Letters-only tag for product codes so they look like codes.
 	letters := ""
 	for _, c := range sfx[len(sfx)-4:] {
@@ -362,5 +374,4 @@ func TestSearchIntegration(t *testing.T) {
 	if err := s.QueryRow(ctx, `SELECT actor FROM review_events WHERE entity_type='performer' AND entity_id=$1 AND action='add_alias' ORDER BY id DESC LIMIT 1`, perf).Scan(&actor); err != nil || actor != "token:search-editor" {
 		t.Errorf("alias review event %q %v", actor, err)
 	}
-	_ = context.Background
 }

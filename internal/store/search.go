@@ -731,7 +731,8 @@ const nearMatchThreshold = 0.3
 // NearMatches finds catalog rows resembling term in any status (titles,
 // Japanese titles, performer names, aliases, reviewed translations): with
 // pg_trgm by word similarity, otherwise by ILIKE on the term and on each
-// token of 2+ runes.
+// token of 2+ runes. Rows that share only digits with the term are dropped
+// (search.SharesText): "没有的片81000" is not a near-miss of "Bench 1000".
 func (s *Store) NearMatches(ctx context.Context, term string, limit int) ([]NearMatch, error) {
 	term = search.NormalizeQuery(term)
 	if term == "" {
@@ -781,7 +782,7 @@ func (s *Store) NearMatches(ctx context.Context, term string, limit int) ([]Near
 				return err
 			}
 			k := fmt.Sprintf("%s:%d", m.Type, m.ID)
-			if seen[k] || len(out) >= limit {
+			if seen[k] || len(out) >= limit || !search.SharesText(term, m.Name) {
 				continue
 			}
 			seen[k] = true

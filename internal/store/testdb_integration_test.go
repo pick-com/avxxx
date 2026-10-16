@@ -44,3 +44,7 @@ func openIsolatedTestDB(t *testing.T, prefix string) {
 	u.Path = "/" + dbName
 	t.Setenv("DATABASE_URL", u.String())
 }
+
+// OpenIsolatedTestDB is openIsolatedTestDB for the external store_test
+// package (search_integration_test.go).
+func OpenIsolatedTestDB(t *testing.T, prefix string) { openIsolatedTestDB(t, prefix) }

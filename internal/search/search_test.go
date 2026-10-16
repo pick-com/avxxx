@@ -165,6 +165,30 @@ func TestClassify(t *testing.T) {
 	}
 }
 
+func TestSharesText(t *testing.T) {
+	for _, c := range []struct {
+		term, name string
+		want       bool
+	}{
+		{"没有的片81000", "Bench 1000", false}, // digits only: a false near-match
+		{"没有的片381000123", "BenchP 1000", false},
+		{"夜航abcd的人们", "夜航abcd的人", true},
+		{"nigth flihgt", "Night Flight", true},
+		{"ＮＩＧＨＴ", "night flight", true}, // normalized on both sides
+		{"はたのゆい", "波多野結衣 はたの", true},
+		{"81000", "Bench 1000", false}, // numbers must match whole
+		{"other 51234", "Fallback Title 51234", true},
+		{"没有的片51234", "Bench 5123", false},
+		{"12", "Bench 1200", true}, // nothing to judge: trigram verdict stands
+		{"juq-743", "JUQ-743 夜航", true},
+		{"完全不同", "Summer Rain", false},
+	} {
+		if got := SharesText(c.term, c.name); got != c.want {
+			t.Errorf("SharesText(%q,%q) = %v, want %v", c.term, c.name, got, c.want)
+		}
+	}
+}
+
 func day(s string) time.Time { t, _ := time.Parse(time.DateOnly, s); return t }
 
 func TestAggregateDaily(t *testing.T) {

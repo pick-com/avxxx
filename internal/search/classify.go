@@ -3,6 +3,7 @@ package search
 import (
 	"regexp"
 	"strings"
+	"unicode"
 )
 
 // Class is the AdminSearch triage bucket of a zero-result term.
@@ -90,3 +91,42 @@ func Classify(term string, nearMatch, wouldRescue bool) Class {
 	}
 	return ClassNotInLibrary
 }
+
+// SharesText reports whether a catalog name found by trigram word
+// similarity really resembles a zero-result term, rather than only sharing
+// digit fragments with it: "没有的片81000" and "Bench 1000" share the
+// trigrams "100", "000" and "00 " (word similarity 0.3) and nothing else.
+// The name must contain a pair of adjacent letters of the term (any
+// script), or one of the term's numbers of 3+ digits as a whole number
+// ("other 51234" still resembles "Fallback Title 51234"). Terms with
+// neither (single letters, short numbers) keep the trigram verdict.
+func SharesText(term, name string) bool {
+	term, name = NormalizeQuery(term), NormalizeQuery(name)
+	rs := []rune(term)
+	judged := false
+	for i := 1; i < len(rs); i++ {
+		if !unicode.IsLetter(rs[i-1]) || !unicode.IsLetter(rs[i]) {
+			continue
+		}
+		judged = true
+		if strings.Contains(name, string(rs[i-1:i+1])) {
+			return true
+		}
+	}
+	nameNums := map[string]bool{}
+	for _, n := range digitRuns.FindAllString(name, -1) {
+		nameNums[n] = true
+	}
+	for _, n := range digitRuns.FindAllString(term, -1) {
+		if len(n) < 3 {
+			continue
+		}
+		judged = true
+		if nameNums[n] {
+			return true
+		}
+	}
+	return !judged
+}
+
+var digitRuns = regexp.MustCompile(`[0-9]+`)
