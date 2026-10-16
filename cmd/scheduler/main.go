@@ -10,6 +10,7 @@ import (
 	"avxxx/internal/recs"
 	"avxxx/internal/search"
 	"avxxx/internal/store"
+	"avxxx/internal/watchstats"
 	"context"
 	"log"
 	"os"
@@ -125,6 +126,24 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
+	// 观看统计 (internal/watchstats, run by cmd/audit): user_watch_daily for
+	// the dates that are "today" somewhere once per WATCH_STATS_EVERY slot
+	// (default 1h), and the three dates before once per day at
+	// WATCH_STATS_NIGHTLY_AT (default 03:30).
+	watchStatsEvery := time.Hour
+	if v := os.Getenv("WATCH_STATS_EVERY"); v != "" {
+		if watchStatsEvery, err = time.ParseDuration(v); err != nil || watchStatsEvery < 5*time.Minute {
+			log.Fatalf("invalid WATCH_STATS_EVERY %q: want a duration of at least 5m", v)
+		}
+	}
+	watchStatsAt := os.Getenv("WATCH_STATS_NIGHTLY_AT")
+	if watchStatsAt == "" {
+		watchStatsAt = "03:30"
+	}
+	watchStatsHour, watchStatsMinute, err := audit.ParseClock(watchStatsAt)
+	if err != nil {
+		log.Fatal(err)
+	}
 	interval := 60 * time.Second
 	var lastAuthPrune time.Time
 	for ctx.Err() == nil {
@@ -168,6 +187,14 @@ func main() {
 		}
 		if _, err := s.EnqueueKindSince(ctx, images.JobKindPurge, time.Now().Truncate(mediaPurgeEvery)); err != nil {
 			log.Printf("enqueue media purge: %v", err)
+		}
+		if _, err := s.EnqueueKindSince(ctx, watchstats.JobKind, time.Now().Truncate(watchStatsEvery)); err != nil {
+			log.Printf("enqueue watch stats: %v", err)
+		}
+		if ok, err := s.EnqueueKindSince(ctx, watchstats.JobKindNightly, audit.LastSlot(time.Now(), watchStatsHour, watchStatsMinute)); err != nil {
+			log.Printf("enqueue nightly watch stats: %v", err)
+		} else if ok {
+			log.Printf("enqueued nightly watch stats")
 		}
 		n, err := s.EnqueueDue(ctx)
 		if err != nil {

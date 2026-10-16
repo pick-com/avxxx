@@ -58,6 +58,14 @@
 //
 //	audit -media-fetch   run the image fetch job now, print the report, exit
 //	audit -media-purge   run the image purge job now, print the report, exit
+//
+// It also claims 'watch_stats' (hourly) and 'watch_stats_nightly' (nightly,
+// cmd/scheduler) jobs: 观看统计 user_watch_daily per user and local day
+// (internal/watchstats, PRD 20). The hourly run rebuilds the dates that are
+// "today" in some time zone, the nightly run the three dates before them.
+//
+//	audit -watch-stats                       rebuild the hourly dates now, print, exit
+//	audit -watch-stats -watch-stats-days 90  backfill the last 90 dates (event retention)
 package main
 
 import (
@@ -74,6 +82,7 @@ import (
 	"avxxx/internal/recs"
 	"avxxx/internal/search"
 	"avxxx/internal/store"
+	"avxxx/internal/watchstats"
 	"context"
 	"encoding/json"
 	"errors"
@@ -104,6 +113,8 @@ func main() {
 	crossCheckNow := flag.Bool("crosscheck", false, "run the third-party cross-check job once and exit")
 	mediaFetchNow := flag.Bool("media-fetch", false, "run the image fetch job once and exit")
 	mediaPurgeNow := flag.Bool("media-purge", false, "run the image purge job once and exit")
+	watchStatsNow := flag.Bool("watch-stats", false, "rebuild user_watch_daily (WatchStats) once and exit")
+	watchStatsDays := flag.Int("watch-stats-days", 0, "with -watch-stats: rebuild the last N dates instead of today's (at most the 90-day event retention)")
 	flag.Parse()
 
 	obs.SetupLogging("audit")
@@ -184,6 +195,16 @@ func main() {
 		if err != nil {
 			obs.Fatal("run failed", err)
 		}
+	case *watchStatsNow:
+		rn := &watchstats.Runner{Store: s}
+		if *watchStatsDays > 0 {
+			rn.Days = watchstats.BackfillDays(time.Now(), *watchStatsDays)
+		}
+		rep, err := rn.Run(ctx)
+		printJSON(rep)
+		if err != nil {
+			obs.Fatal("run failed", err)
+		}
 	case *completenessNow:
 		rep, err := runCompleteness(ctx, s, 0)
 		printJSON(rep)
@@ -228,7 +249,7 @@ func work(ctx context.Context, s *store.Store) {
 			slog.Error("reap expired jobs", "err", err)
 		}
 		claimed := false
-		for _, kind := range []string{store.JobKindSourceHealth, store.JobKindRecsTrending, store.JobKindReleaseCurves, store.JobKindSearchStats, store.JobKindAudit, store.JobKindRecsSimilarity, store.JobKindMediaLink, store.JobKindCompletenessSnapshot, store.JobKindCrossCheck, store.JobKindMediaPurge, store.JobKindMediaFetch} {
+		for _, kind := range []string{store.JobKindSourceHealth, store.JobKindRecsTrending, store.JobKindReleaseCurves, store.JobKindSearchStats, store.JobKindAudit, store.JobKindRecsSimilarity, store.JobKindMediaLink, store.JobKindCompletenessSnapshot, store.JobKindCrossCheck, store.JobKindMediaPurge, store.JobKindMediaFetch, store.JobKindWatchStats, store.JobKindWatchStatsNightly} {
 			id, version, err := s.ClaimJob(ctx, kind)
 			if errors.Is(err, pgx.ErrNoRows) {
 				continue
@@ -359,6 +380,8 @@ func execute(ctx context.Context, s *store.Store, kind string, id int64) (any, e
 			return nil, err
 		}
 		return rn.Run(ctx)
+	case store.JobKindWatchStats, store.JobKindWatchStatsNightly:
+		return (&watchstats.Runner{Store: s, JobID: id, Kind: kind}).Run(ctx)
 	}
 	if kind == store.JobKindSourceHealth {
 		rep, err := (&audit.HealthRunner{Store: s, Config: healthConfig(), JobID: id}).Run(ctx)

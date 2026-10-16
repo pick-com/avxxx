@@ -77,7 +77,7 @@ var StatsNotStored = map[string]string{
 	"release ratings (average, count, distribution)":        "not stored: computed from ratings on read",
 	"favorites / follows / reservations counts":             "not stored: counted from favorites, follows and reservations on read",
 	"comment (review / danmaku) counts":                     "not stored: counted on read; only reviews.likes and danmaku_curves.valid_count are cached",
-	"user_watch_daily":                                      "table does not exist yet (WatchStats is V1.1)",
+	"user_watch_daily":                                      "rebuilt from events and watch_history by the watch_stats jobs (internal/watchstats), not by R-STATS",
 	"release play / view counts":                            "not stored: trending boards and audit priorities count watch_history and play events per run",
 }
 
