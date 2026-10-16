@@ -61,6 +61,8 @@ const paths = {
   thumb: 'M7 11v9H4v-9zM7 11l4-8a2 2 0 012 2v4h5.5a2 2 0 012 2.3l-1.2 6.5A2 2 0 0117.3 20H7',
   star: 'M12 3l2.6 5.6 6.1.7-4.5 4.2 1.2 6L12 16.6 6.6 19.5l1.2-6-4.5-4.2 6.1-.7z',
   cookie: 'M12 3a9 9 0 109 9 4 4 0 01-5-4 4 4 0 01-4-5zM8.5 12h.01M12 16h.01M15.5 14h.01',
+  // 观看统计 (WatchStats).
+  stats: 'M4 20h16M6 20v-6M11 20V6M16 20v-9M21 20V9',
 } as const;
 
 export type IconName = keyof typeof paths;
