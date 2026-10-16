@@ -97,9 +97,13 @@ func TestReactionRoutes(t *testing.T) {
 	if rec := doH(h, "PUT", path, `{"value":1}`, nil); rec.Code != 400 {
 		t.Errorf("anonymous vote without device id: %d, want 400", rec.Code)
 	}
-	for body, want := range map[string]int{`{"value":2}`: 400, `{}`: 400, `{"value":"x"}`: 400, `{"value":-1}`: 200, `{"value":0}`: 200} {
-		if rec := doH(h, "PUT", path, body, device); rec.Code != want {
-			t.Errorf("PUT %s: %d, want %d (%s)", body, rec.Code, want, rec.Body)
+	// Ordered: the stored votes are checked in request order below.
+	for _, c := range []struct {
+		body string
+		want int
+	}{{`{"value":2}`, 400}, {`{}`, 400}, {`{"value":"x"}`, 400}, {`{"value":-1}`, 200}, {`{"value":0}`, 200}} {
+		if rec := doH(h, "PUT", path, c.body, device); rec.Code != c.want {
+			t.Errorf("PUT %s: %d, want %d (%s)", c.body, rec.Code, c.want, rec.Body)
 		}
 	}
 	if rec := doH(h, "PUT", path, `{"value":1}`, auth); rec.Code != 200 || !strings.Contains(rec.Body.String(), `"my_vote":1`) {
@@ -162,17 +166,21 @@ func TestCommentRoutes(t *testing.T) {
 	if rec := doH(h, "POST", post, `{"body":"hi"}`, nil); rec.Code != 401 {
 		t.Errorf("anonymous post: %d", rec.Code)
 	}
-	for body, want := range map[string]int{
-		`{"body":""}`: 400,
-		`{"body":"` + strings.Repeat("评", community.MaxCommentRunes+1) + `"}`: 400,
-		`{"body":"hi","parent_id":-1}`:                                        400,
-		`{"body":"hi","parent_id":404}`:                                       404,
-		`{"body":"hi","extra":1}`:                                             400,
-		`{"body":"第一行\n第二行","spoiler":true}`:                                  201,
-		`{"body":"reply","parent_id":5}`:                                      201,
+	// Ordered: i.comments is checked by index below.
+	for _, c := range []struct {
+		body string
+		want int
+	}{
+		{`{"body":""}`, 400},
+		{`{"body":"` + strings.Repeat("评", community.MaxCommentRunes+1) + `"}`, 400},
+		{`{"body":"hi","parent_id":-1}`, 400},
+		{`{"body":"hi","parent_id":404}`, 404},
+		{`{"body":"hi","extra":1}`, 400},
+		{`{"body":"第一行\n第二行","spoiler":true}`, 201},
+		{`{"body":"reply","parent_id":5}`, 201},
 	} {
-		if rec := doH(h, "POST", post, body, auth); rec.Code != want {
-			t.Errorf("POST %s: %d, want %d (%s)", body, rec.Code, want, rec.Body)
+		if rec := doH(h, "POST", post, c.body, auth); rec.Code != c.want {
+			t.Errorf("POST %s: %d, want %d (%s)", c.body, rec.Code, c.want, rec.Body)
 		}
 	}
 	rec = doH(h, "POST", post, `{"body":"快来 加 微 信"}`, auth)
