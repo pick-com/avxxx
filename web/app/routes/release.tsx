@@ -20,6 +20,7 @@ import {useAsync} from '../lib/useAsync';
 import {useCanonicalSlug} from '../lib/useCanonicalSlug';
 import {useMediaQuery} from '../lib/useMediaQuery';
 import {readQueue} from '../lib/queue';
+import {getRecs, performerName, reasonText, recTitle, inRelatedTab, type RecItem, type RelatedTab} from '../lib/recs';
 import type {ShellHandle} from './shell';
 
 export const handle: ShellHandle = {immersive: true};
@@ -31,14 +32,18 @@ export const meta = () => [{title: t('title.release')}];
 // TODO(tech plan 3.13): 赞 / 踩, 评论 (V1.1).
 // 稍后观看 toggles here; ?list=later follows the 全部播放 / 随机播放 queue.
 // 自动连播 (PRD 5.4, settings.autoplay, default on): when a video ends, the
-// next one (the queue's next, else the first 接下来播放 work) starts after a
-// 10 s countdown that can be cancelled; it reports autoplay_next.
+// next one (the queue's next, else — also after the queue's last item — the
+// first 接下来播放 work) starts after a 10 s countdown that can be cancelled;
+// it reports autoplay_next.
+// 接下来播放: GET /api/recs?slot=related&release= with reason labels and
+// 相关推荐 / 同演员 / 同系列 tabs (tabs only when the reason codes allow).
+// Without the recs routes, or with no related rows, it falls back to the
+// first performer's other works.
 // 预约 shows for status 'upcoming', but GET /api/releases/{slug} only serves
 // published works today, so upcoming works are reserved from the feed.
 // TODO(PRD 15 AgeGate): gate playback with <AgeConfirm> once releases carry an
 // age rating; the API has no rating field yet, so the gate is not mounted.
 // TODO(tech plan 2.4 / 3.2 release_assets): 章节 · 截屏 strip.
-// TODO(tech plan 3.5 GET /api/recs?slot=related): 相关推荐 / 同系列 tabs.
 // 片源 row and versions live in Player (GET play-config). Tags, director and
 // product codes come from the catalog-filters release detail and are simply
 // absent on older backends.
@@ -62,9 +67,11 @@ export default function ReleasePage() {
   const nextSlug = queue && queueIndex >= 0 ? queue.slugs[queueIndex + 1] : undefined;
   const prefs = usePlayerPrefs();
   const location = useLocation();
-  const autoStart = (location.state as {autoplay?: unknown} | null)?.autoplay === true;
+  const linkState = location.state as {autoplay?: unknown; reason?: unknown} | null;
+  const autoStart = linkState?.autoplay === true;
+  const entryReason = typeof linkState?.reason === 'string' ? linkState.reason : undefined;
   const [ended, setEnded] = useState(false);
-  const [related, setRelated] = useState<{id: number; slug: string; title: string} | null>(null);
+  const [related, setRelated] = useState<NextUp | null>(null);
   const queueNext = useAsync(signal => getRelease(nextSlug ?? '', signal), [nextSlug], !!nextSlug && ended);
   const next = nextSlug
     ? queueNext.data
@@ -125,6 +132,7 @@ export default function ReleasePage() {
           theater={theater}
           onToggleTheater={() => setTheater(on => !on)}
           autoStart={autoStart}
+          entryReason={entryReason}
           onEnded={() => setEnded(true)}
           overlay={
             ended && prefs.autoplay && next && release ? (
@@ -135,7 +143,7 @@ export default function ReleasePage() {
                 onGo={() => {
                   markAutoplayNavigation();
                   setEnded(false);
-                  navigate(`/releases/${encodeURIComponent(next.slug)}${next.query}`, {state: {autoplay: true}});
+                  navigate(`/releases/${encodeURIComponent(next.slug)}${next.query}`, {state: {autoplay: true, reason: 'reason' in next ? next.reason : undefined}});
                 }}
                 onCancel={() => setEnded(false)}
               />
@@ -199,7 +207,7 @@ export default function ReleasePage() {
 
       <aside className="video-aside" aria-label={t('release.upNext')}>
         {queue && queueIndex >= 0 && <QueuePanel slugs={queue.slugs} index={queueIndex} />}
-        {release && performers[0] && <SamePerformer performer={performers[0]} currentSlug={slug} onFirst={setRelated} />}
+        {release && <UpNext slug={slug} performer={performers[0]} onFirst={setRelated} />}
       </aside>
     </div>
   );
@@ -295,11 +303,75 @@ function CastMember({performer, releaseDate, onOpen}: {performer: Performer; rel
   );
 }
 
+type NextUp = {id: number; slug: string; title: string; reason?: string};
+
+/** 接下来播放: the related recs, else the same-performer list. */
+function UpNext({slug, performer, onFirst}: {slug: string; performer?: Performer; onFirst: (next: NextUp | null) => void}) {
+  const recs = useAsync(signal => getRecs('related', {release: slug, limit: 20}, signal), [slug]);
+  const items = (recs.data?.items ?? []).filter(it => it.slug !== slug);
+  if (recs.loading) return null;
+  if (recs.error || items.length === 0) return performer ? <SamePerformer performer={performer} currentSlug={slug} onFirst={onFirst} /> : null;
+  return <RelatedList items={items} onFirst={onFirst} />;
+}
+
+const RELATED_TABS: {key: RelatedTab; label: MessageKey}[] = [
+  {key: 'all', label: 'related.all'},
+  {key: 'performer', label: 'related.performer'},
+  {key: 'series', label: 'related.series'},
+];
+
+function RelatedList({items, onFirst}: {items: RecItem[]; onFirst: (next: NextUp | null) => void}) {
+  const t = useT();
+  const [tab, setTab] = useState<RelatedTab>('all');
+  const tabs = RELATED_TABS.filter(x => items.some(it => inRelatedTab(it, x.key)));
+  const active = tabs.some(x => x.key === tab) ? tab : 'all';
+  const shown = items.filter(it => inRelatedTab(it, active));
+  const first = items[0];
+  useEffect(() => {
+    onFirst(first ? {id: first.id, slug: first.slug, title: recTitle(first), reason: first.reason.code} : null);
+  }, [first, onFirst]);
+  return (
+    <section className="aside-section related-list">
+      <SectionHeader title={t('release.upNext')} />
+      {tabs.length > 1 && (
+        <div className="chip-row related-tabs" role="tablist" aria-label={t('related.tabs')}>
+          {tabs.map(x => (
+            <button
+              key={x.key}
+              type="button"
+              role="tab"
+              aria-selected={x.key === active}
+              className={x.key === active ? 'chip chip-on' : 'chip'}
+              onClick={() => setTab(x.key)}
+            >
+              {t(x.label)}
+            </button>
+          ))}
+        </div>
+      )}
+      <div className="row-list" role={tabs.length > 1 ? 'tabpanel' : undefined}>
+        {shown.slice(0, 12).map((it, i) => (
+          <ReleaseRow
+            key={it.id}
+            slug={it.slug}
+            title={recTitle(it)}
+            badge={it.runtime_minutes ? t('card.minutes', {n: it.runtime_minutes}) : undefined}
+            meta={performerName(it.performer) || it.maker_name}
+            reason={reasonText(it.reason, it)}
+            reasonCode={it.reason.code}
+            slot={`watch:related:${active}:r${i + 1}`}
+          />
+        ))}
+      </div>
+    </section>
+  );
+}
+
 function SamePerformer({performer, currentSlug, onFirst}: {
   performer: Performer;
   currentSlug: string;
   /** The autoplay candidate (first work in the list). */
-  onFirst?: (next: {id: number; slug: string; title: string} | null) => void;
+  onFirst?: (next: NextUp | null) => void;
 }) {
   const t = useT();
   const works = useAsync(signal => getPerformerReleases(performer.slug, 12, signal), [performer.slug]);
