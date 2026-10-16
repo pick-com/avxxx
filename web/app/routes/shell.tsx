@@ -1,6 +1,7 @@
 import {useEffect, useState} from 'react';
 import {Outlet, useLocation, useMatches} from 'react-router';
 import {BottomTabs} from '../components/BottomTabs';
+import {NetworkBanner} from '../components/NetworkBanner';
 import {SideNav, type NavVariant} from '../components/SideNav';
 import {TopBar} from '../components/TopBar';
 import {useMediaQuery} from '../lib/useMediaQuery';
@@ -46,6 +47,7 @@ export default function Shell() {
         跳到主要内容
       </a>
       <TopBar onToggleNav={toggle} navExpanded={variant === 'full' || variant === 'overlay'} />
+      <NetworkBanner />
       <div className="shell-body">
         <SideNav variant={variant} />
         {variant === 'overlay' && <button type="button" className="nav-backdrop" aria-label="关闭导航菜单" onClick={() => setMode('auto')} />}
