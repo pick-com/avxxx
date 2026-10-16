@@ -2,6 +2,7 @@ package main
 
 import (
 	"avxxx/internal/audit"
+	"avxxx/internal/recs"
 	"avxxx/internal/store"
 	"context"
 	"log"
@@ -38,8 +39,33 @@ func main() {
 			log.Fatalf("invalid SOURCE_HEALTH_EVERY %q: want a duration of at least 1m", v)
 		}
 	}
+	// Recommendations (internal/recs, run by cmd/audit): similarity nightly at
+	// RECS_NIGHTLY_AT (default 04:30, PRD 10), trending boards once per
+	// RECS_TRENDING_EVERY slot (default 1h, PRD 4.2 每小时更新).
+	recsAt := os.Getenv("RECS_NIGHTLY_AT")
+	if recsAt == "" {
+		recsAt = "04:30"
+	}
+	recsHour, recsMinute, err := audit.ParseClock(recsAt)
+	if err != nil {
+		log.Fatal(err)
+	}
+	trendingEvery := time.Hour
+	if v := os.Getenv("RECS_TRENDING_EVERY"); v != "" {
+		if trendingEvery, err = time.ParseDuration(v); err != nil || trendingEvery < time.Minute {
+			log.Fatalf("invalid RECS_TRENDING_EVERY %q: want a duration of at least 1m", v)
+		}
+	}
 	interval := 60 * time.Second
 	for ctx.Err() == nil {
+		if ok, err := s.EnqueueKindSince(ctx, recs.JobKindSimilarity, audit.LastSlot(time.Now(), recsHour, recsMinute)); err != nil {
+			log.Printf("enqueue recs similarity: %v", err)
+		} else if ok {
+			log.Printf("enqueued nightly recs similarity")
+		}
+		if _, err := s.EnqueueKindSince(ctx, recs.JobKindTrending, time.Now().Truncate(trendingEvery)); err != nil {
+			log.Printf("enqueue recs trending: %v", err)
+		}
 		slot := audit.LastSlot(time.Now(), auditHour, auditMinute)
 		if ok, err := s.EnqueueAuditSince(ctx, slot); err != nil {
 			log.Printf("enqueue nightly audit: %v", err)
