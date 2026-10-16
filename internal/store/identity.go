@@ -245,7 +245,11 @@ func lockEntities(ctx context.Context, tx pgx.Tx, table string, ids ...int64) (m
 }
 
 func relationRows(ctx context.Context, tx pgx.Tx, spec identity.TableSpec, id int64) ([]json.RawMessage, error) {
-	r, err := tx.Query(ctx, fmt.Sprintf(`SELECT to_jsonb(t) FROM %s t WHERE %s=$1`, spec.Table, spec.FK), id)
+	where := ""
+	if spec.Where != "" {
+		where = " AND (" + spec.Where + ")"
+	}
+	r, err := tx.Query(ctx, fmt.Sprintf(`SELECT to_jsonb(t) FROM %s t WHERE %s=$1%s`, spec.Table, spec.FK, where), id)
 	if err != nil {
 		return nil, err
 	}
@@ -263,6 +267,39 @@ func relationRows(ctx context.Context, tx pgx.Tx, spec identity.TableSpec, id in
 
 // keyExpr is the SQL form of identity.KeyOf for spec's key columns.
 func keyExpr(cols []string) string { return "jsonb_build_array(" + strings.Join(cols, ",") + ")" }
+
+// applyPatch writes values (a JSON object of columns) onto the row of
+// tp.Table whose FK is fkValue and whose key is p.Key. values is p.Set on
+// merge and p.Before on undo; jsonb_populate_record casts each value to the
+// column's type.
+func applyPatch(ctx context.Context, tx pgx.Tx, tp identity.TablePlan, p identity.RowPatch, fkValue int64, values json.RawMessage) error {
+	cols, err := identity.PatchColumns(values)
+	if err != nil {
+		return err
+	}
+	if len(cols) == 0 {
+		return nil
+	}
+	sets := make([]string, len(cols))
+	for i, c := range cols {
+		sets[i] = fmt.Sprintf("%[1]s=r.%[1]s", c)
+	}
+	keyCols := make([]string, len(tp.Key))
+	for i, c := range tp.Key {
+		keyCols[i] = "t." + c
+	}
+	_, err = tx.Exec(ctx, fmt.Sprintf(`UPDATE %[1]s t SET %[2]s FROM jsonb_populate_record(NULL::%[1]s,$1::jsonb) r WHERE t.%[3]s=$2 AND %[4]s=$3::jsonb`,
+		tp.Table, strings.Join(sets, ","), tp.FK, keyExpr(keyCols)), string(values), fkValue, string(p.Key))
+	return err
+}
+
+// patchFK returns the FK value of the entity whose row p updates.
+func patchFK(p identity.RowPatch, targetID, sourceID int64) int64 {
+	if p.Side == identity.PatchSource {
+		return sourceID
+	}
+	return targetID
+}
 
 // MergeCandidate merges one side of a pending candidate into the other in a
 // single transaction: relations move to the target without duplicates, the
@@ -332,7 +369,17 @@ func (s *Store) MergeCandidate(ctx context.Context, candidateID, targetID int64,
 				return MergeResult{}, err
 			}
 		}
+		for _, p := range tp.Patch {
+			if err = applyPatch(ctx, tx, tp, p, patchFK(p, targetID, sourceID), p.Set); err != nil {
+				return MergeResult{}, err
+			}
+		}
 		res.Moved[tp.Table], res.Deduplicated[tp.Table] = len(tp.Move), len(tp.Drop)
+		for _, p := range tp.Patch {
+			if p.Side == identity.PatchSource { // kept but closed as a duplicate
+				res.Deduplicated[tp.Table]++
+			}
+		}
 	}
 	for _, a := range plan.AddAliases {
 		if _, err = tx.Exec(ctx, `INSERT INTO performer_aliases(performer_id,name,normalized_name,alias_type) VALUES($1,$2,$3,'merged') ON CONFLICT DO NOTHING`, targetID, a.Name, a.NormalizedName); err != nil {
@@ -464,6 +511,11 @@ func (s *Store) UndoMerge(ctx context.Context, eventID int64, actor, reason stri
 		}
 		for _, row := range tp.Drop {
 			if _, err = tx.Exec(ctx, fmt.Sprintf(`INSERT INTO %[1]s SELECT * FROM jsonb_populate_record(NULL::%[1]s,$1::jsonb) ON CONFLICT DO NOTHING`, tp.Table), string(row)); err != nil {
+				return UndoResult{}, err
+			}
+		}
+		for _, p := range tp.Patch {
+			if err = applyPatch(ctx, tx, tp, p, patchFK(p, plan.TargetID, plan.SourceID), p.Before); err != nil {
 				return UndoResult{}, err
 			}
 		}

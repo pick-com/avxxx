@@ -65,6 +65,21 @@ func TestIdentityMergeIntegration(t *testing.T) {
 	exec(`INSERT INTO release_tags(release_id,tag,normalized_tag) VALUES(10,'Drama','drama'),(11,'drama','drama'),(11,'VR','vr')`)
 	exec(`INSERT INTO favorites(user_id,release_id) VALUES(1,10),(1,11)`)
 	exec(`INSERT INTO source_records(id,source_id,entity_type,source_record_key,source_url,release_id,parser_version) VALUES(500,1,'release','k11','https://example.test/11',11,'v1')`)
+	// User-side and audit rows added by later features: they must follow
+	// the merge and come back on undo.
+	exec(`INSERT INTO users(id,email,password_hash) VALUES(2,'v@example.test','x')`)
+	exec(`INSERT INTO follows(user_id,performer_id,notify_mode,created_at) VALUES
+		(1,1,'lead_only','2026-03-01T00:00:00Z'),(1,2,'all','2026-01-01T00:00:00Z'),(2,2,'off','2026-04-01T00:00:00Z')`)
+	exec(`INSERT INTO reservations(user_id,release_id) VALUES(1,10),(1,11),(2,11)`)
+	exec(`INSERT INTO watch_later(user_id,release_id,position) VALUES(1,10,5),(1,11,2),(2,11,1)`)
+	exec(`INSERT INTO notification_receipts(user_id,release_id,reason) VALUES(1,10,'follow'),(1,11,'reservation'),(2,11,'follow')`)
+	exec(`INSERT INTO playback_sources(release_id,kind,provider,label,url) VALUES
+		(10,'external_link','p','main','https://example.test/p/10'),(11,'external_link','p','main','https://example.test/p/11'),(11,'official_preview','q','preview','https://example.test/q/11')`)
+	exec(`INSERT INTO audit_issues(id,rule,entity_type,entity_id,severity,status) VALUES
+		(900,'R-META','release',10,'medium','open'),(901,'R-META','release',11,'medium','open'),
+		(902,'R-AGE','release',11,'blocking','open'),(903,'R-TRIM','release',11,'low','dismissed'),
+		(904,'R-META','performer',11,'low','open'),(905,'R-NAME','performer',2,'low','open')`)
+	exec(`SELECT setval('audit_issues_id_seq',1000)`)
 	// Advance every sequence behind an explicit id so later tests sharing this
 	// database (e.g. TestSocialIntegration) can insert without pkey collisions.
 	exec(`SELECT setval('performers_id_seq',100); SELECT setval('releases_id_seq',100); SELECT setval('source_records_id_seq',1000); SELECT setval('users_id_seq',100); SELECT setval('sources_id_seq',100)`)
@@ -112,6 +127,25 @@ func TestIdentityMergeIntegration(t *testing.T) {
 	if n := count(`SELECT count(*) FROM source_records WHERE release_id=10`); n != 1 {
 		t.Errorf("source records not relinked")
 	}
+	for q, want := range map[string]int{
+		`SELECT count(*) FROM reservations WHERE release_id=10`:                                      2,
+		`SELECT count(*) FROM watch_later WHERE release_id=10`:                                       2,
+		`SELECT count(*) FROM watch_later WHERE release_id=10 AND user_id=1 AND position=2`:          1, // lower position kept
+		`SELECT count(*) FROM notification_receipts WHERE release_id=10`:                             2,
+		`SELECT count(*) FROM playback_sources WHERE release_id=10`:                                  3,
+		`SELECT count(*) FROM reservations WHERE release_id=11`:                                      0,
+		`SELECT count(*) FROM watch_later WHERE release_id=11`:                                       0,
+		`SELECT count(*) FROM notification_receipts WHERE release_id=11`:                             0,
+		`SELECT count(*) FROM playback_sources WHERE release_id=11`:                                  0,
+		`SELECT count(*) FROM audit_issues WHERE id IN (900,902) AND entity_id=10 AND status='open'`: 2,
+		`SELECT count(*) FROM audit_issues WHERE id=901 AND entity_id=11 AND status='fixed' AND resolved_at IS NOT NULL AND resolution_note LIKE 'merged into release 10%'`: 1,
+		`SELECT count(*) FROM audit_issues WHERE id=903 AND entity_id=11 AND status='dismissed'`:                                                                            1,
+		`SELECT count(*) FROM audit_issues WHERE id=904 AND entity_type='performer' AND entity_id=11`:                                                                       1,
+	} {
+		if n := count(q); n != want {
+			t.Errorf("after release merge: %s = %d, want %d", q, n, want)
+		}
+	}
 	if slug, ok, err := s.ResolveMergedSlug(ctx, "release", "juq-743--src2"); err != nil || !ok || slug != "juq-743" {
 		t.Errorf("release redirect = %q %v %v", slug, ok, err)
 	}
@@ -138,6 +172,18 @@ func TestIdentityMergeIntegration(t *testing.T) {
 	}
 	if slug, ok, _ := s.ResolveMergedSlug(ctx, "performer", "yui-hatano--src2"); !ok || slug != "yui-hatano" {
 		t.Errorf("performer redirect = %q", slug)
+	}
+	for q, want := range map[string]int{
+		`SELECT count(*) FROM follows WHERE performer_id=1`: 2,
+		`SELECT count(*) FROM follows WHERE performer_id=2`: 0,
+		// Earlier follow date and the more permissive mode survive.
+		`SELECT count(*) FROM follows WHERE performer_id=1 AND user_id=1 AND notify_mode='all' AND created_at='2026-01-01T00:00:00Z'`: 1,
+		`SELECT count(*) FROM audit_issues WHERE id=905 AND entity_id=1 AND status='open'`:                                            1,
+		`SELECT count(*) FROM audit_issues WHERE id=904 AND entity_id=11`:                                                             1,
+	} {
+		if n := count(q); n != want {
+			t.Errorf("after performer merge: %s = %d, want %d", q, n, want)
+		}
 	}
 	if list, err := s.IdentityCandidates(ctx, "", 50); err != nil || len(list) != 0 {
 		t.Errorf("pending candidates = %v %v", list, err)
@@ -171,20 +217,45 @@ func TestIdentityMergeIntegration(t *testing.T) {
 	if _, ok, _ := s.ResolveMergedSlug(ctx, "performer", "yui-hatano--src2"); ok {
 		t.Error("redirect survived undo")
 	}
+	for q, want := range map[string]int{
+		`SELECT count(*) FROM follows WHERE performer_id=1`: 1,
+		`SELECT count(*) FROM follows WHERE performer_id=1 AND user_id=1 AND notify_mode='lead_only' AND created_at='2026-03-01T00:00:00Z'`: 1,
+		`SELECT count(*) FROM follows WHERE performer_id=2 AND user_id=1 AND notify_mode='all' AND created_at='2026-01-01T00:00:00Z'`:       1,
+		`SELECT count(*) FROM follows WHERE performer_id=2 AND user_id=2 AND notify_mode='off'`:                                             1,
+		`SELECT count(*) FROM audit_issues WHERE id=905 AND entity_id=2 AND status='open'`:                                                  1,
+	} {
+		if n := count(q); n != want {
+			t.Errorf("after performer undo: %s = %d, want %d", q, n, want)
+		}
+	}
 	if _, err = s.UndoMerge(ctx, relMerge.ReviewEventID, "tester", ""); err != nil {
 		t.Fatal(err)
 	}
 	for q, want := range map[string]int{
-		`SELECT count(*) FROM release_tags WHERE release_id=11`:                                       2,
-		`SELECT count(*) FROM release_tags WHERE release_id=10`:                                       1,
-		`SELECT count(*) FROM favorites WHERE user_id=1`:                                              2,
-		`SELECT count(*) FROM release_performers WHERE release_id=11`:                                 2,
-		`SELECT count(*) FROM release_performers WHERE release_id=10`:                                 2,
-		`SELECT count(*) FROM release_identifiers WHERE release_id=11`:                                1,
-		`SELECT count(*) FROM source_records WHERE release_id=11`:                                     1,
-		`SELECT count(*) FROM releases WHERE id=11 AND merged_into_id IS NULL AND status='published'`: 1,
-		`SELECT count(*) FROM review_events WHERE action IN ('merge','undo_merge')`:                   4,
-		`SELECT count(*) FROM identity_candidates WHERE status='split'`:                               2,
+		`SELECT count(*) FROM release_tags WHERE release_id=11`:                                                                                 2,
+		`SELECT count(*) FROM release_tags WHERE release_id=10`:                                                                                 1,
+		`SELECT count(*) FROM favorites WHERE user_id=1`:                                                                                        2,
+		`SELECT count(*) FROM release_performers WHERE release_id=11`:                                                                           2,
+		`SELECT count(*) FROM release_performers WHERE release_id=10`:                                                                           2,
+		`SELECT count(*) FROM release_identifiers WHERE release_id=11`:                                                                          1,
+		`SELECT count(*) FROM source_records WHERE release_id=11`:                                                                               1,
+		`SELECT count(*) FROM releases WHERE id=11 AND merged_into_id IS NULL AND status='published'`:                                           1,
+		`SELECT count(*) FROM review_events WHERE action IN ('merge','undo_merge')`:                                                             4,
+		`SELECT count(*) FROM identity_candidates WHERE status='split'`:                                                                         2,
+		`SELECT count(*) FROM reservations WHERE release_id=11`:                                                                                 2,
+		`SELECT count(*) FROM reservations WHERE release_id=10`:                                                                                 1,
+		`SELECT count(*) FROM watch_later WHERE release_id=11`:                                                                                  2,
+		`SELECT count(*) FROM watch_later WHERE release_id=10 AND user_id=1 AND position=5`:                                                     1,
+		`SELECT count(*) FROM watch_later WHERE release_id=11 AND user_id=1 AND position=2`:                                                     1,
+		`SELECT count(*) FROM notification_receipts WHERE release_id=11`:                                                                        2,
+		`SELECT count(*) FROM notification_receipts WHERE release_id=11 AND user_id=1 AND reason='reservation'`:                                 1,
+		`SELECT count(*) FROM notification_receipts WHERE release_id=10`:                                                                        1,
+		`SELECT count(*) FROM playback_sources WHERE release_id=11`:                                                                             2,
+		`SELECT count(*) FROM playback_sources WHERE release_id=10`:                                                                             1,
+		`SELECT count(*) FROM audit_issues WHERE id=900 AND entity_id=10 AND status='open'`:                                                     1,
+		`SELECT count(*) FROM audit_issues WHERE id=902 AND entity_id=11 AND status='open'`:                                                     1,
+		`SELECT count(*) FROM audit_issues WHERE id=901 AND entity_id=11 AND status='open' AND resolved_at IS NULL AND resolution_note IS NULL`: 1,
+		`SELECT count(*) FROM audit_issues WHERE id=903 AND entity_id=11 AND status='dismissed'`:                                                1,
 	} {
 		if n := count(q); n != want {
 			t.Errorf("%s = %d, want %d", q, n, want)
