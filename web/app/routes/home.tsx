@@ -1,7 +1,8 @@
 import {Link} from 'react-router';
 import {ReleaseCard, PerformerChip, SectionHeader} from '../components/Cards';
 import {CardGridSkeleton, ErrorBanner} from '../components/States';
-import {getWatchHistory, listPerformers, listReleases, listTags} from '../lib/api';
+import {getWatchHistory, listPerformerPage, listReleases, listTags} from '../lib/api';
+import {discoverHref} from '../lib/releaseFilter';
 import {useAuth} from '../lib/auth';
 import {formatDate, formatRuntime} from '../lib/format';
 import {useAsync} from '../lib/useAsync';
@@ -19,7 +20,7 @@ export const meta = () => [{title: 'REEL · 首页'}];
 export default function Home() {
   const {status} = useAuth();
   const releases = useAsync(signal => listReleases(10, signal), []);
-  const performers = useAsync(signal => listPerformers(12, signal), []);
+  const performers = useAsync(signal => listPerformerPage('works', 12, null, undefined, signal), []);
   const tags = useAsync(signal => listTags(12, signal), []);
   const history = useAsync(signal => getWatchHistory(signal), [status], status === 'user');
 
@@ -37,15 +38,15 @@ export default function Home() {
         </section>
       )}
 
-      {/* Tag chips: GET /api/tags. There is no tag-filtered release endpoint yet
-          (tech plan 3.4 分面查询), so chips show counts but do not filter. */}
+      {/* Tag chips: GET /api/tags; each opens the tag-filtered list
+          (/discover?tag=, GET /api/releases?tag=). */}
       {tags.data && tags.data.length > 0 && (
         <div className="chip-row" aria-label="热门标签">
           {tags.data.map(tag => (
-            <span key={tag.slug} className="chip chip-static" title={`${tag.count} 部作品`}>
+            <Link key={tag.slug} to={discoverHref({tag: tag.slug})} className="chip" title={`${tag.count} 部作品`}>
               {tag.name}
               <span className="chip-count">{tag.count}</span>
-            </span>
+            </Link>
           ))}
         </div>
       )}
@@ -101,18 +102,28 @@ export default function Home() {
         )}
       </section>
 
-      {/* GET /api/performers is ordered by name, not popularity, so this shelf is
-          titled 演员 rather than 热门演员 until performer_stats exists (tech plan 3.13). */}
+      {/* Asked for sort=works; a backend without sorting answers by name, so the
+          sub-title follows what came back. Not 热门演员: there is no popularity
+          data until performer_stats exists (tech plan 3.13). */}
       <section className="shelf">
-        <SectionHeader title="演员" action={<Link to="/discover?tab=actors" className="section-link">演员库</Link>} />
+        <SectionHeader
+          title="演员"
+          sub={performers.data?.paged ? '作品最多' : undefined}
+          action={<Link to="/discover?tab=actors" className="section-link">演员库</Link>}
+        />
         {performers.error ? (
           <ErrorBanner error={performers.error} onRetry={performers.reload} />
         ) : performers.slow ? (
           <CardGridSkeleton count={8} variant="avatar" />
         ) : (
           <div className="avatar-row">
-            {(performers.data ?? []).map(p => (
-              <PerformerChip key={p.id} slug={p.slug} name={p.canonical_name} sub={p.canonical_name_ja} />
+            {(performers.data?.items ?? []).map(p => (
+              <PerformerChip
+                key={p.id}
+                slug={p.slug}
+                name={p.canonical_name}
+                sub={typeof p.works_count === 'number' ? `${p.works_count} 部作品` : p.canonical_name_ja}
+              />
             ))}
           </div>
         )}
