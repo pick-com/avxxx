@@ -68,7 +68,7 @@ type LockableOrientation = ScreenOrientation & {lock?: (orientation: string) => 
  * hls.js ABR is capped at 720p, 480p with data_saver; remember_rate restores
  * the last rate used for this release. autoplay is handled by the page.
  */
-export function Player({slug, releaseId, title, resumeAt, onBack, theater = false, onToggleTheater, onEnded, autoStart = false, overlay}: {
+export function Player({slug, releaseId, title, resumeAt, onBack, theater = false, onToggleTheater, onEnded, autoStart = false, overlay, entryReason}: {
   slug: string;
   /** releases.id for analytics (play_request / progress); no tracking without it. */
   releaseId?: number;
@@ -83,6 +83,8 @@ export function Player({slug, releaseId, title, resumeAt, onBack, theater = fals
   autoStart?: boolean;
   /** Rendered over the video area (the autoplay countdown). */
   overlay?: ReactNode;
+  /** Recommendation reason code of the card that opened this page (play_request `reason`). */
+  entryReason?: string;
 }) {
   const t = useT();
   const {status} = useAuth();
@@ -156,12 +158,28 @@ export function Player({slug, releaseId, title, resumeAt, onBack, theater = fals
   // Alternate versions have their own danmaku timeline (version_key alt:<source id>).
   const dmSourceId = stream?.alt ? stream.sourceId : undefined;
   const dmFeed = useDanmakuFeed(slug, dmSourceId, videoEl, dmPrefs.enabled && !!stream && !!videoEl);
-  // 高能波峰 of the timeline being played (PRD 5.5.1); null under 50 valid danmaku.
-  const peakCurve = stream
+  // PRD 14.3 「前台只显示一条曲线」: with danmaku on, the 高能波峰 of the
+  // timeline being played (peak_curve = 70 % danmaku + 30 % replay rate on a
+  // replay-curves backend, else danmaku_curve; null under 50 valid danmaku);
+  // with danmaku off or without a danmaku curve, the 播放波峰 replay_curve
+  // (main timeline only, null under 1000 valid plays). 显示高能波峰 governs both.
+  // peak_curve falls back to the replay curve alone on the server, so it is
+  // used only when the timeline actually has a danmaku curve.
+  const mainDanmaku = config.data?.danmaku_curve;
+  const danmakuCurve = stream
     ? stream.alt
       ? config.data?.danmaku?.alt_curves?.[String(stream.sourceId)] ?? null
-      : config.data?.danmaku_curve ?? null
+      : mainDanmaku && mainDanmaku.length > 0
+        ? config.data?.peak_curve ?? mainDanmaku
+        : null
     : null;
+  const replayCurve = stream && !stream.alt ? config.data?.replay_curve ?? null : null;
+  const shownCurve: {curve: number[]; kind: 'danmaku' | 'playback'} | null =
+    dmPrefs.enabled && danmakuCurve && danmakuCurve.length > 0
+      ? {curve: danmakuCurve, kind: 'danmaku'}
+      : replayCurve && replayCurve.length > 0
+        ? {curve: replayCurve, kind: 'playback'}
+        : null;
 
   const coarse = useMediaQuery('(pointer: coarse)');
   const reducedMotion = useMediaQuery('(prefers-reduced-motion: reduce)');
@@ -250,6 +268,7 @@ export function Player({slug, releaseId, title, resumeAt, onBack, theater = fals
       {
         releaseId,
         entry: override ?? entryFrom(currentPage().refPage, {playlist}),
+        reason: entryReason,
         durationHint: config.data?.release.duration_seconds,
         getFullscreen: () => fullscreenRef.current,
         getPip: () => pipRef.current,
@@ -798,9 +817,11 @@ export function Player({slug, releaseId, title, resumeAt, onBack, theater = fals
           )}
         </div>
 
-        {stream && !touchMode && dmPrefs.enabled && dmPrefs.showPeaks && peakCurve && peakCurve.length > 0 && (
+        {stream && !touchMode && dmPrefs.showPeaks && shownCurve && (
           <PeakCurve
-            curve={peakCurve}
+            key={shownCurve.kind}
+            curve={shownCurve.curve}
+            kind={shownCurve.kind}
             video={videoEl}
             // PRD 5.5.1: no top-3 markers on a first watch with 屏蔽剧透 on.
             showMarkers={!(dmPrefs.blockSpoiler && !resumeFrom)}
