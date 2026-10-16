@@ -48,6 +48,8 @@ services:
     command: ["/usr/local/bin/scraper"]
     environment:
       DATABASE_URL: ${DATABASE_URL:-postgres://avxxx:avxxx@db:5432/avxxx?sslmode=disable}
+      DMM_API_ID: ${DMM_API_ID:-}
+      DMM_AFFILIATE_ID: ${DMM_AFFILIATE_ID:-}
     depends_on:
       db:
         condition: service_healthy

@@ -7,32 +7,36 @@ import (
 	"avxxx/internal/store"
 	"context"
 	"errors"
+	"flag"
+	"fmt"
 	"github.com/jackc/pgx/v5"
 	"log"
 	"net/http"
+	"os"
 	"os/signal"
 	"syscall"
 	"time"
 )
 
 func main() {
+	dryRun := flag.Bool("dry-run", false, "fetch one discovery page with -adapter, print the mapped records as JSON and exit without touching the database")
+	dryAdapter := flag.String("adapter", "", "adapter name for -dry-run (e.g. dmm)")
+	dryURL := flag.String("url", "", "discovery URL for -dry-run (default: the adapter's seeded start URL, if it has one)")
+	flag.Parse()
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
+	registry := newRegistry()
+	if *dryRun {
+		if e := dryRunCatalog(ctx, os.Stdout, registry, *dryAdapter, *dryURL); e != nil {
+			log.Fatal(e)
+		}
+		return
+	}
 	s, e := store.Open(ctx)
 	if e != nil {
 		log.Fatal(e)
 	}
 	defer s.Close()
-	registry := catalog.NewRegistry()
-	if e := registry.Register(catalog.NewJAVDatabaseAdapter()); e != nil {
-		log.Fatal(e)
-	}
-	if e := registry.Register(catalog.NewXCITYAdapter()); e != nil {
-		log.Fatal(e)
-	}
-	if e := registry.Register(catalog.NewJavGuruAdapter()); e != nil {
-		log.Fatal(e)
-	}
 	for ctx.Err() == nil {
 		if e := s.ReapExpired(ctx); e != nil {
 			log.Printf("reap expired jobs: %v", e)
@@ -90,6 +94,24 @@ func main() {
 	}
 }
 
+// newRegistry registers every catalog adapter. Adapters that need
+// credentials (dmm) are registered even when unconfigured; their jobs then
+// fail with a clear "not configured" error instead of crashing the worker.
+func newRegistry() *catalog.Registry {
+	registry := catalog.NewRegistry()
+	for _, a := range []catalog.Adapter{
+		catalog.NewJAVDatabaseAdapter(),
+		catalog.NewXCITYAdapter(),
+		catalog.NewJavGuruAdapter(),
+		catalog.NewDMMAdapter(),
+	} {
+		if e := registry.Register(a); e != nil {
+			log.Fatal(e)
+		}
+	}
+	return registry
+}
+
 func runCatalog(ctx context.Context, st *store.Store, registry *catalog.Registry, source model.Source) error {
 	adapter, ok := registry.Get(source.Adapter)
 	if !ok {
@@ -104,16 +126,29 @@ func runCatalog(ctx context.Context, st *store.Store, registry *catalog.Registry
 		return nil
 	}
 	policy.MaxRetryWait = maxInlineRetryWait
-	fetcher := catalog.NewFetcher(&http.Client{Timeout: 30 * time.Second}, policy)
+	redactor, _ := adapter.(catalog.Redactor)
+	client, err := catalog.HTTPClientFor(adapter, &http.Client{Timeout: 30 * time.Second})
+	if err != nil {
+		// Not configured (e.g. DMM credentials missing): fail the job with a
+		// clear error; nothing was fetched.
+		return fmt.Errorf("source %d (%s): %w", source.ID, source.Adapter, err)
+	}
+	fetcher := catalog.NewFetcher(client, policy)
+	var sink catalog.RecordSink = st
+	if redactor != nil {
+		sink = catalog.RedactingSink{Sink: st, Redactor: redactor}
+	}
 	crawl := &catalog.Crawl{
 		SourceID:    source.ID,
 		StartURL:    source.URL,
 		Adapter:     adapter,
 		Fetcher:     fetcher,
 		Checkpoints: store.CatalogCheckpoints{S: st},
-		Sink:        st,
+		Sink:        sink,
 	}
 	res, err := crawl.Run(ctx)
+	// Credentials must never reach job errors, block reasons or logs.
+	err = catalog.SanitizeError(err, redactor)
 	// Usage and block state are recorded even if the job context was cancelled.
 	bg, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()

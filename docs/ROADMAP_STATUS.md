@@ -52,7 +52,7 @@
 - [x] Jav.Guru
 - [ ] XSList（VPN/授权条件确认后启用）
 - [ ] JAVLibrary（VPN/授权条件确认后启用）
-- [ ] DMM/FANZA 官方目录或 Affiliate API
+- [ ] DMM/FANZA 官方目录或 Affiliate API（`dmm` adapter 已实现：ItemList digital/videoa + ActressSearch，来源默认停用；待配置 `DMM_API_ID`/`DMM_AFFILIATE_ID` 后先跑 `go run ./cmd/scraper -dry-run -adapter dmm` 用真实响应核对字段，再启用）
 - [ ] 厂商目录 adapter
 - [ ] JavDB、IAFD、ThePornDB、javinfo 交叉验证 adapter
 
