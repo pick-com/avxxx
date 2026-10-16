@@ -99,6 +99,29 @@ function ShellFrame() {
     return () => document.removeEventListener('keydown', onKey);
   }, [recs, immersive, location.pathname, navigate]);
 
+  // / focuses the search box (YouTube), from any page — the video page too —
+  // but never while typing, with a modifier, in a dialog or in fullscreen.
+  // Phones have no box in the bar: / opens /search (it focuses its own box).
+  // Esc in the box blurs it (SearchBox).
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key !== '/' || event.defaultPrevented || event.ctrlKey || event.metaKey || event.altKey) return;
+      const target = event.target instanceof HTMLElement ? event.target : null;
+      if (target && (target.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(target.tagName))) return;
+      if (target?.closest('[role="dialog"]') || document.fullscreenElement) return;
+      event.preventDefault();
+      const box = Array.from(document.querySelectorAll<HTMLInputElement>('form[role="search"] input')).find(el => el.getClientRects().length > 0);
+      if (box) {
+        box.focus();
+        box.select();
+      } else {
+        navigate('/search');
+      }
+    };
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, [navigate]);
+
   // The overlay closes on navigation.
   useEffect(() => setMode(m => (m === 'open' ? 'auto' : m)), [location.pathname, location.search]);
 
