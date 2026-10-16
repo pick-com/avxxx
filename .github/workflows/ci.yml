@@ -1,0 +1,106 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  go:
+    name: Go build, vet, unit tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: go build
+        run: go build ./...
+      - name: go vet
+        run: go vet ./...
+      - name: go test
+        run: go test ./...
+      - name: gofmt (warning only)
+        run: |
+          unformatted="$(gofmt -l . | grep -v '^web/' || true)"
+          if [ -n "$unformatted" ]; then
+            {
+              echo "### gofmt: unformatted files (warning, not failing)"
+              echo
+              echo '```'
+              echo "$unformatted"
+              echo '```'
+              echo
+              echo 'Run `gofmt -w <file>` to fix.'
+            } >> "$GITHUB_STEP_SUMMARY"
+            while IFS= read -r f; do
+              echo "::warning file=${f}::File is not gofmt-formatted"
+            done <<< "$unformatted"
+          else
+            echo "### gofmt: all files formatted" >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+  integration:
+    name: Go integration tests (Postgres 17)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: avxxx_test
+          POSTGRES_PASSWORD: avxxx_test
+          POSTGRES_DB: avxxx_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U avxxx_test -d avxxx_test"
+          --health-interval 2s
+          --health-timeout 3s
+          --health-retries 30
+    env:
+      # Throwaway service-container database; integration tests drop the public schema.
+      AVXXX_TEST_DATABASE_URL: postgres://avxxx_test:avxxx_test@127.0.0.1:5432/avxxx_test?sslmode=disable
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: go test (integration)
+        run: go test ./... -run Integration -count=1
+
+  web:
+    name: Web build
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: web
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          # Vite 7 requires Node ^20.19 || >=22.12; 24 is the active LTS.
+          node-version: 24
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - name: npm ci
+        run: npm ci
+      - name: npm run build
+        run: npm run build
