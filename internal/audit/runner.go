@@ -17,11 +17,10 @@ const (
 // stubNotes documents why each stub rule is not applicable yet. They still
 // get a nightly_runs row so the dashboard shows all rules.
 var stubNotes = map[Rule]string{
-	RuleSourceHealth: "needs playback probe results / play_error events (PRD 5.2); no source health data is stored yet",
-	RuleWatermark:    "needs frame sampling of self-hosted media; no media pipeline output is stored yet",
-	RuleSubtitles:    "needs subtitle tracks per release; no subtitle table exists yet",
-	RuleScreenshots:  "needs screenshot/chapter assets per release; media_assets has no screenshot asset type populated yet",
-	RuleSEO:          "needs sitemap / search-console coverage data; not collected yet",
+	RuleWatermark:   "needs frame sampling of self-hosted media; no media pipeline output is stored yet",
+	RuleSubtitles:   "needs subtitle tracks per release; no subtitle table exists yet",
+	RuleScreenshots: "needs screenshot/chapter assets per release; media_assets has no screenshot asset type populated yet",
+	RuleSEO:         "needs sitemap / search-console coverage data; not collected yet",
 	RuleStats: "no cached per-performer works_count / latest_release_date columns exist: performer lists compute them " +
 		"at query time (store.PerformerPage); rebuild lands with performer_stats (tech plan 3.13)",
 }
@@ -119,6 +118,8 @@ func (r *Runner) runRule(ctx context.Context, rule Rule, start time.Time) (ruleO
 		return r.ruleMeta(ctx, start)
 	case RuleTitle:
 		return r.ruleTitle(ctx)
+	case RuleSourceHealth:
+		return r.ruleSource(ctx, start)
 	}
 	if note, ok := stubNotes[rule]; ok {
 		return ruleOutcome{notApplicable: true, detail: map[string]any{"note": note}}, nil
@@ -317,6 +318,39 @@ func (r *Runner) ruleTitle(ctx context.Context) (ruleOutcome, error) {
 	out.detail["skipped_blank"] = skipped
 	out.detail["truncated"] = len(fields) >= limit
 	return out, nil
+}
+
+// ---------------------------------------------------------------- R-SOURCE
+
+// ruleSource keeps one open issue per playback source the source health job
+// degraded or disabled (it opens them as it changes status; this pass
+// re-raises dismissed-then-changed findings and resolves sources that
+// recovered or were re-enabled by an admin).
+func (r *Runner) ruleSource(ctx context.Context, start time.Time) (ruleOutcome, error) {
+	facts, hasRuns, err := r.Store.SourceHealthIssues(ctx)
+	if err != nil {
+		return ruleOutcome{}, err
+	}
+	if !hasRuns {
+		return ruleOutcome{notApplicable: true, detail: map[string]any{"note": "the source_health job has not recorded a run yet"}}, nil
+	}
+	out := ruleOutcome{checked: len(facts), detail: map[string]any{}}
+	byStatus := map[string]int{}
+	for _, f := range facts {
+		res, err := r.Store.OpenIssue(ctx, SourceIssue(f, start))
+		if err != nil {
+			return out, err
+		}
+		if res != IssueSuppressed {
+			out.issues++
+			byStatus[f.Status]++
+		}
+	}
+	resolved, err := r.Store.ResolveStale(ctx, RuleSourceHealth, start)
+	out.fixed = resolved
+	out.detail["by_status"] = byStatus
+	out.detail["resolved_stale"] = resolved
+	return out, err
 }
 
 // ---------------------------------------------------------------- inbound

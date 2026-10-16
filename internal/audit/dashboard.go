@@ -49,6 +49,7 @@ type Dashboard struct {
 	IdentityCandidatesOpen int64                `json:"identity_candidates_open"`
 	ConflictsOpen          int64                `json:"conflicts_open"`
 	CatalogHealth          CatalogHealth        `json:"catalog_health"`
+	SourceHealth           SourceHealthSummary  `json:"source_health"`
 }
 
 // NewDashboard returns a Dashboard with every map initialized.
@@ -62,6 +63,8 @@ func NewDashboard(now time.Time) Dashboard {
 	d.Issues.ByRuleSeverity = map[string]map[string]int64{}
 	d.Jobs = map[string]JobCounts{}
 	d.NightlyRuns = []Run{}
+	d.SourceHealth.ByBand = map[string]int64{BandSevere: 0, BandDegraded: 0, BandHealthy: 0, BandExcellent: 0, BandInsufficient: 0}
+	d.SourceHealth.ByStatus = map[string]int64{SourceActive: 0, SourceDegraded: 0, SourceDisabled: 0}
 	return d
 }
 

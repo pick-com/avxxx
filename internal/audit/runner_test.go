@@ -27,6 +27,9 @@ type fakeStore struct {
 	runs     []Run
 	nextID   int64
 	failOn   string // method name that returns an error
+
+	sourceFacts   []SourceHealthFacts
+	sourceHasRuns bool
 }
 
 func newFake(rels ...ReleaseFacts) *fakeStore {
@@ -142,6 +145,13 @@ func (f *fakeStore) FixTextField(_ context.Context, t TextField, v string) (bool
 func (f *fakeStore) RecordRun(_ context.Context, r Run) error {
 	f.runs = append(f.runs, r)
 	return nil
+}
+
+func (f *fakeStore) SourceHealthIssues(context.Context) ([]SourceHealthFacts, bool, error) {
+	if err := f.fail("SourceHealthIssues"); err != nil {
+		return nil, false, err
+	}
+	return f.sourceFacts, f.sourceHasRuns, nil
 }
 
 func (f *fakeStore) open(rule Rule) []*Issue {

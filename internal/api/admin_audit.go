@@ -2,6 +2,7 @@ package api
 
 import (
 	"avxxx/internal/audit"
+	"avxxx/internal/store"
 	"context"
 	"encoding/json"
 	"errors"
@@ -18,6 +19,7 @@ type auditAdmin interface {
 	DismissAuditIssue(ctx context.Context, id int64, note string) error
 	EnqueueAudit(ctx context.Context) (jobID int64, enqueued bool, err error)
 	AdminDashboard(ctx context.Context) (audit.Dashboard, error)
+	SourceHealthList(ctx context.Context, f audit.SourceHealthFilter) ([]audit.SourceHealthItem, string, error)
 }
 
 func (srv *Server) adminAuditRoutes() []route {
@@ -26,6 +28,7 @@ func (srv *Server) adminAuditRoutes() []route {
 		{"POST /api/admin/audit/issues/{id}/dismiss", srv.admin(srv.dismissAuditIssue)},
 		{"POST /api/admin/audit/run", srv.admin(srv.runAudit)},
 		{"GET /api/admin/dashboard", srv.admin(srv.dashboard)},
+		{"GET /api/admin/playback-sources/health", srv.admin(srv.sourceHealth)},
 	}
 }
 
@@ -94,4 +97,29 @@ func (srv *Server) runAudit(w http.ResponseWriter, r *http.Request) {
 func (srv *Server) dashboard(w http.ResponseWriter, r *http.Request) {
 	v, err := srv.audit.AdminDashboard(r.Context())
 	reply(w, v, err)
+}
+
+// sourceHealth lists playback sources by health, worst first (never-scored
+// sources last): ?band=severe|degraded|healthy|excellent|insufficient_data
+// &trend=N (runs per source, default 12, max 144)&limit=&cursor=.
+func (srv *Server) sourceHealth(w http.ResponseWriter, r *http.Request) {
+	q := r.URL.Query()
+	f := audit.SourceHealthFilter{Band: strings.TrimSpace(q.Get("band")), Cursor: strings.TrimSpace(q.Get("cursor"))}
+	if f.Band != "" && !audit.ValidSourceBand(f.Band) {
+		reply(w, nil, badRequest("band must be severe, degraded, healthy, excellent or insufficient_data", nil))
+		return
+	}
+	limit, err := limitParam(q)
+	if err != nil {
+		reply(w, nil, err)
+		return
+	}
+	trend, err := intParam(q, "trend", store.MaxHealthTrend)
+	if err != nil {
+		reply(w, nil, err)
+		return
+	}
+	f.Limit, f.Trend = limit, trend
+	items, next, err := srv.audit.SourceHealthList(r.Context(), f)
+	reply(w, page(items, next), err)
 }

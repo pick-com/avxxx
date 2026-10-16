@@ -28,7 +28,7 @@ const (
 	RuleMeta         Rule = "R-META"       // C: missing metadata (PRD 6.4.4)
 	RuleTitle        Rule = "R-TITLE"      // E: 繁简与标题 – whitespace normalization
 	RuleStats        Rule = "R-STATS"      // G: statistics rebuild
-	RuleSourceHealth Rule = "R-SOURCE"     // A: source health (stub)
+	RuleSourceHealth Rule = "R-SOURCE"     // A: playback source health (sourcehealth.go)
 	RuleWatermark    Rule = "R-WATERMARK"  // B: watermark (stub)
 	RuleSubtitles    Rule = "R-SUBTITLE"   // D: subtitles (stub)
 	RuleScreenshots  Rule = "R-SCREENSHOT" // F: screenshots (stub)
@@ -175,4 +175,9 @@ type Store interface {
 	FixTextField(ctx context.Context, f TextField, value string) (bool, error)
 	// RecordRun inserts a nightly_runs row.
 	RecordRun(ctx context.Context, r Run) error
+	// SourceHealthIssues returns the playback sources that are degraded or
+	// disabled with the source health job (actor HealthActor) as the author
+	// of their latest status change, with their latest scored run. hasRuns
+	// is false while the source health job has never recorded a run.
+	SourceHealthIssues(ctx context.Context) (facts []SourceHealthFacts, hasRuns bool, err error)
 }

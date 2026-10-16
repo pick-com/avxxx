@@ -87,6 +87,7 @@ var expectedRoutes = []string{
 	"DELETE /api/admin/i18n/glossary/{id}",
 	"GET /api/admin/i18n/ui",
 	"PUT /api/admin/i18n/ui/{lang}/{key}",
+	"GET /api/admin/playback-sources/health",
 }
 
 var (
