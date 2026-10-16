@@ -29,6 +29,15 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
+	// Playback source health (tech plan 3.3) is enqueued once per
+	// SOURCE_HEALTH_EVERY slot (default 10m, aligned to the clock); the
+	// cmd/audit worker runs it.
+	healthEvery := 10 * time.Minute
+	if v := os.Getenv("SOURCE_HEALTH_EVERY"); v != "" {
+		if healthEvery, err = time.ParseDuration(v); err != nil || healthEvery < time.Minute {
+			log.Fatalf("invalid SOURCE_HEALTH_EVERY %q: want a duration of at least 1m", v)
+		}
+	}
 	interval := 60 * time.Second
 	for ctx.Err() == nil {
 		slot := audit.LastSlot(time.Now(), auditHour, auditMinute)
@@ -36,6 +45,9 @@ func main() {
 			log.Printf("enqueue nightly audit: %v", err)
 		} else if ok {
 			log.Printf("enqueued nightly audit for %s", slot.Format(time.RFC3339))
+		}
+		if _, err := s.EnqueueKindSince(ctx, audit.JobKindSourceHealth, time.Now().Truncate(healthEvery)); err != nil {
+			log.Printf("enqueue source health: %v", err)
 		}
 		n, err := s.EnqueueDue(ctx)
 		if err != nil {
