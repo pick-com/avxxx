@@ -8,30 +8,11 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
-	"os"
 	"slices"
 	"strings"
 	"testing"
 	"time"
 )
-
-// scopedCrossCheckStore limits DueCrossChecks to this test's releases, so
-// releases other integration tests leave behind are never looked up.
-type scopedCrossCheckStore struct {
-	*Store
-	ids map[int64]bool
-}
-
-func (s scopedCrossCheckStore) DueCrossChecks(ctx context.Context, sourceID int64, now time.Time, limit int, exclude []int64) ([]crosscheck.Candidate, error) {
-	all, err := s.Store.DueCrossChecks(ctx, sourceID, now, 100000, exclude)
-	var out []crosscheck.Candidate
-	for _, c := range all {
-		if s.ids[c.ReleaseID] && len(out) < limit {
-			out = append(out, c)
-		}
-	}
-	return out, err
-}
 
 // TestThePornDBCrossCheckIntegration checks migration 032 (disabled
 // third_party_api source behind the license gate, conservative policy,
@@ -39,14 +20,13 @@ func (s scopedCrossCheckStore) DueCrossChecks(ctx context.Context, sourceID int6
 // third_party_api source (attach only, fill missing fields, never override a
 // higher tier, never open a conflict alone, credits only for uncredited
 // releases and existing performers, ThePornDB performer ids) and one
-// cross-check run end to end against a fake API. Skipped unless
+// cross-check run end to end against a fake API. It runs in its own database
+// (openIsolatedTestDB): it asserts on the migration-seeded ThePornDB source,
+// enables it, and records ThePornDB performer ids and run logs, none of which
+// may leak into, or be polluted by, other integration tests. Skipped unless
 // AVXXX_TEST_DATABASE_URL is set.
 func TestThePornDBCrossCheckIntegration(t *testing.T) {
-	dsn := os.Getenv("AVXXX_TEST_DATABASE_URL")
-	if dsn == "" {
-		t.Skip("AVXXX_TEST_DATABASE_URL not set")
-	}
-	t.Setenv("DATABASE_URL", dsn)
+	openIsolatedTestDB(t, "tpdb")
 	ctx := context.Background()
 	for i := 0; i < 2; i++ { // the second Open re-applies every migration
 		s, err := Open(ctx)
@@ -76,7 +56,12 @@ func TestThePornDBCrossCheckIntegration(t *testing.T) {
 		return *v
 	}
 	sfx := fmt.Sprint(time.Now().UnixNano())
-	num := sfx[len(sfx)-5:]
+	// The code number must not start with a zero: ThePornDBCode canonicalizes
+	// "TPB-01234" to "TPB-1234", whose slug is not the release's, and the
+	// runner then reports the match as ambiguous by design. (The old
+	// sfx[len(sfx)-5:] was one of "00000".."99000" on macOS, whose clock has
+	// microsecond resolution, so one run in ten failed with Ambiguous:2.)
+	const num = "51234"
 
 	// ---- Seed: one disabled third_party_api source behind the license gate.
 	var tpdbID int64
@@ -184,7 +169,7 @@ func TestThePornDBCrossCheckIntegration(t *testing.T) {
 	}))
 	defer api.Close()
 	u, _ := url.Parse(api.URL)
-	runner := &crosscheck.Runner{Store: scopedCrossCheckStore{Store: s, ids: map[int64]bool{idA: true, idB: true, idC: true}},
+	runner := &crosscheck.Runner{Store: s,
 		Adapters:   []catalog.LookupAdapter{catalog.NewThePornDBAdapterWith(token, u.Host)},
 		HTTPClient: api.Client(), UserAgent: "avxxx-integration (+ops@example.test)"}
 	// Still disabled and unreviewed: nothing happens.
@@ -202,10 +187,6 @@ func TestThePornDBCrossCheckIntegration(t *testing.T) {
 	must(err)
 	_, err = s.Exec(ctx, `UPDATE source_crawl_policies SET min_request_interval=interval '0' WHERE source_id=$1`, tpdbID)
 	must(err)
-	t.Cleanup(func() {
-		_, _ = s.Exec(context.Background(), `UPDATE sources SET enabled=false,terms_reviewed_at=NULL,terms_reviewed_by=NULL WHERE id=$1`, tpdbID)
-		_, _ = s.Exec(context.Background(), `UPDATE source_crawl_policies SET min_request_interval=interval '2 seconds' WHERE source_id=$1`, tpdbID)
-	})
 	rep, err = runner.Run(ctx)
 	must(err)
 	if ar := rep.Adapters[0]; ar.Checked != 2 || ar.Found != 2 || ar.Requests != 2 || ar.Stopped != "" {
