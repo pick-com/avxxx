@@ -400,9 +400,17 @@ export function Player({slug, releaseId, title, resumeAt, startAt, onBack, theat
     [slug, status, title, refreshLater],
   );
 
+  // Leaving the page (other tab, minimised window, app in the background)
+  // pauses playback, picture-in-picture included; it does not resume on
+  // return. Only casting keeps playing: the picture is on the other device.
+  const keepPlayingHidden = useRef(false);
+  keepPlayingHidden.current = casting;
   useEffect(() => {
     const onVisibility = () => {
-      if (document.visibilityState === 'hidden') save(true);
+      if (document.visibilityState !== 'hidden') return;
+      save(true);
+      const video = videoRef.current;
+      if (video && !video.paused && !keepPlayingHidden.current) video.pause();
     };
     const onPageHide = () => save(true);
     document.addEventListener('visibilitychange', onVisibility);
