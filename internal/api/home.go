@@ -183,8 +183,8 @@ func writeCachedJSON(w http.ResponseWriter, body []byte, cacheControl string) {
 
 // ---- request parameters ----
 
-// requestRegion is ?region= or the CDN's CF-IPCountry header ("" when
-// unknown; "XX" / "T1" from Cloudflare mean unknown / Tor).
+// requestRegion is ?region=, else the visitor's country from CF-IPCountry
+// or GEOIP_HEADER ("" when unknown; region.go).
 func requestRegion(r *http.Request) (string, error) {
 	if v := strings.TrimSpace(r.URL.Query().Get("region")); v != "" {
 		reg, ok := homeops.NormalizeRegion(v)
@@ -193,11 +193,7 @@ func requestRegion(r *http.Request) (string, error) {
 		}
 		return reg, nil
 	}
-	reg, ok := homeops.NormalizeRegion(r.Header.Get("CF-IPCountry"))
-	if !ok || reg == "XX" {
-		return "", nil
-	}
-	return reg, nil
+	return headerRegion(r), nil
 }
 
 // parseTimeParam accepts RFC 3339 or a YYYY-MM-DD date (UTC midnight).
@@ -371,7 +367,7 @@ func (srv *Server) publicHomeSlots(w http.ResponseWriter, r *http.Request) {
 		reply(w, nil, err)
 		return
 	}
-	w.Header().Add("Vary", "CF-IPCountry")
+	varyRegion(w)
 	region, err := requestRegion(r)
 	if err != nil {
 		reply(w, nil, err)
@@ -468,7 +464,7 @@ func (srv *Server) publicAnnouncements(w http.ResponseWriter, r *http.Request) {
 		reply(w, nil, err)
 		return
 	}
-	w.Header().Add("Vary", "CF-IPCountry")
+	varyRegion(w)
 	region, err := requestRegion(r)
 	if err != nil {
 		reply(w, nil, err)

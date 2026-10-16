@@ -85,7 +85,8 @@ type playConfigResponse struct {
 var regionCode = regexp.MustCompile(`^[A-Za-z]{2}$`)
 
 // servePlayConfig implements GET /api/releases/{slug}/play-config
-// (tech plan 3.3). Query: region (ISO 3166-1 alpha-2), quality (preferred
+// (tech plan 3.3). Query: region (ISO 3166-1 alpha-2; default the
+// CF-IPCountry / GEOIP_HEADER country, region.go), quality (preferred
 // max height, e.g. 1080). A valid bearer token adds resume information and
 // orders the user's 默认片源 (preferred provider) first within its group; a
 // missing or invalid token is not an error.
@@ -96,6 +97,11 @@ func servePlayConfig(w http.ResponseWriter, r *http.Request, ps playbackStore) {
 		writePlayJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid region"})
 		return
 	}
+	if region == "" {
+		// Browser requests: the CDN / proxy country header (region.go).
+		region = headerRegion(r)
+	}
+	varyRegion(w)
 	quality := 0
 	if v := strings.TrimSuffix(strings.TrimSpace(q.Get("quality")), "p"); v != "" {
 		n, err := strconv.Atoi(v)

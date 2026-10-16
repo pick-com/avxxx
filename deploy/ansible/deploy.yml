@@ -66,6 +66,8 @@
           WEB_API_PROXY={{ web_api_proxy | default('true') }}
           # Proxies whose X-Forwarded-For the API trusts; empty = TCP peer only.
           TRUSTED_PROXIES={{ trusted_proxies | default('') }}
+          # Country header a trusted proxy / CDN sets besides CF-IPCountry; empty = none.
+          GEOIP_HEADER={{ geoip_header | default('') }}
           # Catalog image storage (docs/DATA_RETENTION_AND_IMAGES.md); empty = images off.
           S3_ENDPOINT={{ s3_endpoint | default('') }}
           S3_BUCKET={{ s3_bucket | default('avxxx-media') }}

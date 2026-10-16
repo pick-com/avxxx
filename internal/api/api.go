@@ -180,6 +180,7 @@ func Register(mux *http.ServeMux, s *store.Store, mediaHandler *media.Handler) {
 	srv.adminTokenDisabled, _ = strconv.ParseBool(strings.TrimSpace(os.Getenv("ADMIN_TOKEN_DISABLED")))
 	srv.adminSecureCookie = strings.HasPrefix(strings.TrimSpace(os.Getenv("BASE_URL")), "https://")
 	srv.ageGate = newAgeGate(os.Getenv)
+	setGeoIPHeader(os.Getenv(GeoIPHeaderEnv))
 	if s != nil {
 		srv.auth = s
 		srv.adminAuth = s

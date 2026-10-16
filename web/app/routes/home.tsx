@@ -2,6 +2,7 @@ import {Link} from '../lib/nav';
 import {data, useLoaderData, type LoaderFunctionArgs, type MetaFunction} from 'react-router';
 import {isGated} from '../lib/ageGate.server';
 import {serverApi} from '../lib/api.server';
+import {withRegion} from '../lib/region.server';
 import {routeLang} from '../lib/langs';
 import {compact, pageUrl, rootMeta, seoMeta, type SeoHandle} from '../lib/seo';
 import {ReleaseCard, PerformerChip, SectionHeader} from '../components/Cards';
@@ -42,10 +43,8 @@ export async function loader({params, request}: LoaderFunctionArgs) {
   if (isGated(request)) return {lang} satisfies HomeLoad;
   const opts = {lang, signal: request.signal};
   type Items<T> = {items: T[] | null; next_cursor?: string | null};
-  // Region-targeted slots: the visitor's country from the CDN (CF-IPCountry).
-  const region = (request.headers.get('cf-ipcountry') ?? '').trim().toUpperCase();
-  const slotQuery = new URLSearchParams({lang});
-  if (/^[A-Z]{2}$/.test(region) && region !== 'XX') slotQuery.set('region', region);
+  // Region-targeted slots: the visitor's country (CF-IPCountry / GEOIP_HEADER, lib/region.server).
+  const slotQuery = withRegion(new URLSearchParams({lang}), request);
   const [releases, performers, tags, slots, short] = await Promise.all([
     serverApi<Items<Release>>('releases?limit=10', opts).then(d => d.items ?? [], () => undefined),
     serverApi<Items<PerformerListItem>>('performers?sort=works&limit=12', opts).then(toPage, () => undefined),

@@ -25,6 +25,7 @@ services:
       API_ADDR: 0.0.0.0:8080
       # Reverse proxies whose X-Forwarded-For is trusted (CIDRs); empty = TCP peer.
       TRUSTED_PROXIES: ${TRUSTED_PROXIES:-}
+      GEOIP_HEADER: ${GEOIP_HEADER:-}
       # Break-glass bearer for /api/admin (scripts, emergencies; every use is
       # logged with the hashed IP). Admins sign in with their own accounts
       # (docker compose run --rm -it api admin create ...; docs/DEPLOYMENT.md 2.7).
@@ -88,6 +89,7 @@ services:
       PUBLIC_BASE_URL: ${PUBLIC_BASE_URL:-${BASE_URL:-}}
       # Verifies the 18+ gate cookie before rendering (same value as the api).
       AGE_GATE_KEY: ${AGE_GATE_KEY:-}
+      GEOIP_HEADER: ${GEOIP_HEADER:-}
       # true: the web server also forwards /api/* (single-upstream setups).
       # Prefer routing /api/ to the API in the reverse proxy.
       API_PROXY: ${WEB_API_PROXY:-true}
