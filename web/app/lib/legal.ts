@@ -4,6 +4,14 @@
 // TODO(tech plan 3.13 legal_documents): load versioned, multi-language texts
 // from the API (history, English version, effective dates).
 
+/**
+ * Version of the 用户协议 users accept (terms_acceptances). Bump it when the
+ * terms change: signed-in users are asked to accept again. Superseded by
+ * GET /api/legal/terms/current-version where that backend exists
+ * (lib/account.ts currentTermsVersion).
+ */
+export const TERMS_VERSION = '2026-10-draft';
+
 export type LegalSection = {id: string; title: string; body: string};
 export type LegalDoc = {slug: string; title: string; summary: string[]; sections: LegalSection[]};
 

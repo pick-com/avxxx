@@ -31,6 +31,13 @@
           SMTP_USER={{ smtp_user | default('') }}
           SMTP_PASSWORD={{ smtp_password | default('') }}
           MAIL_FROM={{ mail_from | default('') }}
+          # Google / Apple sign-in; empty = buttons hidden.
+          GOOGLE_CLIENT_ID={{ google_client_id | default('') }}
+          GOOGLE_CLIENT_SECRET={{ google_client_secret | default('') }}
+          APPLE_CLIENT_ID={{ apple_client_id | default('') }}
+          APPLE_TEAM_ID={{ apple_team_id | default('') }}
+          APPLE_KEY_ID={{ apple_key_id | default('') }}
+          APPLE_PRIVATE_KEY={{ apple_private_key | default('') }}
           CATALOG_CONTACT={{ catalog_contact | default('') }}
           DMM_API_ID={{ dmm_api_id | default('') }}
           DMM_AFFILIATE_ID={{ dmm_affiliate_id | default('') }}

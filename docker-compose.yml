@@ -30,6 +30,14 @@ services:
       # Web Push: public key only; empty disables the subscribe routes.
       VAPID_PUBLIC_KEY: ${VAPID_PUBLIC_KEY:-}
       PUSH_ALLOWED_HOSTS: ${PUSH_ALLOWED_HOSTS:-}
+      # Google / Apple sign-in (empty = hidden); BASE_URL builds the redirect URI.
+      BASE_URL: ${BASE_URL:-}
+      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
+      GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:-}
+      APPLE_CLIENT_ID: ${APPLE_CLIENT_ID:-}
+      APPLE_TEAM_ID: ${APPLE_TEAM_ID:-}
+      APPLE_KEY_ID: ${APPLE_KEY_ID:-}
+      APPLE_PRIVATE_KEY: ${APPLE_PRIVATE_KEY:-}
       # Prometheus /metrics: compose network only (no published port).
       METRICS_ADDR: 0.0.0.0:9090
       LOG_FORMAT: ${LOG_FORMAT:-json}

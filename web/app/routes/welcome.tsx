@@ -7,6 +7,7 @@ import {CardGridSkeleton, ErrorBanner} from '../components/States';
 import {Switch} from '../components/Switch';
 import {listPerformerPage, listTags, type LangCode, type NotifyMode} from '../lib/api';
 import {useAuth} from '../lib/auth';
+import {getInterests, saveInterests} from '../lib/account';
 import {usePush, type PushState} from '../lib/push';
 import {pushStatusText} from '../components/PushOptIn';
 import {formatCount} from '../lib/format';
@@ -24,9 +25,9 @@ export const meta = () => [{title: t('title.welcome')}];
 // sends new accounts here). Three skippable steps:
 //   1. 语言与外观 → PATCH /api/me/settings (ui_lang, content_lang, theme).
 //      Phones replace it with 允许新作推送 (notify_prefs.*.push).
-//   2. 选 3 个以上类型 → kept in this browser only.
-//      TODO(tech plan 3.13 user_interests): save interest tags server-side and
-//      use them to suggest performers.
+//   2. 选 3 个以上类型 → PUT /api/me/interests (user_interests) and this
+//      browser's copy; finishing marks users.onboarded_at.
+//      TODO(recs): use the interests to suggest performers / cold-start recs.
 //   3. 关注演员 → PUT /api/me/follows/{slug}; suggestions are the performers
 //      with the most works (GET /api/performers?sort=works).
 
@@ -58,6 +59,8 @@ export default function Welcome() {
     } catch {
       /* shown once per registration anyway */
     }
+    // Server copy of the interests and the onboarded mark (user_interests).
+    if (status === 'user') void saveInterests(tags, true).catch(() => {});
     navigate(next, {replace: true});
   };
 
@@ -70,6 +73,13 @@ export default function Welcome() {
     {title: t('welcome.followTitle'), sub: t('welcome.followSub'), body: null},
   ];
   const [tags, setTags] = useState<string[]>([]);
+  // Interests picked before (another device, or an earlier visit) preselect step 2.
+  useEffect(() => {
+    if (status !== 'user') return;
+    const controller = new AbortController();
+    getInterests(controller.signal).then(saved => setTags(cur => (cur.length === 0 ? saved : cur)), () => {});
+    return () => controller.abort();
+  }, [status]);
   const current = steps[step];
   const last = step === steps.length - 1;
   const canNext = step !== 1 || tags.length >= MIN_TAGS;
@@ -81,6 +91,7 @@ export default function Welcome() {
       } catch {
         /* not kept */
       }
+      if (status === 'user') void saveInterests(tags, false).catch(() => {});
     }
     if (last) finish();
     else setStep(s => s + 1);

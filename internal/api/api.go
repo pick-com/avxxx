@@ -7,6 +7,7 @@ import (
 	"avxxx/internal/media"
 	"avxxx/internal/medialink"
 	"avxxx/internal/obs"
+	"avxxx/internal/oidc"
 	"avxxx/internal/store"
 	"crypto/subtle"
 	"encoding/json"
@@ -95,6 +96,13 @@ type Server struct {
 	// adminToken is ADMIN_TOKEN, read once at construction. Empty disables
 	// every admin route (they all return 401).
 	adminToken string
+	// auth backs logout, password reset, OAuth and the /api/me account
+	// routes (auth.go); oidc holds the configured Google / Apple providers
+	// (GOOGLE_* / APPLE_*; empty = buttons hidden, routes 404). oauthHTTPS:
+	// the OAuth callback is https (BASE_URL), so the bind cookie is Secure.
+	auth       authStore
+	oidc       map[string]oidcProvider
+	oauthHTTPS bool
 }
 
 type route struct {
@@ -119,7 +127,19 @@ func Register(mux *http.ServeMux, s *store.Store, mediaHandler *media.Handler) {
 	} else {
 		srv.clientIP = ips
 	}
+	// cmd/api refuses to start on a partial GOOGLE_* / APPLE_* config;
+	// elsewhere it disables third-party sign-in.
+	if providers, err := oidc.FromEnv(os.Getenv); err != nil {
+		slog.Error("oauth config, Google / Apple sign-in disabled", "err", err)
+	} else {
+		srv.oidc = map[string]oidcProvider{}
+		for name, p := range providers {
+			srv.oidc[name] = p
+		}
+		srv.oauthHTTPS = strings.HasPrefix(strings.TrimSpace(os.Getenv("BASE_URL")), "https://")
+	}
 	if s != nil {
+		srv.auth = s
 		srv.push = s
 		srv.accounts = s
 		srv.identity = s
@@ -165,6 +185,7 @@ func (srv *Server) routes() []route {
 	var rs []route
 	rs = append(rs, srv.healthRoutes()...)
 	rs = append(rs, srv.accountRoutes()...)
+	rs = append(rs, srv.authRoutes()...)
 	rs = append(rs, srv.socialRoutes()...)
 	rs = append(rs, srv.notificationRoutes()...)
 	rs = append(rs, srv.pushRoutes()...)

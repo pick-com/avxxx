@@ -240,6 +240,10 @@ func (w *Worker) deliver(ctx context.Context, it store.OutboxItem) store.OutboxR
 	if age := w.now().Sub(it.CreatedAt); age > w.Opts.MaxAge {
 		return cancelled(fmt.Sprintf("stale: queued %s ago", age.Round(time.Minute)))
 	}
+	// Transactional account mail (account.go) ignores notify prefs.
+	if payloadKind(it.Payload) == store.OutboxKindPasswordReset {
+		return w.deliverPasswordReset(ctx, it)
+	}
 	p, err := ParsePayload(it.Payload)
 	if err != nil {
 		return failed(err.Error())

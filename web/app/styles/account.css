@@ -1,0 +1,128 @@
+/* ---------- Account: login extras, reset password, settings › 账号 ---------- */
+
+.auth-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.auth-check {
+  min-height: 44px;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 14px;
+  color: var(--text2);
+  cursor: pointer;
+}
+
+.auth-check input {
+  width: 18px;
+  height: 18px;
+  flex-shrink: 0;
+  accent-color: var(--accent);
+}
+
+.auth-check a {
+  color: var(--accent);
+}
+
+.auth-title {
+  margin: 0;
+  font-size: 22px;
+}
+
+.auth-sub {
+  margin: 0;
+  font-size: 14px;
+  line-height: 1.6;
+  color: var(--muted);
+}
+
+.form-ok {
+  margin: 0;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: var(--ok-bg);
+  color: var(--ok-fg);
+  font-size: 14px;
+  line-height: 1.6;
+}
+
+.sso-btn {
+  gap: 10px;
+}
+
+/* Settings › 账号 */
+
+.set-input {
+  min-height: 44px;
+  width: 100%;
+  max-width: 320px;
+  padding: 0 12px;
+  border-radius: 10px;
+  border: 1px solid var(--line2);
+  background: var(--surface2);
+  color: var(--text);
+  font-size: 15px;
+}
+
+.set-input:focus {
+  border-color: var(--accent);
+  outline: none;
+}
+
+.set-form {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.set-form-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.session-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.session-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 16px;
+  border-bottom: 1px solid var(--line);
+}
+
+.session-item:last-child {
+  border-bottom: 0;
+}
+
+.session-list:not(:empty) + .set-row {
+  border-top: 1px solid var(--line);
+}
+
+.session-badge {
+  margin-left: 6px;
+  padding: 1px 8px;
+  border-radius: 999px;
+  background: var(--ok-bg);
+  color: var(--ok-fg);
+  font-size: 11px;
+}
+
+@media (max-width: 767px) {
+  .set-input {
+    max-width: none;
+  }
+
+  .session-item {
+    padding: 10px 12px;
+  }
+}

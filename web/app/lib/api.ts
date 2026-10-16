@@ -758,6 +758,10 @@ export type UserSettings = {
   timezone: string;
   notify_prefs: Record<NotifyKind, Record<NotifyChannel, boolean>>;
   quiet_hours: {start: string; end: string} | null;
+  /** Migration 037; absent on older backends. */
+  notify_daily_cap?: number;
+  reservation_timing?: 'go_live' | 'day_before' | 'both';
+  personalize_recs?: boolean;
 };
 
 /** One release inside a (possibly merged, one-per-day) notification. */

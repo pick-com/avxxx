@@ -233,6 +233,27 @@ var expectedRoutes = []string{
 	"GET /api/me/search-history",
 	"POST /api/me/search-history",
 	"DELETE /api/me/search-history",
+	// Account and auth (auth.go).
+	"POST /api/auth/logout",
+	"POST /api/auth/password/forgot",
+	"POST /api/auth/password/reset",
+	"GET /api/auth/providers",
+	"POST /api/auth/oauth/{provider}/start",
+	"GET /api/auth/oauth/{provider}/callback",
+	"POST /api/auth/oauth/{provider}/callback",
+	"POST /api/auth/oauth/exchange",
+	"PATCH /api/me/profile",
+	"POST /api/me/password",
+	"GET /api/me/sessions",
+	"DELETE /api/me/sessions/{id}",
+	"POST /api/me/sessions/revoke-others",
+	"POST /api/me/terms",
+	"GET /api/me/identities",
+	"DELETE /api/me/identities/{provider}",
+	"GET /api/me/export",
+	"POST /api/me/deletion",
+	"GET /api/me/interests",
+	"PUT /api/me/interests",
 }
 
 var (
