@@ -116,7 +116,13 @@ func main() {
 	})
 	mux.HandleFunc("GET /api/releases/{slug}", func(w http.ResponseWriter, r *http.Request) {
 		v, e := s.ReleaseBySlug(r.Context(), r.PathValue("slug"))
-		reply(w, v, e)
+		if e != nil { reply(w, v, e); return }
+		payload := map[string]any{}
+		encoded, _ := json.Marshal(v)
+		_ = json.Unmarshal(encoded, &payload)
+		playback, playbackErr := s.ReleasePlayback(r.Context(), r.PathValue("slug"), "javtiful")
+		if playbackErr == nil { payload["playback"] = playback }
+		reply(w, payload, nil)
 	})
 	mux.HandleFunc("GET /api/releases/{slug}/performers", func(w http.ResponseWriter, r *http.Request) {
 		v, e := s.ReleasePerformers(r.Context(), r.PathValue("slug"))
