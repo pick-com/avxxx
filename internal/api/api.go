@@ -28,6 +28,9 @@ type Server struct {
 	social   socialStore // follows, reservations, watch-later, settings, notifications
 	// audit backs the admin audit and dashboard routes (admin_audit.go).
 	audit auditAdmin
+	// i18n backs content translations, glossary and UI strings (i18n.go,
+	// admin_i18n.go); nil serves catalog routes untranslated.
+	i18n i18nStore
 	// adminToken is ADMIN_TOKEN, read once at construction. Empty disables
 	// every admin route (they all return 401).
 	adminToken string
@@ -53,6 +56,7 @@ func Register(mux *http.ServeMux, s *store.Store, mediaHandler *media.Handler) {
 		srv.identity = s
 		srv.social = s
 		srv.audit = s
+		srv.i18n = s
 	}
 	for _, rt := range srv.routes() {
 		mux.HandleFunc(rt.pattern, rt.handler)
@@ -72,6 +76,7 @@ func (srv *Server) routes() []route {
 	rs = append(rs, srv.adminRoutes()...)
 	rs = append(rs, srv.eventRoutes()...)
 	rs = append(rs, srv.adminAuditRoutes()...)
+	rs = append(rs, srv.adminI18nRoutes()...)
 	return srv.followMerges(rs)
 }
 
