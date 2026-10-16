@@ -1,16 +1,16 @@
-import {useEffect, useState, type FormEvent} from 'react';
+import {useEffect, useState} from 'react';
 import {Link} from 'react-router';
+import {AdminBar, AdminTokenForm} from '../components/AdminChrome';
 import {ErrorBanner} from '../components/States';
-import {ThemeToggle} from '../components/TopBar';
 import {adminConflicts, adminIdentityCandidates, adminResolveConflict, tokens, type Conflict, type IdentityCandidate} from '../lib/api';
 
 export const meta = () => [{title: 'REEL · 数据审核'}];
 
 // Admin review queue, ported from the previous single-file client.
-// Uses only the admin token (never the user token).
-// TODO(tech plan 3.11): replace with the AdminNav / AdminDedupe / AdminAudit workbench.
+// Uses only the admin token (never the user token). Identity candidates are
+// decided on /admin/dedupe (AdminDedupe).
+// TODO(tech plan 3.11): replace with the AdminNav / AdminAudit workbench.
 export default function AdminReview() {
-  const [token, setToken] = useState('');
   const [conflicts, setConflicts] = useState<Conflict[]>([]);
   const [candidates, setCandidates] = useState<IdentityCandidate[]>([]);
   const [loaded, setLoaded] = useState(false);
@@ -33,18 +33,8 @@ export default function AdminReview() {
   };
 
   useEffect(() => {
-    const saved = tokens.admin();
-    if (saved) {
-      setToken(saved);
-      void load();
-    }
+    if (tokens.admin()) void load();
   }, []);
-
-  const submit = (event: FormEvent) => {
-    event.preventDefault();
-    tokens.setAdmin(token.trim() || null);
-    void load();
-  };
 
   const resolve = async (id: number, value: unknown) => {
     try {
@@ -57,28 +47,14 @@ export default function AdminReview() {
 
   return (
     <div className="admin">
-      <header className="admin-bar">
-        <strong>REEL · 管理审核</strong>
-        <span className="section-spacer" />
-        <ThemeToggle />
-        <Link to="/" className="btn btn-secondary btn-sm">
-          返回前台
-        </Link>
-      </header>
+      <AdminBar />
       <main className="admin-main">
         <p className="eyebrow">ADMIN · REVIEW QUEUE</p>
         <h1>数据审核</h1>
 
-        <section className="admin-card">
-          <h2>管理员令牌</h2>
-          <form className="admin-token" onSubmit={submit}>
-            <input type="password" value={token} onChange={e => setToken(e.target.value)} placeholder="ADMIN_TOKEN" aria-label="管理员令牌" autoComplete="off" />
-            <button type="submit" className="btn btn-primary" disabled={busy}>
-              {busy ? '加载中…' : '加载审核队列'}
-            </button>
-          </form>
+        <AdminTokenForm busy={busy} onSubmit={() => void load()} submitLabel="加载审核队列">
           {error && <ErrorBanner error={error.includes('需要登录') ? '管理员令牌无效或未设置' : error} onRetry={load} />}
-        </section>
+        </AdminTokenForm>
 
         <section className="admin-card">
           <h2>待处理字段冲突（{conflicts.length}）</h2>
@@ -113,7 +89,12 @@ export default function AdminReview() {
         </section>
 
         <section className="admin-card">
-          <h2>身份候选（{candidates.length}）</h2>
+          <div className="review-heading">
+            <h2>身份候选（{candidates.length}）</h2>
+            <Link to="/admin/dedupe" className="btn btn-secondary btn-sm">
+              去「重复与归并」处理
+            </Link>
+          </div>
           {candidates.length === 0 ? (
             <p className="muted">{loaded ? '暂无身份候选。' : '请先输入管理员令牌。'}</p>
           ) : (

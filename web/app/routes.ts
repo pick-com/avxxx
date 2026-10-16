@@ -15,4 +15,5 @@ export default [
   ]),
   route('login', 'routes/login.tsx'),
   route('admin/review', 'routes/admin-review.tsx'),
+  route('admin/dedupe', 'routes/admin-dedupe.tsx'),
 ] satisfies RouteConfig;

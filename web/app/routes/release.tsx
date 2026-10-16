@@ -1,14 +1,16 @@
-import {useEffect, useState} from 'react';
+import {useEffect, useState, type ReactNode} from 'react';
 import {Link, useLocation, useNavigate, useParams} from 'react-router';
 import {Avatar, ReleaseRow, SectionHeader} from '../components/Cards';
 import {Icon} from '../components/Icon';
 import {PerformerHoverCard, PerformerSheet} from '../components/PerformerPeek';
 import {Player} from '../components/Player';
 import {BlockSkeleton, CardGridSkeleton, EmptyState, ErrorBanner} from '../components/States';
-import {getFavorites, getPerformerReleases, getRelease, getReleasePerformers, getWatchHistory, setFavorite, type Performer, type Release} from '../lib/api';
+import {getFavorites, getPerformerReleases, getRelease, getReleasePerformers, getWatchHistory, setFavorite, type Performer, type ReleaseDetail} from '../lib/api';
 import {useAuth} from '../lib/auth';
 import {ageAt, formatDate, formatRuntime} from '../lib/format';
+import {discoverHref} from '../lib/releaseFilter';
 import {useAsync} from '../lib/useAsync';
+import {useCanonicalSlug} from '../lib/useCanonicalSlug';
 import {useMediaQuery} from '../lib/useMediaQuery';
 import type {ShellHandle} from './shell';
 
@@ -20,9 +22,10 @@ export const meta = () => [{title: 'REEL · 视频'}];
 // Omitted for lack of backend (never filled with sample data):
 // TODO(tech plan 3.13): 赞 / 踩, 稍后观看, 评论 (V1.1), 自动连播 switch.
 // TODO(tech plan 2.4 / 3.2 release_assets): 章节 · 截屏 strip.
-// TODO(tech plan 3.3 playback_sources): 片源 row with versions.
 // TODO(tech plan 3.5 GET /api/recs?slot=related): 相关推荐 / 同系列 tabs.
-// TODO: release tags and director are not returned by GET /api/releases/{slug}.
+// 片源 row and versions live in Player (GET play-config). Tags, director and
+// product codes come from the catalog-filters release detail and are simply
+// absent on older backends.
 export default function ReleasePage() {
   const {slug = ''} = useParams();
   const navigate = useNavigate();
@@ -41,6 +44,8 @@ export default function ReleasePage() {
   const release = detail.data?.[0];
   const performers = detail.data?.[1] ?? [];
   const resumeAt = history.data?.find(item => item.slug === slug)?.progress_seconds;
+
+  useCanonicalSlug('releases', slug, release?.slug);
 
   useEffect(() => {
     if (release) document.title = `${release.canonical_title} · REEL`;
@@ -135,26 +140,62 @@ export default function ReleasePage() {
   );
 }
 
-function ReleaseMeta({release}: {release: Release}) {
-  const rows: [string, string | undefined][] = [
+// release_identifiers.identifier_type values written by the ingest
+// (store.SaveCatalogRecord); any other type shows under 编号.
+const IDENTIFIER_LABELS: Record<string, string> = {
+  dvd_code: '番号',
+  content_id: '品番',
+};
+
+function ReleaseMeta({release}: {release: ReleaseDetail}) {
+  const rows: [string, ReactNode][] = [
     ['发行日期', formatDate(release.release_date)],
     ['时长', formatRuntime(release.runtime_minutes)],
-    ['片商', release.maker_name],
+    [
+      '片商',
+      release.maker_name ? (
+        <Link to={discoverHref({maker: release.maker_name})} className="meta-link">
+          {release.maker_name}
+        </Link>
+      ) : undefined,
+    ],
     ['发行商', release.label_name],
     ['系列', release.series_name],
+    ['导演', release.director_name || undefined],
   ];
+  // Product codes (catalog-filters backend); one row per identifier type.
+  const byType = new Map<string, string[]>();
+  for (const id of release.identifiers ?? []) {
+    if (!id?.value) continue;
+    const label = IDENTIFIER_LABELS[id.type] ?? '编号';
+    byType.set(label, [...(byType.get(label) ?? []), id.value]);
+  }
+  for (const [label, values] of byType) rows.push([label, <span className="mono">{Array.from(new Set(values)).join(' · ')}</span>]);
+
   const present = rows.filter(([, v]) => v);
-  if (present.length === 0) return null;
+  const tags = (release.tags ?? []).filter(t => t?.slug && t.name);
+  if (present.length === 0 && tags.length === 0) return null;
   return (
     <section className="info-card">
-      <dl className="meta-grid">
-        {present.map(([k, v]) => (
-          <div key={k} className="meta-item">
-            <dt>{k}</dt>
-            <dd>{v}</dd>
-          </div>
-        ))}
-      </dl>
+      {present.length > 0 && (
+        <dl className="meta-grid">
+          {present.map(([k, v]) => (
+            <div key={k} className="meta-item">
+              <dt>{k}</dt>
+              <dd>{v}</dd>
+            </div>
+          ))}
+        </dl>
+      )}
+      {tags.length > 0 && (
+        <div className="chip-row chip-row-wrap release-tags" aria-label="标签">
+          {tags.map(t => (
+            <Link key={t.slug} to={discoverHref({tag: t.slug})} className="chip chip-tag">
+              #{t.name}
+            </Link>
+          ))}
+        </div>
+      )}
     </section>
   );
 }

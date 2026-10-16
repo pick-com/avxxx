@@ -35,6 +35,8 @@ const paths = {
   unlock: 'M5 11h14v9H5zM8 11V8a4 4 0 017.5-2',
   cc: 'M3 5h18v14H3zM10 10a2.5 2.5 0 100 4M17 10a2.5 2.5 0 100 4',
   chevronDown: 'M6 9l6 6 6-6',
+  external: 'M14 4h6v6M20 4l-9 9M18 14v6H4V6h6',
+  undo: 'M9 14L4 9l5-5M4 9h11a5 5 0 010 10h-3',
   volume: 'M4 9h4l5-4v14l-5-4H4zM16 8a5 5 0 010 8',
   mute: 'M4 9h4l5-4v14l-5-4H4zM16 9l5 6M21 9l-5 6',
   brightness: 'M12 17a5 5 0 100-10 5 5 0 000 10zM12 2v2M12 20v2M2 12h2M20 12h2',
