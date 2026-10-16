@@ -115,6 +115,16 @@ func HashID(kind string, id int64) string {
 	return HashString(kind + ":" + strconv.FormatInt(id, 10))
 }
 
+// HashKeyed is the full-length (32 hex chars) keyed hash of kind:s, for
+// stored pseudonymous ids (consent_records.device_hash) where the 12-char
+// log hash would collide too often. Same key as HashID: stable across
+// restarts only when LOG_HASH_KEY is set.
+func HashKeyed(kind, s string) string {
+	m := hmac.New(sha256.New, hashKey)
+	m.Write([]byte(kind + ":" + s))
+	return hex.EncodeToString(m.Sum(nil))[:32]
+}
+
 // HashString is HashID for a string identifier.
 func HashString(s string) string {
 	m := hmac.New(sha256.New, hashKey)

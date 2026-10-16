@@ -736,12 +736,23 @@ func (e *AgeGateError) Error() string {
 // override_reason, closes the open R-AGE issue and is recorded. Every
 // transition writes a review_events row ('status_change').
 func (s *Store) TransitionRelease(ctx context.Context, id int64, t Transition, actor string) (TransitionResult, error) {
-	res := TransitionResult{ReleaseID: id, To: t.To}
 	tx, err := s.Begin(ctx)
+	if err != nil {
+		return TransitionResult{ReleaseID: id, To: t.To}, err
+	}
+	defer tx.Rollback(ctx)
+	res, err := transitionReleaseTx(ctx, tx, id, t, actor)
 	if err != nil {
 		return res, err
 	}
-	defer tx.Rollback(ctx)
+	return res, tx.Commit(ctx)
+}
+
+// transitionReleaseTx is TransitionRelease inside the caller's transaction
+// (copyright takedowns unpublish and restore through it).
+func transitionReleaseTx(ctx context.Context, tx pgx.Tx, id int64, t Transition, actor string) (TransitionResult, error) {
+	res := TransitionResult{ReleaseID: id, To: t.To}
+	var err error
 	if res.From, err = lockRelease(ctx, tx, id, t.Version); err != nil {
 		return res, err
 	}
@@ -784,7 +795,7 @@ func (s *Store) TransitionRelease(ctx context.Context, id int64, t Transition, a
 	if err = writeReviewEvent(ctx, tx, "release", id, "status_change", map[string]any{"status": res.From, "scheduled_at": scheduledBefore}, after, reason, actor); err != nil {
 		return res, err
 	}
-	return res, tx.Commit(ctx)
+	return res, nil
 }
 
 // ---------------------------------------------------------------- playback sources
