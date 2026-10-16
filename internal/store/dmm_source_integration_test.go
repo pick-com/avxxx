@@ -11,14 +11,13 @@ import (
 // TestDMMSourceSeedIntegration checks migration 025 (disabled DMM sources,
 // tier, license status, credit text, conservative policy; idempotent on
 // re-open) and that mapped DMM records save through SaveCatalogRecord with
-// their identifiers and without credentials. Skipped unless
+// their identifiers and without credentials. It runs in its own database
+// (openIsolatedTestDB): it counts the migration-seeded DMM sources, and other
+// store tests add adapter='dmm' sources to the shared database, so with
+// -count>1 (or a different test order) it saw 3. Skipped unless
 // AVXXX_TEST_DATABASE_URL is set.
 func TestDMMSourceSeedIntegration(t *testing.T) {
-	dsn := os.Getenv("AVXXX_TEST_DATABASE_URL")
-	if dsn == "" {
-		t.Skip("AVXXX_TEST_DATABASE_URL not set")
-	}
-	t.Setenv("DATABASE_URL", dsn)
+	openIsolatedTestDB(t, "dmm")
 	ctx := context.Background()
 	for i := 0; i < 2; i++ { // the second Open re-applies every migration
 		s, err := Open(ctx)

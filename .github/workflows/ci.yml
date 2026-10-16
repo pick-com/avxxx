@@ -33,12 +33,12 @@ jobs:
         run: go test ./...
       - name: Prometheus alert rules (promtool check + rule tests)
         run: ./scripts/check-alerts.sh
-      - name: gofmt (warning only)
+      - name: gofmt
         run: |
           unformatted="$(gofmt -l . | grep -v '^web/' || true)"
           if [ -n "$unformatted" ]; then
             {
-              echo "### gofmt: unformatted files (warning, not failing)"
+              echo "### gofmt: unformatted files"
               echo
               echo '```'
               echo "$unformatted"
@@ -47,11 +47,11 @@ jobs:
               echo 'Run `gofmt -w <file>` to fix.'
             } >> "$GITHUB_STEP_SUMMARY"
             while IFS= read -r f; do
-              echo "::warning file=${f}::File is not gofmt-formatted"
+              echo "::error file=${f}::File is not gofmt-formatted (run gofmt -w ${f})"
             done <<< "$unformatted"
-          else
-            echo "### gofmt: all files formatted" >> "$GITHUB_STEP_SUMMARY"
+            exit 1
           fi
+          echo "### gofmt: all files formatted" >> "$GITHUB_STEP_SUMMARY"
 
   integration:
     name: Go integration tests (Postgres 17)
