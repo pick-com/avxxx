@@ -103,6 +103,9 @@ var v1 = []Schema{
 		{Name: "query", Type: String, Required: true, MaxLen: 200},
 		nonNeg("result_count"), req("is_retry", Bool),
 		{Name: "clicked_rank", Type: Int, Min: f64(1)},
+		// rescued: the response came from the server's modifier-stripped
+		// retry (GET /api/catalog/search "rescued": true; PRD 4.5).
+		opt("rescued", Bool),
 	}},
 	{Event: "subtitle_change", Props: []Field{req("lang", String), opt("from", String)}},
 	{Event: "audio_change", Props: []Field{req("lang", String), opt("from", String)}},

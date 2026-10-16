@@ -4,6 +4,7 @@ import (
 	"avxxx/internal/audit"
 	"avxxx/internal/playcurve"
 	"avxxx/internal/recs"
+	"avxxx/internal/search"
 	"avxxx/internal/store"
 	"context"
 	"log"
@@ -57,6 +58,15 @@ func main() {
 			log.Fatalf("invalid RECS_TRENDING_EVERY %q: want a duration of at least 1m", v)
 		}
 	}
+	// Search statistics (internal/search, run by cmd/audit): search events
+	// into search_query_daily and the 24 h hot-search board, once per
+	// SEARCH_STATS_EVERY slot (default 1h, tech plan 3.13 每小时聚合).
+	searchEvery := time.Hour
+	if v := os.Getenv("SEARCH_STATS_EVERY"); v != "" {
+		if searchEvery, err = time.ParseDuration(v); err != nil || searchEvery < time.Minute {
+			log.Fatalf("invalid SEARCH_STATS_EVERY %q: want a duration of at least 1m", v)
+		}
+	}
 	interval := 60 * time.Second
 	for ctx.Err() == nil {
 		if ok, err := s.EnqueueKindSince(ctx, recs.JobKindSimilarity, audit.LastSlot(time.Now(), recsHour, recsMinute)); err != nil {
@@ -66,6 +76,9 @@ func main() {
 		}
 		if _, err := s.EnqueueKindSince(ctx, recs.JobKindTrending, time.Now().Truncate(trendingEvery)); err != nil {
 			log.Printf("enqueue recs trending: %v", err)
+		}
+		if _, err := s.EnqueueKindSince(ctx, search.JobKind, time.Now().Truncate(searchEvery)); err != nil {
+			log.Printf("enqueue search stats: %v", err)
 		}
 		slot := audit.LastSlot(time.Now(), auditHour, auditMinute)
 		if ok, err := s.EnqueueAuditSince(ctx, slot); err != nil {

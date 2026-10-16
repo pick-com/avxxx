@@ -129,20 +129,3 @@ func (srv *Server) makers(w http.ResponseWriter, r *http.Request) {
 	v, e := srv.store.Makers(r.Context(), limit)
 	reply(w, map[string]any{"items": v}, e)
 }
-
-func (srv *Server) catalogSearch(w http.ResponseWriter, r *http.Request) {
-	lang, err := requestLang(w, r)
-	if err != nil {
-		reply(w, nil, err)
-		return
-	}
-	limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
-	v, err := srv.store.SearchCatalog(r.Context(), r.URL.Query().Get("q"), limit)
-	if err != nil {
-		reply(w, nil, err)
-		return
-	}
-	l, err := srv.localizer(r.Context(), lang, searchRefs(v))
-	localizeSearch(l, v)
-	reply(w, withLang(map[string]any{"items": v}, l), err)
-}
