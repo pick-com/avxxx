@@ -122,7 +122,7 @@ type LockableOrientation = ScreenOrientation & {lock?: (orientation: string) => 
  */
 export type PlayerProps = Parameters<typeof Player>[0];
 
-export function Player({slug, releaseId, title, resumeAt, startAt, onBack, theater = false, onToggleTheater, onEnded, autoStart = false, overlay, entryReason, related = [], onReplay, mini = false, episodes, poster, posterImage, artist, album, onPreviousTrack, onNextTrack, resumePending = false}: {
+export function Player({slug, releaseId, title, resumeAt, startAt, onBack, theater = false, onToggleTheater, onEnded, autoStart = false, overlay, entryReason, related = [], onReplay, mini = false, episodes, poster, posterImage, artist, album, onPreviousTrack, onNextTrack, resumePending = false, deferResolve = false}: {
   slug: string;
   /** releases.id for analytics (play_request / progress); no tracking without it. */
   releaseId?: number;
@@ -162,6 +162,8 @@ export function Player({slug, releaseId, title, resumeAt, startAt, onBack, theat
   onNextTrack?: () => void;
   /** The saved position (watch history) is still loading: autoStart waits so playback resumes there. */
   resumePending?: boolean;
+  /** PLAYBACK_RESOLVE_ON=play: autoStart does not resolve a provider stream; the play button does. */
+  deferResolve?: boolean;
 }) {
   const t = useT();
   const {status} = useAuth();
@@ -483,7 +485,7 @@ export function Player({slug, releaseId, title, resumeAt, startAt, onBack, theat
   const autoStarted = useRef('');
   useEffect(() => {
     if (!autoStart || phase !== 'idle' || autoStarted.current === slug || resumePending || !guestReady) return;
-    if (mode === 'config' || (mode === 'legacy' && info.data)) {
+    if (mode === 'config' || (mode === 'legacy' && info.data && !deferResolve)) {
       autoStarted.current = slug;
       void start();
     }

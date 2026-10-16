@@ -96,6 +96,9 @@ services:
       # Prefer routing /api/ to the API in the reverse proxy.
       API_PROXY: ${WEB_API_PROXY:-true}
       SITEMAP_TTL_SECONDS: ${SITEMAP_TTL_SECONDS:-3600}
+      # load = release pages resolve the provider stream on page load;
+      # play = only on the play click (autoplay-next / queues still start at once).
+      PLAYBACK_RESOLVE_ON: ${PLAYBACK_RESOLVE_ON:-load}
       LOG_REQUESTS: ${WEB_LOG_REQUESTS:-true}
     depends_on:
       api:
