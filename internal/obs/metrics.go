@@ -69,6 +69,11 @@ var (
 	HTTPResponseBytes = counterVec("avxxx_http_response_bytes_total",
 		"HTTP response body bytes by route pattern.", "route")
 
+	// AgeGate counts site-entry 18+ gate answers by result
+	// (ok|denied|locked|invalid); no birth date is ever recorded.
+	AgeGate = counterVec("avxxx_age_gate_total",
+		"Site-entry age gate answers by result (ok|denied|locked|invalid).", "result")
+
 	JobDuration = histogramVec("avxxx_job_duration_seconds",
 		"Duration of finished jobs by kind and result (ok|error).", JobBuckets, "kind", "result")
 	JobLeaseLost = counterVec("avxxx_job_lease_lost_total",

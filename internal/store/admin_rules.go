@@ -31,8 +31,9 @@ var ReleaseStatuses = []string{ReleaseDraft, ReleaseUpcoming, ReleasePublished, 
 // ValidReleaseStatus reports whether s is one of ReleaseStatuses.
 func ValidReleaseStatus(s string) bool { return slices.Contains(ReleaseStatuses, s) }
 
-// AgeRatings are the allowed releases.age_rating values (PRD 15: teen mode
-// hides content by rating). Mirrors the CHECK in migration 020.
+// AgeRatings are the allowed releases.age_rating values: metadata only (the
+// site is adults-only behind the site-entry gate; there is no teen mode).
+// Mirrors the CHECK in migration 020.
 var AgeRatings = []string{"all", "13", "16", "18"}
 
 // ---------------------------------------------------------------- transitions

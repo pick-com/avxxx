@@ -57,7 +57,7 @@ var validProps = map[string]map[string]any{
 	"share":           {"release_id": 1, "method": "copy", "with_time": true},
 	"onboarding_step": {"step": "pick_actors", "skipped": false},
 	"consent_change":  {"categories": []any{"necessary"}, "gpc": true},
-	"age_gate":        {"passed": true, "teen_mode": false},
+	"age_gate":        {"passed": true},
 }
 
 func baseEvent(name string, props map[string]any) map[string]any {

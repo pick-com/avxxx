@@ -150,7 +150,8 @@ var v1 = []Schema{
 		{Name: "categories", Type: StringArray, Required: true, Enum: []string{ConsentNecessary, ConsentAnalytics, ConsentPersonalizedAds}},
 		opt("gpc", Bool),
 	}},
-	{Event: "age_gate", Props: []Field{req("passed", Bool), req("teen_mode", Bool)}},
+	// Site-entry 18+ gate; there is no teen mode (DESIGN_ALIGNMENT #8).
+	{Event: "age_gate", Props: []Field{req("passed", Bool)}},
 }
 
 // Registry maps event name → schema_ver → Schema.

@@ -38,7 +38,7 @@ func TestAccountIntegration(t *testing.T) {
 	token := func(m map[string]any) string { return m["token"].(string) }
 
 	// --- register / login / sessions -------------------------------------
-	reg, err := s.RegisterSession(ctx, "Ann@Example.com", "password-1", " Ann ", "2026-10-01", SessionMeta{Remember: false, UserAgent: "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) Chrome/130.0 Safari/537.36"})
+	reg, err := s.RegisterSession(ctx, "Ann@Example.com", "password-1", " Ann ", "2026-10-01", Adult{Confirmed: true}, SessionMeta{Remember: false, UserAgent: "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) Chrome/130.0 Safari/537.36"})
 	must(err)
 	t1 := token(reg)
 	uid := reg["user"].(map[string]any)["id"].(int64)
@@ -62,7 +62,7 @@ func TestAccountIntegration(t *testing.T) {
 		t.Fatalf("sessions = %+v", sessions)
 	}
 	// Another user cannot revoke Ann's session by id.
-	other, err := s.RegisterSession(ctx, "bob@example.com", "password-2", "Bob", "", SessionMeta{Remember: true})
+	other, err := s.RegisterSession(ctx, "bob@example.com", "password-2", "Bob", "", Adult{Confirmed: true}, SessionMeta{Remember: true})
 	must(err)
 	bob := other["user"].(map[string]any)["id"].(int64)
 	if ok, err := s.RevokeSession(ctx, bob, sessions[1].ID); err != nil || ok {
@@ -211,18 +211,18 @@ func TestAccountIntegration(t *testing.T) {
 	}
 
 	// --- OAuth ---------------------------------------------------------------
-	if _, _, err := s.OAuthSignIn(ctx, OAuthProfile{Provider: "google", Subject: "g-ann", Email: "ann@example.com", EmailVerified: true}); !errors.Is(err, ErrIdentityEmailTaken) {
+	if _, _, err := s.OAuthSignIn(ctx, OAuthProfile{Provider: "google", Subject: "g-ann", Email: "ann@example.com", EmailVerified: true}, Adult{Confirmed: true}); !errors.Is(err, ErrIdentityEmailTaken) {
 		t.Errorf("auto-link to password account: %v", err)
 	}
-	if _, _, err := s.OAuthSignIn(ctx, OAuthProfile{Provider: "google", Subject: "g-x", Email: "x@example.com"}); !errors.Is(err, ErrNoEmail) {
+	if _, _, err := s.OAuthSignIn(ctx, OAuthProfile{Provider: "google", Subject: "g-x", Email: "x@example.com"}, Adult{Confirmed: true}); !errors.Is(err, ErrNoEmail) {
 		t.Errorf("unverified email: %v", err)
 	}
-	gid, created, err := s.OAuthSignIn(ctx, OAuthProfile{Provider: "google", Subject: "g-carol", Email: "Carol@example.com", EmailVerified: true, Name: "Carol"})
+	gid, created, err := s.OAuthSignIn(ctx, OAuthProfile{Provider: "google", Subject: "g-carol", Email: "Carol@example.com", EmailVerified: true, Name: "Carol"}, Adult{Confirmed: true})
 	must(err)
 	if !created {
 		t.Error("first OAuth sign-in did not create a user")
 	}
-	if again, created, _ := s.OAuthSignIn(ctx, OAuthProfile{Provider: "google", Subject: "g-carol"}); again != gid || created {
+	if again, created, _ := s.OAuthSignIn(ctx, OAuthProfile{Provider: "google", Subject: "g-carol"}, Adult{}); again != gid || created {
 		t.Errorf("second sign-in = %d %v", again, created)
 	}
 	if _, err := s.LoginSession(ctx, "carol@example.com", "", SessionMeta{}); !errors.Is(err, ErrInvalidCredentials) {

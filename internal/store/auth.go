@@ -119,12 +119,15 @@ var dummyHash = func() string {
 }()
 
 func (s *Store) Register(ctx context.Context, email, password, displayName string) (map[string]any, error) {
-	return s.RegisterSession(ctx, email, password, displayName, "", SessionMeta{Remember: true})
+	return s.RegisterSession(ctx, email, password, displayName, "", Adult{}, SessionMeta{Remember: true})
 }
 
 // RegisterSession creates an account and its first session. termsVersion, when
-// set, is recorded in terms_acceptances (source "register").
-func (s *Store) RegisterSession(ctx context.Context, email, password, displayName, termsVersion string, meta SessionMeta) (map[string]any, error) {
+// set, is recorded in terms_acceptances (source "register"); a confirmed
+// adult sets users.adult_confirmed_at (and adult_birth_ym when given). The
+// API requires the confirmation (internal/api/agegate.go); the store only
+// records it.
+func (s *Store) RegisterSession(ctx context.Context, email, password, displayName, termsVersion string, adult Adult, meta SessionMeta) (map[string]any, error) {
 	email = strings.ToLower(strings.TrimSpace(email))
 	if len(email) < 3 || len(password) < 8 {
 		return nil, errors.New("email and password (min 8 characters) are required")
@@ -136,12 +139,17 @@ func (s *Store) RegisterSession(ctx context.Context, email, password, displayNam
 	if termsVersion != "" && !ValidTermsVersion(termsVersion) {
 		return nil, invalid("invalid terms version")
 	}
+	ym, err := adult.birthYM()
+	if err != nil {
+		return nil, err
+	}
 	hash, err := hashPassword(password)
 	if err != nil {
 		return nil, fmt.Errorf("hash password: %w", err)
 	}
 	var id int64
-	err = s.QueryRow(ctx, `INSERT INTO users(email,password_hash,display_name) VALUES($1,$2,$3) RETURNING id`, email, hash, name).Scan(&id)
+	err = s.QueryRow(ctx, `INSERT INTO users(email,password_hash,display_name,adult_confirmed_at,adult_birth_ym)
+		VALUES($1,$2,$3,CASE WHEN $4 THEN now() END,$5) RETURNING id`, email, hash, name, adult.Confirmed, ym).Scan(&id)
 	if err != nil {
 		var pgErr *pgconn.PgError
 		if errors.As(err, &pgErr) && pgErr.Code == "23505" {
@@ -255,7 +263,9 @@ func (s *Store) createSession(ctx context.Context, id int64, email string, meta 
 
 // UserByToken returns the signed-in user: id, email, display name, whether a
 // password is set, the latest accepted terms version ("" = none), whether
-// onboarding was finished and the linked sign-in providers.
+// onboarding was finished, whether the 18+ confirmation is on file
+// (adult_confirmed; false = show the one-time prompt) and the linked sign-in
+// providers.
 func (s *Store) UserByToken(ctx context.Context, token string) (map[string]any, error) {
 	var id int64
 	var email, name, terms string
@@ -263,16 +273,17 @@ func (s *Store) UserByToken(ctx context.Context, token string) (map[string]any, 
 	var created time.Time
 	var onboarded *time.Time
 	var providers []string
-	err := s.QueryRow(ctx, `SELECT u.id,u.email,u.display_name,u.password_hash<>'',u.created_at,u.onboarded_at,
+	var adult bool
+	err := s.QueryRow(ctx, `SELECT u.id,u.email,u.display_name,u.password_hash<>'',u.created_at,u.onboarded_at,u.adult_confirmed_at IS NOT NULL,
 		COALESCE((SELECT version FROM terms_acceptances t WHERE t.user_id=u.id ORDER BY accepted_at DESC, version DESC LIMIT 1),''),
 		COALESCE((SELECT array_agg(provider ORDER BY provider) FROM user_identities i WHERE i.user_id=u.id),'{}')
 		FROM user_sessions ss JOIN users u ON u.id=ss.user_id WHERE ss.token_hash=$1 AND ss.expires_at>now()`, hashToken(token)).
-		Scan(&id, &email, &name, &hasPassword, &created, &onboarded, &terms, &providers)
+		Scan(&id, &email, &name, &hasPassword, &created, &onboarded, &adult, &terms, &providers)
 	if err != nil {
 		return nil, errors.New("unauthorized")
 	}
 	return map[string]any{"id": id, "email": email, "display_name": name, "has_password": hasPassword,
-		"created_at": created, "onboarded": onboarded != nil, "terms_version": terms, "providers": providers}, nil
+		"created_at": created, "onboarded": onboarded != nil, "adult_confirmed": adult, "terms_version": terms, "providers": providers}, nil
 }
 
 // UserIDByToken resolves a session token. last_seen_at is refreshed at most
