@@ -1,6 +1,7 @@
 import {useState, type FormEvent} from 'react';
 import {Link, useSearchParams} from 'react-router';
 import {AdminHeader, AdminNotice, EmptyRow, NotDeployed, Pill, fmtTime, type Tone} from '../components/AdminUI';
+import {AdminServiceTokens} from '../components/AdminServiceTokens';
 import {isMissingEndpoint} from '../lib/api';
 import {useAdmin, useAdminAction, useAdminLoad} from '../lib/adminContext';
 import {
@@ -37,9 +38,12 @@ export const meta = () => [{title: 'REEL · 用户与权限'}];
 //             every change writes review_events and the op log.
 //   我的账号  regenerate own recovery codes (needs a current TOTP code).
 
-type Tab = 'admins' | 'matrix' | 'site' | 'me';
+//   服务令牌  scoped tokens for scripts (SEO check), shown once (AdminServiceTokens).
+
+type Tab = 'admins' | 'matrix' | 'site' | 'me' | 'service';
 const TABS: {id: Tab; label: string; perm?: string}[] = [
   {id: 'admins', label: '后台账号', perm: 'admin_users:read'},
+  {id: 'service', label: '服务令牌', perm: 'admin_users:read'},
   {id: 'matrix', label: '角色矩阵'},
   {id: 'site', label: '前台用户', perm: 'site_users:read'},
   {id: 'me', label: '我的账号'},
@@ -72,6 +76,7 @@ export default function AdminUsersPage() {
       {tab === 'matrix' && <RoleMatrixView />}
       {tab === 'site' && <SiteUsers />}
       {tab === 'me' && <MyAccount />}
+      {tab === 'service' && <AdminServiceTokens />}
     </>
   );
 }

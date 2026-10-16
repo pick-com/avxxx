@@ -15,14 +15,14 @@ export const meta = () => [{title: 'REEL · 操作日志'}];
 
 const FIELDS: {key: keyof AuditQuery; label: string; placeholder: string}[] = [
   {key: 'q', label: '关键词', placeholder: '路由、动作、实体 ID…'},
-  {key: 'actor', label: '操作人', placeholder: '用户名或 token:标签'},
+  {key: 'actor', label: '操作人', placeholder: '用户名、token:标签或 service:名称'},
   {key: 'entity_type', label: '实体类型', placeholder: 'releases、admin-users…'},
   {key: 'entity_id', label: '实体 ID', placeholder: ''},
   {key: 'from', label: '从', placeholder: 'YYYY-MM-DD'},
   {key: 'to', label: '到', placeholder: 'YYYY-MM-DD'},
 ];
 
-const AUTH: Record<AuditEntry['auth'], string> = {session: '账号', token: '紧急令牌', anonymous: '未登录'};
+const AUTH: Record<AuditEntry['auth'], string> = {session: '账号', token: '紧急令牌', service: '服务令牌', anonymous: '未登录'};
 
 export default function AdminOplogPage() {
   const [params, setParams] = useSearchParams();
@@ -85,6 +85,7 @@ export default function AdminOplogPage() {
               <option value="">全部</option>
               <option value="session">账号</option>
               <option value="token">紧急令牌</option>
+              <option value="service">服务令牌</option>
               <option value="anonymous">未登录（登录失败）</option>
             </select>
           </label>

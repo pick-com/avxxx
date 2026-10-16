@@ -11,13 +11,16 @@
 //    alternates for all languages plus x-default, <html lang>, no noindex.
 // 3. Report: score = round(100 × (ssr_pass_rate × 0.6 + sitemap_coverage × 0.4)).
 //    Printed as JSON; written to SEO_REPORT_FILE when set; POSTed to
-//    {API_URL}/api/admin/seo/report when ADMIN_TOKEN is set, where the admin
-//    dashboard shows it as 收录健康分 (nightly_runs job "seo.check").
+//    {API_URL}/api/admin/seo/report when SEO_REPORT_TOKEN (or, as a fallback,
+//    ADMIN_TOKEN) is set, where the admin dashboard shows it as 收录健康分
+//    (nightly_runs job "seo.check").
 //
 // Environment:
 //   WEB_URL          web server to check (default http://127.0.0.1:3000)
 //   API_URL          Go API (default $API_INTERNAL_URL or http://127.0.0.1:8080)
-//   ADMIN_TOKEN      bearer token for POST /api/admin/seo/report (optional)
+//   SEO_REPORT_TOKEN service token (svc_…, 后台「用户与权限 → 服务令牌」) scoped
+//                    to "POST /api/admin/seo/report"; preferred (optional)
+//   ADMIN_TOKEN      break-glass token, used only when SEO_REPORT_TOKEN is unset (optional)
 //   SEO_SAMPLES      pages per type (default 5)
 //   SEO_REPORT_FILE  also write the JSON report here (optional)
 //   SEO_MIN_SCORE    exit 1 when the score is below this (optional)
@@ -159,10 +162,14 @@ report.duration_ms = Date.now() - started;
 console.log(JSON.stringify(report, null, 2));
 if (process.env.SEO_REPORT_FILE) writeFileSync(process.env.SEO_REPORT_FILE, JSON.stringify(report, null, 2) + '\n');
 
-if (process.env.ADMIN_TOKEN) {
+// The scoped service token wins; the break-glass ADMIN_TOKEN is a fallback
+// for deployments that have not created one yet.
+const reportToken = process.env.SEO_REPORT_TOKEN || process.env.ADMIN_TOKEN;
+if (reportToken) {
+  if (!process.env.SEO_REPORT_TOKEN) console.error('SEO_REPORT_TOKEN is not set; reporting with the break-glass ADMIN_TOKEN');
   const r = await fetch(`${API}/api/admin/seo/report`, {
     method: 'POST',
-    headers: {'Content-Type': 'application/json', Authorization: `Bearer ${process.env.ADMIN_TOKEN}`, 'X-Admin-User': 'seo-check'},
+    headers: {'Content-Type': 'application/json', Authorization: `Bearer ${reportToken}`, 'X-Admin-User': 'seo-check'},
     body: JSON.stringify(report),
     signal: AbortSignal.timeout(15000),
   });

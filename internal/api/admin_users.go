@@ -293,8 +293,8 @@ func (srv *Server) auditLog(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	auth := q.Get("auth")
-	if auth != "" && auth != "session" && auth != "token" && auth != "anonymous" {
-		reply(w, nil, badRequest("auth must be session, token or anonymous", nil))
+	if auth != "" && auth != "session" && auth != "token" && auth != "service" && auth != "anonymous" {
+		reply(w, nil, badRequest("auth must be session, token, service or anonymous", nil))
 		return
 	}
 	limit, _ := strconv.Atoi(q.Get("limit"))

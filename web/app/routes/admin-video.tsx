@@ -23,6 +23,7 @@ import {
 } from '../lib/adminApi';
 import {useAdminAction, useAdminLoad} from '../lib/adminContext';
 import {SplitPanel, UndoSplit} from '../components/AdminSplit';
+import {HomeSlotShortcut, RightsProofs} from '../components/AdminVideoPublishExtras';
 
 export const meta = () => [{title: 'REEL · 视频编辑'}];
 
@@ -30,7 +31,8 @@ export const meta = () => [{title: 'REEL · 视频编辑'}];
 // 片源 / 演员 / 发布 / 多语言 / 修改记录. Field edits are PATCHed with the
 // optimistic-lock version and become manual overrides (the crawler stops
 // writing those fields until 清除覆盖). Publishing is gated by R-AGE on the
-// server; its 409 names the performers. 截屏与章节 (artboard tab) has no
+// server; its 409 names the performers. 发布 also carries 推荐位 (home slot
+// shortcut) and 版权凭证 (AdminVideoPublishExtras). 截屏与章节 (artboard tab) has no
 // backend yet (needs the transcoding pipeline) and is left out.
 
 type TabKey = 'basic' | 'sources' | 'cast' | 'publish' | 'i18n' | 'history';
@@ -448,6 +450,9 @@ function PublishTab({r, onSaved}: {r: AdminRelease; onSaved: () => void}) {
           </button>
         </div>
       </form>
+
+      <HomeSlotShortcut r={r} />
+      <RightsProofs r={r} />
     </>
   );
 }
@@ -527,6 +532,10 @@ const ACTION_LABELS: Record<string, string> = {
   split: '拆分',
   undo_split: '撤销拆分',
   resolve: '解决冲突',
+  add_rights_proof: '添加版权凭证',
+  remove_rights_proof: '移除版权凭证',
+  add_release: '从搜索词补片',
+  create_upcoming: '从搜索词建预约页',
 };
 
 function HistoryTab({r, onChanged}: {r: AdminRelease; onChanged: () => void}) {

@@ -16,6 +16,7 @@ import {
   getSearchStats,
   getSynonyms,
   getZeroResultTerms,
+  releaseFromTerm,
   unblockTerm,
   updateRedirect,
   updateSynonym,
@@ -23,7 +24,7 @@ import {
   type SearchStats,
   type ZeroResultTerm,
 } from '../lib/adminApi';
-import {useAdminAction, useAdminLoad} from '../lib/adminContext';
+import {useAdmin, useAdminAction, useAdminLoad} from '../lib/adminContext';
 
 export const meta = () => [{title: 'REEL · 搜索词情报'}];
 
@@ -31,7 +32,9 @@ export const meta = () => [{title: 'REEL · 搜索词情报'}];
 // found nothing and why, and one-click fixes. Stats and zero-result terms
 // come from search_query_daily (the search_stats job); every fix writes a
 // rule (synonym / redirect / blocklist) or catalog metadata (performer alias,
-// reviewed English title) with a review_events row. Without the search
+// reviewed English title) with a review_events row. 补片 / 建预约页 create a
+// draft or an upcoming release from the term (catalog:write; without it they
+// stay links to the pipeline / video list). Without the search
 // backend every route 404s and the page says 后端未部署.
 
 const TABS = [
@@ -119,7 +122,15 @@ function NearMatches({items}: {items: NearMatch[]}) {
   );
 }
 
-type FixKind = 'add_synonym' | 'add_redirect' | 'add_alias' | 'add_english_title' | 'block';
+type FixKind = 'add_synonym' | 'add_redirect' | 'add_alias' | 'add_english_title' | 'block' | 'add_release' | 'create_upcoming';
+
+// 补片 / 建预约页: a code-looking term (ABC-123) prefills the code field.
+const CODE_RE = /^[a-z]{2,8}-?\d{2,6}$/i;
+const inTwoWeeks = () => {
+  const d = new Date(Date.now() + 14 * 864e5);
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T20:00`;
+};
 
 function FixForm({term, kind, onDone, onCancel}: {term: ZeroResultTerm; kind: FixKind; onDone: (msg: string) => void; onCancel: () => void}) {
   const act = useAdminAction();
@@ -131,6 +142,8 @@ function FixForm({term, kind, onDone, onCancel}: {term: ZeroResultTerm; kind: Fi
   const [value, setValue] = useState(term.term);
   const [performer, setPerformer] = useState<Picked | null>(null);
   const [release, setRelease] = useState<Picked | null>(null);
+  const [code, setCode] = useState(CODE_RE.test(term.term.trim()) ? term.term.trim().toUpperCase() : '');
+  const [scheduled, setScheduled] = useState(inTwoWeeks);
   const quick = (type: string): Picked[] => near.filter(m => m.type === type).map(m => ({id: m.id, slug: '', name: m.name, sub: fieldLabel(m.field)}));
 
   const submit = async (e: FormEvent) => {
@@ -142,7 +155,18 @@ function FixForm({term, kind, onDone, onCancel}: {term: ZeroResultTerm; kind: Fi
     if (kind === 'add_synonym') await go(() => createSynonym(term.term, canonical.trim()), v => `已加同义词：${v.term} → ${v.canonical}`);
     else if (kind === 'add_redirect') await go(() => createRedirect(term.term, target.trim(), reason.trim()), v => `已建跳转：${v.term} → ${v.target_url}`);
     else if (kind === 'block') await go(() => blockTerm(term.term, reason.trim()), v => `已屏蔽「${v.term}」，不会再出现在热搜里`);
-    else if (kind === 'add_alias') {
+    else if (kind === 'add_release' || kind === 'create_upcoming') {
+      let at: string | undefined;
+      if (kind === 'create_upcoming') {
+        const d = new Date(scheduled);
+        if (!scheduled || Number.isNaN(d.getTime()) || d <= new Date()) return act.setError('上线时间必须晚于现在');
+        at = d.toISOString();
+      }
+      await go(
+        () => releaseFromTerm({term: term.term, title: value.trim(), code: code.trim(), scheduled_at: at, reason: reason.trim()}),
+        v => `已${kind === 'add_release' ? '建草稿' : '建预约页'}「${v.value}」（视频 #${v.entity_id}，/admin/videos/${v.entity_id} 继续补全）`,
+      );
+    } else if (kind === 'add_alias') {
       if (!performer) return act.setError('先选择演员');
       await go(() => aliasFromTerm({term: term.term, performer_id: performer.id, alias: value.trim(), reason: reason.trim()}), v => `已给 ${performer.name} 加别名「${v.value}」`);
     } else {
@@ -170,6 +194,32 @@ function FixForm({term, kind, onDone, onCancel}: {term: ZeroResultTerm; kind: Fi
         <label className="adm-field">
           <span>原因（可选）</span>
           <input value={reason} onChange={e => setReason(e.target.value)} maxLength={500} />
+        </label>
+      </>
+    );
+  } else if (kind === 'add_release' || kind === 'create_upcoming') {
+    fields = (
+      <>
+        <label className="adm-field">
+          <span>标题</span>
+          <input required value={value} onChange={e => setValue(e.target.value)} maxLength={300} />
+          <span className="adm-field-hint">默认是用户输入的原词</span>
+        </label>
+        <label className="adm-field">
+          <span>番号（可选）</span>
+          <input value={code} onChange={e => setCode(e.target.value)} maxLength={64} placeholder="ABC-123" />
+          <span className="adm-field-hint">填了番号，之后抓到同一番号会更新这部作品而不是新建</span>
+        </label>
+        {kind === 'create_upcoming' && (
+          <label className="adm-field">
+            <span>上线时间</span>
+            <input type="datetime-local" required value={scheduled} onChange={e => setScheduled(e.target.value)} />
+            <span className="adm-field-hint">用户可预约；到时间自动上线</span>
+          </label>
+        )}
+        <label className="adm-field">
+          <span>理由（可选）</span>
+          <input value={reason} onChange={e => setReason(e.target.value)} />
         </label>
       </>
     );
@@ -227,6 +277,7 @@ function ZeroResultsTab({days}: {days: number}) {
   const list = useAdminLoad(() => getZeroResultTerms({days, min, limit: 100}), [days, min]);
   const [open, setOpen] = useState<{term: string; kind: FixKind} | null>(null);
   const [notice, setNotice] = useState('');
+  const {can} = useAdmin();
   const items = list.data ?? [];
 
   const fixButtons = (z: ZeroResultTerm) => {
@@ -234,7 +285,7 @@ function ZeroResultsTab({days}: {days: number}) {
     return (
       <div className="actions">
         {acts.map(a =>
-          a === 'add_release' || a === 'create_upcoming' ? (
+          (a === 'add_release' || a === 'create_upcoming') && !can('catalog:write') ? (
             <Link key={a} className="adm-link" to={a === 'add_release' ? '/admin/pipeline' : '/admin/videos'} title={a === 'add_release' ? '去入库流水线补片' : '去视频库建待上线作品'}>
               {ACTION_LABELS[a]}
             </Link>

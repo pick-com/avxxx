@@ -152,7 +152,7 @@ export type AuditEntry = {
   created_at: string;
   admin_id: number | null;
   actor: string;
-  auth: 'session' | 'token' | 'anonymous';
+  auth: 'session' | 'token' | 'service' | 'anonymous';
   action: string;
   method: string;
   route: string;
@@ -196,3 +196,37 @@ export const unbanSiteUser = (id: number, reason: string) =>
   api<SiteUser>(`admin/site-users/${enc(String(id))}/unban`, {method: 'POST', body: {reason}});
 export const unmuteSiteUser = (id: number, reason: string) =>
   api<{deleted: boolean}>(`admin/moderation/mutes/${id}${qs({reason})}`, {method: 'DELETE'});
+
+// ---- Service tokens (internal/api/service_tokens.go) ----
+
+export type ServiceToken = {
+  id: number;
+  name: string;
+  description: string;
+  token_prefix: string;
+  scopes: string[];
+  created_by: string;
+  created_at: string;
+  last_used_at: string | null;
+  expires_at: string;
+  revoked_at: string | null;
+  revoked_by: string | null;
+  status: 'active' | 'expired' | 'revoked';
+};
+
+export type ServiceTokenList = {
+  items: ServiceToken[];
+  grantable: {groups: {group: string; label: string}[]; routes: string[]};
+  max_days: number;
+};
+
+export const getServiceTokens = (signal?: AbortSignal) =>
+  api<ServiceTokenList>('admin/service-tokens', {signal}).then(d => ({
+    items: d.items ?? [],
+    grantable: {groups: d.grantable?.groups ?? [], routes: d.grantable?.routes ?? []},
+    max_days: d.max_days ?? 730,
+  }));
+/** The token value is in the response once and never again. */
+export const createServiceToken = (input: {name: string; description: string; scopes: string[]; expires_in_days: number}) =>
+  api<{service_token: ServiceToken; token: string}>('admin/service-tokens', {method: 'POST', body: input});
+export const revokeServiceToken = (id: number) => api<ServiceToken>(`admin/service-tokens/${id}/revoke`, {method: 'POST'});

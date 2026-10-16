@@ -156,6 +156,44 @@ func TestAdminHTTPIntegration(t *testing.T) {
 		t.Errorf("root's op log actions %v", found)
 	}
 
+	// Service token: created once by a super admin, scoped, logged, revocable.
+	if code, _, _ := mod.do("POST", "/api/admin/service-tokens", `{"name":"x`+sfx+`","scopes":["dashboard:read"]}`); code != 403 {
+		t.Errorf("moderator creating a service token: %d", code)
+	}
+	code, out, rec = root.do("POST", "/api/admin/service-tokens", `{"name":"bot`+sfx+`","scopes":["dashboard:read"],"expires_in_days":7}`)
+	if code != 200 || rec.Header().Get("Cache-Control") != "no-store" {
+		t.Fatalf("create service token: %d %s", code, rec.Body)
+	}
+	svc, _ := out["token"].(string)
+	svcID := int64(out["service_token"].(map[string]any)["id"].(float64))
+	bot := func(method, path string) int {
+		req := httptest.NewRequest(method, path, nil)
+		req.Header.Set("Authorization", "Bearer "+svc)
+		rec := httptest.NewRecorder()
+		h.ServeHTTP(rec, req)
+		return rec.Code
+	}
+	if c := bot("GET", "/api/admin/dashboard"); c != 200 {
+		t.Errorf("service token in scope: %d", c)
+	}
+	if c := bot("GET", "/api/admin/admin-users"); c != 403 {
+		t.Errorf("service token on admin users: %d", c)
+	}
+	code, out, _ = root.do("GET", "/api/admin/audit-log?auth=service&actor=service:bot"+sfx, "")
+	if items, _ := out["items"].([]any); code != 200 || len(items) != 2 {
+		t.Errorf("service token op log: %d %v", code, out)
+	}
+	code, out, _ = root.do("GET", "/api/admin/service-tokens", "")
+	if code != 200 || strings.Contains(fmt.Sprint(out), svc) {
+		t.Errorf("token list leaks the token or failed: %d", code)
+	}
+	if code, _, _ := root.do("POST", fmt.Sprintf("/api/admin/service-tokens/%d/revoke", svcID), ""); code != 200 {
+		t.Errorf("revoke: %d", code)
+	}
+	if c := bot("GET", "/api/admin/dashboard"); c != 401 {
+		t.Errorf("revoked service token: %d", c)
+	}
+
 	// Logout revokes the session.
 	if code, _, _ := mod.do("POST", "/api/admin/session/logout", ""); code != 200 {
 		t.Fatalf("logout %d", code)

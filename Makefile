@@ -22,7 +22,7 @@ web:
 # Production web server (SSR) on :3000 after a build; API_INTERNAL_URL defaults to http://127.0.0.1:8080.
 web-start:
 	cd web && npm run build && npm start
-# 收录健康分 inputs: WEB_URL / API_URL / ADMIN_TOKEN (see web/scripts/seo-check.mjs).
+# 收录健康分 inputs: WEB_URL / API_URL / SEO_REPORT_TOKEN (ADMIN_TOKEN fallback) (see web/scripts/seo-check.mjs).
 seo-check:
 	cd web && npm run seo:check
 test:

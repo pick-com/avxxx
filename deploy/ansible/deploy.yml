@@ -25,6 +25,9 @@
           # Break-glass off once personal admin accounts exist (docs/DEPLOYMENT.md 2.7).
           ADMIN_TOKEN_DISABLED={{ admin_token_disabled | default(false) | bool | lower }}
           ADMIN_TOTP_KEY={{ admin_totp_key | default('') }}
+          # Service token (svc_…) of the daily SEO check, scoped to POST /api/admin/seo/report
+          # (docs/DEPLOYMENT.md 2.7); empty = the cron falls back to ADMIN_TOKEN.
+          SEO_REPORT_TOKEN={{ seo_report_token | default('') }}
           BASE_URL={{ base_url | default('') }}
           VAPID_PUBLIC_KEY={{ vapid_public_key | default('') }}
           VAPID_PRIVATE_KEY={{ vapid_private_key | default('') }}
@@ -135,7 +138,9 @@
       until: web_health.status == 200
     # 收录健康分 inputs (PRD 11 / 13): sample SSR pages and sitemap coverage,
     # POST the report to /api/admin/seo/report (nightly_runs job seo.check).
-    # ADMIN_TOKEN comes from the rendered .env; it is not given to the web service.
+    # The report is sent with the SEO_REPORT_TOKEN service token from the
+    # rendered .env; only when it is unset is the break-glass ADMIN_TOKEN
+    # passed instead. Neither is given to the long-running web service.
     - name: Daily SEO check
       ansible.builtin.cron:
         name: avxxx seo check
@@ -143,6 +148,7 @@
         hour: "5"
         job: >-
           cd {{ app_dir }} && set -a && . ./.env && set +a &&
-          docker compose run --rm --no-deps -e WEB_URL=http://web:3000 -e API_URL=http://api:8080 -e ADMIN_TOKEN
+          docker compose run --rm --no-deps -e WEB_URL=http://web:3000 -e API_URL=http://api:8080
+          {{ '-e SEO_REPORT_TOKEN' if (seo_report_token | default('')) else '-e ADMIN_TOKEN' }}
           web node scripts/seo-check.mjs > /dev/null 2>> {{ app_dir }}/seo-check.log
         state: "{{ 'present' if (seo_check_enabled | default(true) | bool) else 'absent' }}"
