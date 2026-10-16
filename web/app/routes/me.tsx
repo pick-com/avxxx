@@ -1,19 +1,24 @@
 import {Link, useNavigate} from '../lib/nav';
 import {Icon} from '../components/Icon';
 import {EmptyState} from '../components/States';
+import {getPlaylists} from '../lib/api';
 import {useAuth} from '../lib/auth';
 import {t, useT} from '../lib/i18n';
+import {playlistName, visibilityIcon} from '../lib/playlists';
 import {themeLabels, useTheme, type ThemePref} from '../lib/theme';
+import {useAsync} from '../lib/useAsync';
+import '../styles/library.css';
 
 export const meta = () => [{title: t('title.me')}];
 
-// MobileLibrary (我的 tab): account, library links, appearance.
-// TODO(tech plan 3.13 playlists): multiple 收藏夹.
+// MobileLibrary (我的 tab): account, library links, 我的收藏夹 (each opens
+// /favorites?id=), appearance.
 export default function Me() {
   const t = useT();
   const {status, user, signOut} = useAuth();
   const {pref, setPref} = useTheme();
   const navigate = useNavigate();
+  const playlists = useAsync(signal => getPlaylists(undefined, signal), [status], status === 'user');
 
   return (
     <div className="page me-page">
@@ -59,6 +64,20 @@ export default function Me() {
               {t('settings.title')}
             </Link>
           </nav>
+          {playlists.data && playlists.data.length > 0 && (
+            <section className="shelf">
+              <h2 className="section-title">{t('playlists.mine')}</h2>
+              <nav className="list-links" aria-label={t('playlists.mine')}>
+                {playlists.data.map(p => (
+                  <Link key={p.id} to={`/favorites?id=${p.id}`} className="list-link">
+                    <Icon name={visibilityIcon[p.visibility]} />
+                    <span className="lib-link-name">{playlistName(p)}</span>
+                    <span className="chip-count">{p.item_count}</span>
+                  </Link>
+                ))}
+              </nav>
+            </section>
+          )}
         </>
       )}
 

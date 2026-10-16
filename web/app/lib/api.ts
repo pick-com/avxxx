@@ -509,6 +509,50 @@ export const getFavorites = (signal?: AbortSignal) => api<Items<FavoriteItem>>('
 export const setFavorite = (slug: string, enabled: boolean) =>
   api<{saved: boolean}>('me/favorites', {method: 'POST', body: {slug, enabled}});
 
+// ---- Playlists (收藏夹; internal/api/playlists.go, migration 036) ----
+// me/* routes are owner-only; playlists/{token} is the public read for
+// public and link-only playlists (no token sent). The default playlist backs
+// the legacy me/favorites routes above.
+
+export type PlaylistVisibility = 'private' | 'public' | 'link';
+export const PLAYLIST_VISIBILITIES: PlaylistVisibility[] = ['private', 'link', 'public'];
+
+export type Playlist = {
+  id: number;
+  name: string;
+  description: string;
+  visibility: PlaylistVisibility;
+  /** Owner responses only. */
+  share_token?: string;
+  is_default: boolean;
+  item_count: number;
+  cover_slugs: string[];
+  /** Only with ?release=: whether that release is in the playlist. */
+  contains?: boolean;
+  /** Public responses only. */
+  owner_name?: string;
+  created_at: string;
+  updated_at: string;
+};
+export type PlaylistItem = {slug: string; title: string; title_ja: string; runtime_minutes: number; added_at: string};
+export type PlaylistDetail = {playlist: Playlist; items: PlaylistItem[]};
+export type PlaylistInput = {name?: string; description?: string; visibility?: PlaylistVisibility};
+
+export const getPlaylists = (release?: string, signal?: AbortSignal) =>
+  api<Items<Playlist>>(`me/playlists${query({release})}`, {signal}).then(items);
+export const getPlaylist = (id: number, signal?: AbortSignal) => api<PlaylistDetail>(`me/playlists/${id}`, {signal});
+export const createPlaylist = (body: PlaylistInput & {name: string}) => api<Playlist>('me/playlists', {method: 'POST', body});
+export const updatePlaylist = (id: number, body: PlaylistInput) => api<Playlist>(`me/playlists/${id}`, {method: 'PATCH', body});
+export const deletePlaylist = (id: number) => api<{deleted: boolean}>(`me/playlists/${id}`, {method: 'DELETE'});
+export const rotatePlaylistToken = (id: number) => api<Playlist>(`me/playlists/${id}/share-token`, {method: 'POST'});
+export const addToPlaylist = (id: number, slug: string) => api<{saved: boolean}>(`me/playlists/${id}/items/${enc(slug)}`, {method: 'PUT'});
+export const removeFromPlaylist = (id: number, slug: string) =>
+  api<{deleted: boolean}>(`me/playlists/${id}/items/${enc(slug)}`, {method: 'DELETE'});
+export const moveLaterToPlaylist = (slug: string, playlistId: number) =>
+  api<{moved: boolean}>(`me/watch-later/${enc(slug)}/move`, {method: 'POST', body: {playlist_id: playlistId}});
+/** Unprefixed path of the public page for a share token. */
+export const playlistSharePath = (token: string) => `/playlists/${encodeURIComponent(token)}`;
+
 // ---- Admin (admin token only) ----
 
 // These endpoints return bare arrays rather than {items}; accept both.
@@ -630,6 +674,8 @@ export type UserSettings = {
   autoplay: boolean;
   remember_rate: boolean;
   history_paused: boolean;
+  /** 看完自动移出 (migration 036); absent on older backends. */
+  later_auto_remove?: boolean;
   theme: 'system' | 'dark' | 'light';
   timezone: string;
   notify_prefs: Record<NotifyKind, Record<NotifyChannel, boolean>>;

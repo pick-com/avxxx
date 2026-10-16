@@ -10,9 +10,10 @@ import type {EndItem} from '../components/PlayerStates';
 import {Community} from '../components/Ratings';
 import {SourceCredits} from '../components/SourceCredits';
 import {SourceEvidence} from '../components/SourceEvidence';
+import {FavoritePicker} from '../components/PlaylistPicker';
 import {LaterButton, ReserveButton} from '../components/SocialButtons';
 import {BlockSkeleton, CardGridSkeleton, EmptyState, ErrorBanner} from '../components/States';
-import {ApiError, getFavorites, getPerformerReleases, getWatchLater, getRelease, getReleasePerformers, getWatchHistory, setFavorite, type Performer, type ReleaseDetail} from '../lib/api';
+import {ApiError, getPerformerReleases, getWatchLater, getRelease, getReleasePerformers, getWatchHistory, type Performer, type ReleaseDetail} from '../lib/api';
 import {track} from '../lib/analytics';
 import {useAuth} from '../lib/auth';
 import {t, useI18n, useT} from '../lib/i18n';
@@ -292,7 +293,7 @@ export default function ReleasePage() {
                   ) : (
                     <LaterButton slug={slug} title={release.canonical_title} />
                   )}
-                  <FavoriteButton slug={slug} />
+                  <FavoritePicker slug={slug} title={release.canonical_title} />
                   <ShareButton title={release.canonical_title} />
                 </div>
               </div>
@@ -582,53 +583,6 @@ function SamePerformer({performer, currentSlug, onFirst, onList}: {
         </div>
       )}
     </section>
-  );
-}
-
-function FavoriteButton({slug}: {slug: string}) {
-  const t = useT();
-  const {status} = useAuth();
-  const navigate = useNavigate();
-  const location = useLocation();
-  const favorites = useAsync(signal => getFavorites(signal), [status], status === 'user');
-  const [saved, setSaved] = useState<boolean | null>(null);
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState('');
-
-  useEffect(() => setSaved(null), [slug]);
-  const isSaved = saved ?? (favorites.data?.some(f => f.slug === slug) ?? false);
-
-  const toggle = async () => {
-    if (status !== 'user') {
-      navigate(`/login?next=${encodeURIComponent(location.pathname)}`);
-      return;
-    }
-    const next = !isSaved;
-    setSaved(next);
-    setBusy(true);
-    setError('');
-    try {
-      await setFavorite(slug, next);
-    } catch (cause) {
-      setSaved(!next);
-      setError(cause instanceof Error ? cause.message : t('release.favoriteFailed'));
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  return (
-    <>
-      <button type="button" className={isSaved ? 'pill-btn is-on' : 'pill-btn'} aria-pressed={isSaved} disabled={busy} onClick={toggle}>
-        <Icon name="favorites" size={18} filled={isSaved} />
-        {isSaved ? t('release.favorited') : t('release.favorite')}
-      </button>
-      {error && (
-        <span className="inline-error" role="alert">
-          {error}
-        </span>
-      )}
-    </>
   );
 }
 
