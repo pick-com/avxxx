@@ -37,8 +37,12 @@ const (
 	// DMMItemListURL is the seeded discovery start URL: FANZA digital
 	// videos, newest release date first, the documented maximum of 100 hits.
 	DMMItemListURL = "https://api.dmm.com/affiliate/v3/ItemList?floor=videoa&hits=100&output=json&service=digital&site=FANZA&sort=date"
-	// DMMActressSearchURL is the seeded performer discovery start URL.
-	DMMActressSearchURL = "https://api.dmm.com/affiliate/v3/ActressSearch?hits=100&output=json&sort=id"
+	// DMMActressSearchURL is the seeded performer discovery start URL:
+	// newest actress IDs first (sort=-id), because incremental runs read the
+	// head and stop at the previous run's head records (crawl watermark);
+	// with ascending IDs new actresses would only ever be found by a
+	// baseline pass. Pending live verification with credentials.
+	DMMActressSearchURL = "https://api.dmm.com/affiliate/v3/ActressSearch?hits=100&output=json&sort=-id"
 	// DMMCreditHTML is the credit DMM requires on sites built with the API,
 	// to be shown verbatim (no added attributes or markup).
 	DMMCreditHTML = `Powered by <a href="https://affiliate.dmm.com/api/">FANZA Webサービス</a>`

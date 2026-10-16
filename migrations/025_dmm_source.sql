@@ -2,8 +2,17 @@
 -- 2.4 tier official_catalog). Seeded disabled: enable them only after
 -- DMM_API_ID / DMM_AFFILIATE_ID are deployed and a dry run looks right.
 -- Credentials are never stored here; the adapter adds them per request.
--- Re-run on every start: every statement is idempotent. (022-024 are
--- reserved for other work.)
+-- Re-run on every start: every statement is idempotent.
+--
+-- Crawl governance (024): license_status official_api permits automatic
+-- crawls only after an admin records a terms review
+-- (PUT /api/admin/sources/{id}/license sets terms_reviewed_at), so the seed
+-- leaves terms_reviewed_at NULL on purpose; until then only manual verify
+-- jobs (which write nothing) can run. terms_url points at the API guide,
+-- whose usage terms the review must cover.
+--
+-- ActressSearch is seeded newest-first (sort=-id) so incremental runs, which
+-- read the head and stop at the last run's head records, see new actresses.
 
 -- Credit text the UI must show verbatim where DMM data is displayed.
 ALTER TABLE sources ADD COLUMN IF NOT EXISTS attribution_html text;
@@ -14,7 +23,7 @@ VALUES
    'https://api.dmm.com/affiliate/v3/ItemList?floor=videoa&hits=100&output=json&service=digital&site=FANZA&sort=date',
    false, 'dmm', 'official_catalog', 'official_api', 'https://affiliate.dmm.com/api/', 'direct', 10),
   ('DMM/FANZA ActressSearch',
-   'https://api.dmm.com/affiliate/v3/ActressSearch?hits=100&output=json&sort=id',
+   'https://api.dmm.com/affiliate/v3/ActressSearch?hits=100&output=json&sort=-id',
    false, 'dmm', 'official_catalog', 'official_api', 'https://affiliate.dmm.com/api/', 'direct', 10)
 ON CONFLICT (url) DO NOTHING;
 
