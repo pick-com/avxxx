@@ -173,6 +173,13 @@ var expectedRoutes = []string{
 	"POST /api/admin/media-links/run",
 	"POST /api/admin/media-links/{release_id}/retry",
 	"POST /api/admin/media-links/{release_id}/choose",
+	// Sitemap sources and the SEO check report (sitemap.go).
+	"GET /api/sitemap/releases",
+	"GET /api/sitemap/performers",
+	"GET /api/sitemap/tags",
+	"GET /api/sitemap/counts",
+	"POST /api/admin/seo/report",
+	"GET /api/admin/seo/report",
 }
 
 var (

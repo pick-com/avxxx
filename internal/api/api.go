@@ -67,6 +67,8 @@ type Server struct {
 	linker       *medialink.Linker
 	linkOnDemand bool
 	linkAdmin    mediaLinkAdmin
+	// sitemap backs /api/sitemap/* and the SEO check report (sitemap.go).
+	sitemap sitemapStore
 	// adminToken is ADMIN_TOKEN, read once at construction. Empty disables
 	// every admin route (they all return 401).
 	adminToken string
@@ -104,6 +106,7 @@ func Register(mux *http.ServeMux, s *store.Store, mediaHandler *media.Handler) {
 		srv.governance = s
 		srv.playback = s
 		srv.linkAdmin = s
+		srv.sitemap = s
 		if svc := mediaHandler.Service(); svc != nil {
 			cfg, warn := medialink.ConfigFromEnv(os.Getenv)
 			for _, w := range warn {
@@ -142,6 +145,7 @@ func (srv *Server) routes() []route {
 	rs = append(rs, srv.searchRoutes()...)
 	rs = append(rs, srv.adminPerformerRoutes()...)
 	rs = append(rs, srv.adminMediaLinkRoutes()...)
+	rs = append(rs, srv.sitemapRoutes()...)
 	return srv.followMerges(rs)
 }
 
