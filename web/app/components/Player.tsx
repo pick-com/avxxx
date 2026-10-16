@@ -91,12 +91,14 @@ type LockableOrientation = ScreenOrientation & {lock?: (orientation: string) => 
  */
 export type PlayerProps = Parameters<typeof Player>[0];
 
-export function Player({slug, releaseId, title, resumeAt, onBack, theater = false, onToggleTheater, onEnded, autoStart = false, overlay, entryReason, related = [], onReplay, mini = false}: {
+export function Player({slug, releaseId, title, resumeAt, startAt, onBack, theater = false, onToggleTheater, onEnded, autoStart = false, overlay, entryReason, related = [], onReplay, mini = false}: {
   slug: string;
   /** releases.id for analytics (play_request / progress); no tracking without it. */
   releaseId?: number;
   title: string;
   resumeAt?: number;
+  /** A shared link's start time (?t=, seconds); wins over the saved resume point. */
+  startAt?: number;
   onBack?: () => void;
   theater?: boolean;
   onToggleTheater?: () => void;
@@ -152,6 +154,7 @@ export function Player({slug, releaseId, title, resumeAt, onBack, theater = fals
   const sharedPos = useRef(0);
   // play-config resume (needs the user token) wins over the history-derived prop.
   const resumeFrom = (() => {
+    if (startAt && startAt > 0) return startAt;
     const at = config.data?.resume?.position_seconds ?? resumeAt;
     return at && at > 5 ? at : 0;
   })();
