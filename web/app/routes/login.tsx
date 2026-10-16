@@ -6,6 +6,7 @@ import {ThemeToggle} from '../components/TopBar';
 import {exchangeOAuthCode, type SignInResult} from '../lib/account';
 import {useAuth} from '../lib/auth';
 import {t, useT} from '../lib/i18n';
+import {clearPending} from '../lib/pendingAction';
 import type {MessageKey} from '../lib/messages.zh-CN';
 import '../styles/account.css';
 
@@ -63,6 +64,11 @@ export default function LoginPage() {
 
   // Back from Google / Apple: #oauth_code=… is exchanged once, then removed
   // from the address bar and history.
+  // A failed provider sign-in drops the action the sign-in sheet left waiting.
+  useEffect(() => {
+    if (params.get('oauth_error')) clearPending();
+  }, [params]);
+
   useEffect(() => {
     const hash = new URLSearchParams(window.location.hash.slice(1));
     const code = hash.get('oauth_code');
@@ -73,6 +79,7 @@ export default function LoginPage() {
     exchangeOAuthCode(code).then(
       result => finish(result, result.remember !== false, !!result.created),
       () => {
+        clearPending();
         setError(t('login.oauthExpired'));
         setBusy(false);
       },

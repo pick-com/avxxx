@@ -1,4 +1,4 @@
-import {useEffect, useId, useState} from 'react';
+import {useEffect, useId, useRef, useState} from 'react';
 import {isAbort} from '../lib/api';
 import {track} from '../lib/analytics';
 import {useAuth} from '../lib/auth';
@@ -21,7 +21,7 @@ import {useT} from '../lib/i18n';
 import type {MessageKey} from '../lib/messages.zh-CN';
 import {useAsync} from '../lib/useAsync';
 import {useMediaQuery} from '../lib/useMediaQuery';
-import {useRequireAuth} from './AuthPrompt';
+import {usePendingAction, useRequireAuth} from './AuthPrompt';
 import {Icon} from './Icon';
 import {ReportPicker} from './ReportPicker';
 import {Sheet} from './Sheet';
@@ -203,6 +203,24 @@ function ReviewItem({review, onChange, onRemove}: {review: Review; onChange: (r:
   const [reported, setReported] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
+  const latest = useRef(review);
+  latest.current = review;
+  // Back from the sign-in sheet: mark it helpful (once; not your own).
+  usePendingAction('like', `review:${review.id}`, async () => {
+    if (latest.current.mine) return null;
+    if (!latest.current.liked_by_me) {
+      try {
+        const r = await likeReview(review.id, true);
+        onChange({...latest.current, liked_by_me: r.liked, likes: r.likes});
+        track('review_like', {review_id: review.id});
+      } catch (cause) {
+        setError(postErrorMessage(cause));
+        return null;
+      }
+    }
+    return t('authPrompt.doneLike');
+  });
+
   const toggleLike = async () => {
     if (busy) return;
     const like = !review.liked_by_me;
@@ -270,7 +288,7 @@ function ReviewItem({review, onChange, onRemove}: {review: Review; onChange: (r:
             <span aria-hidden="true">{review.likes > 0 ? formatCount(review.likes) : t('review.helpful')}</span>
           </button>
         ) : (
-          <button type="button" className="review-like" aria-label={t('review.loginToLike', {n: review.likes})} onClick={() => requireAuth('like')}>
+          <button type="button" className="review-like" aria-label={t('review.loginToLike', {n: review.likes})} onClick={() => requireAuth('like', {target: `review:${review.id}`})}>
             <Icon name="thumb" size={18} />
             <span aria-hidden="true">{review.likes > 0 ? formatCount(review.likes) : t('review.helpful')}</span>
           </button>

@@ -4,7 +4,7 @@ import {useAuth} from '../lib/auth';
 import {useT} from '../lib/i18n';
 import {playlistName, visibilityIcon, visibilityLabel} from '../lib/playlists';
 import {useMediaQuery} from '../lib/useMediaQuery';
-import {useRequireAuth} from './AuthPrompt';
+import {usePendingAction, useRequireAuth} from './AuthPrompt';
 import {Icon} from './Icon';
 import {Sheet} from './Sheet';
 import {useDismiss} from './SocialButtons';
@@ -46,8 +46,31 @@ export function FavoritePicker({slug, title}: {slug: string; title: string}) {
 
   const saved = legacy ?? lists?.some(p => p.contains) ?? false;
 
+  // Back from the sign-in sheet: open the picker (or save, on the single-list backend).
+  usePendingAction(
+    'favorite',
+    slug,
+    async () => {
+      if (legacy === null) {
+        setOpen(true);
+        return t('authPrompt.donePickList');
+      }
+      if (!legacy) {
+        try {
+          await setFavorite(slug, true);
+          setLegacy(true);
+        } catch (cause) {
+          setError(cause instanceof Error ? cause.message : t('release.favoriteFailed'));
+          return null;
+        }
+      }
+      return t('authPrompt.doneFavorite');
+    },
+    lists !== null || legacy !== null,
+  );
+
   const onButton = async () => {
-    if (!requireAuth('favorite')) return;
+    if (!requireAuth('favorite', {target: slug})) return;
     if (legacy !== null) {
       // Older backend: a plain toggle on the single list.
       const next = !legacy;

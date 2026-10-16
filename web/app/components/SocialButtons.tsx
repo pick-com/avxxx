@@ -4,7 +4,7 @@ import type {NotifyMode} from '../lib/api';
 import {useAuth} from '../lib/auth';
 import {t, useT} from '../lib/i18n';
 import {useSocial} from '../lib/social';
-import {useRequireAuth} from './AuthPrompt';
+import {usePendingAction, useRequireAuth} from './AuthPrompt';
 import {Icon, type IconName} from './Icon';
 
 // NewWorkAlert: 关注 + bell with three modes; 预约 for upcoming works; 稍后观看.
@@ -79,13 +79,31 @@ export function FollowButton({slug, name, performerId, source = 'other', size = 
   const bellRef = useRef<HTMLButtonElement>(null);
   const menuId = useId();
   useDismiss(open, () => setOpen(false), rootRef, bellRef);
+  // Back from the sign-in sheet: follow once the account's follows have loaded.
+  usePendingAction(
+    'follow',
+    slug,
+    async () => {
+      if (available.follows === 'no') return null;
+      if (followMode(slug) === null) {
+        const err = await setFollow(slug, 'all', name);
+        if (err) {
+          setError(err);
+          return null;
+        }
+        if (performerId) track('follow_actor', {performer_id: performerId, source});
+      }
+      return t('authPrompt.doneFollow', {name});
+    },
+    followsReady,
+  );
 
   if (status === 'user' && available.follows === 'no') return null;
   const mode = status === 'user' ? followMode(slug) : null;
   const following = mode !== null;
 
   const run = async (next: NotifyMode | null) => {
-    if (!requireAuth('follow')) return;
+    if (!requireAuth('follow', {target: slug})) return;
     setBusy(true);
     setError('');
     const err = await setFollow(slug, next, name);
@@ -170,13 +188,29 @@ export function LaterButton({slug, title, variant = 'pill'}: {slug: string; titl
   const {available, later, setLater} = useSocial();
   const requireAuth = useRequireAuth();
   const [error, setError] = useState('');
+  usePendingAction(
+    'later',
+    slug,
+    async () => {
+      if (available.later === 'no') return null;
+      if (!later.has(slug)) {
+        const err = await setLater(slug, true);
+        if (err) {
+          setError(err);
+          return null;
+        }
+      }
+      return t('authPrompt.doneLater');
+    },
+    available.later !== 'unknown',
+  );
   if (status === 'user' && available.later === 'no') return null;
   // Card overlays only for signed-in users: a login prompt on every card is noise.
   if (variant === 'icon' && status !== 'user') return null;
   const on = status === 'user' && later.has(slug);
 
   const toggle = async () => {
-    if (!requireAuth('later')) return;
+    if (!requireAuth('later', {target: slug})) return;
     setError('');
     setError(await setLater(slug, !on));
   };
@@ -224,11 +258,28 @@ export function ReserveButton({slug, title, initial, size = 'md'}: {slug: string
     if (initial) noteReserved([slug]);
   }, [initial, slug, noteReserved]);
 
+  usePendingAction(
+    'reserve',
+    slug,
+    async () => {
+      if (available.reservations === 'no') return null;
+      if (!reserved.has(slug)) {
+        const err = await setReserved(slug, true);
+        if (err) {
+          setError(err);
+          return null;
+        }
+      }
+      return t('authPrompt.doneReserve');
+    },
+    available.reservations !== 'unknown',
+  );
+
   if (status === 'user' && available.reservations === 'no') return null;
   const on = status === 'user' && reserved.has(slug);
 
   const toggle = async () => {
-    if (!requireAuth('reserve')) return;
+    if (!requireAuth('reserve', {target: slug})) return;
     setBusy(true);
     setError('');
     setError(await setReserved(slug, !on));
