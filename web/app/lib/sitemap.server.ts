@@ -6,7 +6,9 @@
 //   releases    GET /api/sitemap/releases    published, unmerged, playable
 //   performers  GET /api/sitemap/performers  active, with a published release
 //   tags        GET /api/sitemap/tags        tags of published releases (/discover?tag=)
-//   pages       static: home, discover, categories, actors, legal documents
+//   series      GET /api/series?sort=name    series with a published release (/series/{slug});
+//               lastmod is the series' latest release date
+//   pages       static: home, discover, categories, actors, series list, legal documents
 // A backend without the sitemap routes (404) falls back to the public lists
 // (GET /api/releases, /api/performers, /api/tags) so the files still exist.
 //
@@ -18,8 +20,8 @@ import {serverApi} from './api.server';
 import {DEFAULT_LANG, LANGS, localizePath} from './langs';
 import {LEGAL_DOCS} from './legal';
 
-export type SitemapType = 'pages' | 'releases' | 'performers' | 'tags';
-export const SITEMAP_TYPES: SitemapType[] = ['pages', 'releases', 'performers', 'tags'];
+export type SitemapType = 'pages' | 'releases' | 'performers' | 'tags' | 'series';
+export const SITEMAP_TYPES: SitemapType[] = ['pages', 'releases', 'performers', 'tags', 'series'];
 
 export type Entry = {path: string; lastmod?: string};
 
@@ -60,6 +62,7 @@ async function load(type: SitemapType, signal?: AbortSignal): Promise<Entry[]> {
         {path: '/discover'},
         {path: '/discover?tab=categories'},
         {path: '/discover?tab=actors'},
+        {path: '/series'},
         ...LEGAL_DOCS.map(d => ({path: `/legal/${encodeURIComponent(d.slug)}`})),
       ];
     case 'releases':
@@ -88,6 +91,16 @@ async function load(type: SitemapType, signal?: AbortSignal): Promise<Entry[]> {
         if (!missingRoute(e)) throw e;
         const rows = await serverApi<Page<{slug: string}>>('tags?limit=1000', {signal});
         return (rows.items ?? []).map(r => ({path: `/discover?tag=${encodeURIComponent(r.slug)}`}));
+      }
+    case 'series':
+      try {
+        // The public list (name order is stable for the cursor walk); 100 per page is its maximum.
+        const rows = await walk<{slug: string; latest_release_date?: string | null}>(c => `series?sort=name&limit=100${q(c)}`, signal);
+        return rows.map(r => ({path: `/series/${encodeURIComponent(r.slug)}`, lastmod: day(r.latest_release_date)}));
+      } catch (e) {
+        // A backend without the series routes has no series pages either.
+        if (missingRoute(e)) return [];
+        throw e;
       }
   }
 }

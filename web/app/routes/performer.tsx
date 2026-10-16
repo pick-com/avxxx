@@ -4,9 +4,13 @@ import {Avatar, ReleaseCard, SectionHeader} from '../components/Cards';
 import {LoadMore} from '../components/Paging';
 import {SimilarPerformers} from '../components/PerformerRecs';
 import {FollowButton} from '../components/SocialButtons';
+import {SourceCredits} from '../components/SourceCredits';
+import {SourceEvidence} from '../components/SourceEvidence';
 import {BlockSkeleton, CardGridSkeleton, EmptyState, ErrorBanner} from '../components/States';
 import {ApiError, getPerformer, getPerformerReleases, listPerformerPage, listReleasePage, toPage, type LangCode, type Page, type PerformerDetail, type Release} from '../lib/api';
 import {isGone, serverApi} from '../lib/api.server';
+import {serverCredits} from '../lib/credits.server';
+import {useCredits, type Attribution} from '../lib/evidence';
 import {localizePath, routeLang} from '../lib/langs';
 import {breadcrumbs, clip, compact, isoDate, pageUrl, rootMeta, seoMeta, type SeoHandle} from '../lib/seo';
 import {ageAt, formatCount, formatDate, formatYear} from '../lib/format';
@@ -26,6 +30,8 @@ type PerformerLoad = {
   slug: string;
   detail?: PerformerDetail;
   works?: Page<Release>;
+  /** Source credits (GET /api/attributions?performer=), shown at the end of the page. */
+  credits?: Attribution[];
   missing?: boolean;
   unavailable?: boolean;
 };
@@ -40,11 +46,12 @@ export async function loader({params, request}: LoaderFunctionArgs) {
     if (detail.slug && detail.slug !== slug) {
       throw redirect(localizePath(`/performers/${encodeURIComponent(detail.slug)}`, lang) + new URL(request.url).search, 301);
     }
+    const creditsP = serverCredits({kind: 'performer', slug}, request.signal);
     const works = await serverApi<{items: Release[] | null; next_cursor?: string | null}>(`releases?performer=${enc}&limit=${PAGE_SIZE}`, {lang, signal: request.signal})
       .then(toPage)
       .catch(() => undefined);
     // A backend without the performer filter answers every release: let the page fall back.
-    return {lang, slug, detail, works: works?.paged ? works : undefined} satisfies PerformerLoad;
+    return {lang, slug, detail, works: works?.paged ? works : undefined, credits: await creditsP} satisfies PerformerLoad;
   } catch (e) {
     if (e instanceof Response) throw e;
     if (isGone(e)) return data({lang, slug, missing: true} satisfies PerformerLoad, {status: 404});
@@ -139,6 +146,8 @@ export default function PerformerPage() {
     !!name,
   );
   const [tab, setTab] = useState<'works' | 'info'>('works');
+  // DMM and other sources that require a credit where their data is shown.
+  const credits = useCredits({kind: 'performer', slug}, loaded && loaded.slug === slug ? loaded.credits : undefined);
 
   useCanonicalSlug('performers', slug, detail.data?.slug);
   useEffect(() => setTab('works'), [slug]);
@@ -207,6 +216,7 @@ export default function PerformerPage() {
       {p && (
         <section className="performer-info">
           <PerformerMetadata detail={p} />
+          <SourceEvidence kind="performer" slug={p.slug} />
         </section>
       )}
 
@@ -242,6 +252,7 @@ export default function PerformerPage() {
       </section>
 
       <SimilarPerformers slug={slug} />
+      <SourceCredits items={credits} />
     </div>
   );
 }

@@ -160,6 +160,7 @@ func (srv *Server) routes() []route {
 	rs = append(rs, srv.adminReportRoutes()...)
 	rs = append(rs, srv.adminSplitRoutes()...)
 	rs = append(rs, srv.sitemapRoutes()...)
+	rs = append(rs, srv.attributionRoutes()...)
 	return srv.followMerges(rs)
 }
 

@@ -8,6 +8,8 @@ import {Player} from '../components/Player';
 import {HostedPlayer} from '../components/PlayerHost';
 import type {EndItem} from '../components/PlayerStates';
 import {Community} from '../components/Ratings';
+import {SourceCredits} from '../components/SourceCredits';
+import {SourceEvidence} from '../components/SourceEvidence';
 import {LaterButton, ReserveButton} from '../components/SocialButtons';
 import {BlockSkeleton, CardGridSkeleton, EmptyState, ErrorBanner} from '../components/States';
 import {ApiError, getFavorites, getPerformerReleases, getWatchLater, getRelease, getReleasePerformers, getWatchHistory, setFavorite, type Performer, type ReleaseDetail} from '../lib/api';
@@ -15,6 +17,8 @@ import {track} from '../lib/analytics';
 import {useAuth} from '../lib/auth';
 import {t, useI18n, useT} from '../lib/i18n';
 import {isGone, serverApi} from '../lib/api.server';
+import {serverCredits} from '../lib/credits.server';
+import {useCredits, type Attribution} from '../lib/evidence';
 import {localizePath, routeLang} from '../lib/langs';
 import type {MessageKey} from '../lib/messages.zh-CN';
 import {breadcrumbs, clip, compact, isoDate, isoMinutes, pageUrl, rootMeta, seoMeta, type SeoHandle} from '../lib/seo';
@@ -42,6 +46,8 @@ type ReleaseLoad = {
   slug: string;
   release?: ReleaseDetail;
   performers?: Performer[];
+  /** Source credits (GET /api/attributions?release=), shown at the end of the page. */
+  credits?: Attribution[];
   /** 404 / 410: not published, held, removed or unknown. */
   missing?: boolean;
   /** The API failed: render the loading state and let the browser retry. */
@@ -54,15 +60,16 @@ export async function loader({params, request}: LoaderFunctionArgs) {
   if (!lang) return null;
   const enc = encodeURIComponent(slug);
   try {
-    const [release, cast] = await Promise.all([
+    const [release, cast, credits] = await Promise.all([
       serverApi<ReleaseDetail>(`releases/${enc}`, {lang, signal: request.signal}),
       serverApi<{items: Performer[] | null}>(`releases/${enc}/performers`, {lang, signal: request.signal}).catch(() => ({items: []})),
+      serverCredits({kind: 'release', slug}, request.signal),
     ]);
     // Merged release: the API followed the 301; send crawlers to the surviving URL.
     if (release.slug && release.slug !== slug) {
       throw redirect(localizePath(`/releases/${encodeURIComponent(release.slug)}`, lang) + new URL(request.url).search, 301);
     }
-    return {lang, slug, release, performers: cast.items ?? []} satisfies ReleaseLoad;
+    return {lang, slug, release, performers: cast.items ?? [], credits} satisfies ReleaseLoad;
   } catch (e) {
     if (e instanceof Response) throw e;
     if (isGone(e)) return data({lang, slug, missing: true} satisfies ReleaseLoad, {status: 404});
@@ -196,6 +203,8 @@ export default function ReleasePage() {
   const release = detail.data?.[0];
   const performers = detail.data?.[1] ?? [];
   const resumeAt = history.data?.find(item => item.slug === slug)?.progress_seconds;
+  // DMM and other sources that require a credit where their data is shown.
+  const credits = useCredits({kind: 'release', slug}, own?.credits);
 
   useCanonicalSlug('releases', slug, release?.slug);
 
@@ -311,13 +320,15 @@ export default function ReleasePage() {
               currentSlug={slug}
               onClose={() => setSheetPerformer(null)}
             />
+            <SourceEvidence kind="release" slug={release.slug} />
           </>
         )}
+        <SourceCredits items={credits} />
       </div>
 
       <aside className="video-aside" aria-label={t('release.upNext')}>
         {queue && queueIndex >= 0 && <QueuePanel slugs={queue.slugs} index={queueIndex} />}
-        {release && <UpNext slug={slug} performer={performers[0]} onFirst={setRelated} onList={setEndItems} />}
+        {release && <UpNext slug={slug} performer={performers[0]} series={release.series ?? undefined} onFirst={setRelated} onList={setEndItems} />}
       </aside>
     </div>
   );
@@ -344,7 +355,16 @@ function ReleaseMeta({release}: {release: ReleaseDetail}) {
       ) : undefined,
     ],
     [t('release.metaLabel'), release.label_name],
-    [t('release.metaSeries'), release.series_name],
+    [
+      t('release.metaSeries'),
+      release.series?.slug ? (
+        <Link to={`/series/${encodeURIComponent(release.series.slug)}`} className="meta-link">
+          {release.series.display_name || release.series.name || release.series_name}
+        </Link>
+      ) : (
+        release.series_name
+      ),
+    ],
     [t('release.metaDirector'), release.director_name || undefined],
   ];
   // Product codes (catalog-filters backend); one row per identifier type.
@@ -414,11 +434,14 @@ function CastMember({performer, releaseDate, onOpen}: {performer: Performer; rel
 }
 
 type NextUp = {id: number; slug: string; title: string; reason?: string};
+type SeriesLink = NonNullable<ReleaseDetail['series']>;
 
 /** 接下来播放: the related recs, else the same-performer list. */
-function UpNext({slug, performer, onFirst, onList}: {
+function UpNext({slug, performer, series, onFirst, onList}: {
   slug: string;
   performer?: Performer;
+  /** The release's series: the 同系列 tab links to its page. */
+  series?: SeriesLink;
   onFirst: (next: NextUp | null) => void;
   /** The first six, for the player's end screen. */
   onList: (items: EndItem[]) => void;
@@ -427,7 +450,7 @@ function UpNext({slug, performer, onFirst, onList}: {
   const items = (recs.data?.items ?? []).filter(it => it.slug !== slug);
   if (recs.loading) return null;
   if (recs.error || items.length === 0) return performer ? <SamePerformer performer={performer} currentSlug={slug} onFirst={onFirst} onList={onList} /> : null;
-  return <RelatedList items={items} onFirst={onFirst} onList={onList} />;
+  return <RelatedList items={items} series={series} onFirst={onFirst} onList={onList} />;
 }
 
 /** Reports the end-screen list whenever its slugs change. */
@@ -446,7 +469,7 @@ const RELATED_TABS: {key: RelatedTab; label: MessageKey}[] = [
   {key: 'series', label: 'related.series'},
 ];
 
-function RelatedList({items, onFirst, onList}: {items: RecItem[]; onFirst: (next: NextUp | null) => void; onList?: (items: EndItem[]) => void}) {
+function RelatedList({items, series, onFirst, onList}: {items: RecItem[]; series?: SeriesLink; onFirst: (next: NextUp | null) => void; onList?: (items: EndItem[]) => void}) {
   const t = useT();
   useEndList(
     items.slice(0, 6).map(it => ({
@@ -498,6 +521,11 @@ function RelatedList({items, onFirst, onList}: {items: RecItem[]; onFirst: (next
           />
         ))}
       </div>
+      {series?.slug && (active === 'series' || !tabs.some(x => x.key === 'series')) && (
+        <Link to={`/series/${encodeURIComponent(series.slug)}`} className="text-btn">
+          {t('series.viewAll')} · {series.display_name || series.name}
+        </Link>
+      )}
     </section>
   );
 }

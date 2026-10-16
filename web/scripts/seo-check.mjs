@@ -28,7 +28,7 @@ const WEB = (process.env.WEB_URL || 'http://127.0.0.1:3000').replace(/\/+$/, '')
 const API = (process.env.API_URL || process.env.API_INTERNAL_URL || 'http://127.0.0.1:8080').replace(/\/+$/, '');
 const SAMPLES = Math.max(1, Number(process.env.SEO_SAMPLES) || 5);
 const LANGS = ['zh-CN', 'zh-TW', 'en', 'ja', 'ko', 'vi', 'es', 'th'];
-const TYPES = ['pages', 'releases', 'performers', 'tags'];
+const TYPES = ['pages', 'releases', 'performers', 'tags', 'series'];
 const COUNTED = ['releases', 'performers', 'tags'];
 const UA = 'avxxx-seo-check/1.0';
 

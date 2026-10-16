@@ -18,7 +18,7 @@ const timeoutMs = () => {
   return Number.isFinite(n) && n > 0 ? n : 4000;
 };
 
-const LOCALIZED_PATH = /^(releases|performers|catalog\/search|recs|trending)(\/|\?|$)/;
+const LOCALIZED_PATH = /^(releases|performers|series|catalog\/search|recs|trending)(\/|\?|$)/;
 
 /**
  * GET /api/{path} from the server. `lang` adds ?lang= (content language) and

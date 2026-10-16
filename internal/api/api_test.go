@@ -191,6 +191,8 @@ var expectedRoutes = []string{
 	"GET /api/sitemap/counts",
 	"POST /api/admin/seo/report",
 	"GET /api/admin/seo/report",
+	// Source credits (attributions.go).
+	"GET /api/attributions",
 }
 
 var (
