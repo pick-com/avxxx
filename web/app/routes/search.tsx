@@ -9,11 +9,13 @@ import {SearchBox} from '../components/SearchBox';
 import {CardGridSkeleton, EmptyState, ErrorBanner} from '../components/States';
 import {onUnload, track} from '../lib/analytics';
 import {type ReleaseFilter} from '../lib/api';
-import {formatDate, formatYear} from '../lib/format';
+import {useAuth} from '../lib/auth';
+import {useCatalogFacets} from '../lib/facets';
+import {formatCount, formatDate, formatYear} from '../lib/format';
 import {t, useT} from '../lib/i18n';
-import {clearRecentSearches, readRecentSearches, rememberSearch} from '../lib/recentSearches';
+import {clearAllRecentSearches, syncRecentSearches} from '../lib/recentSearches';
 import {RELEASE_SORTS, parseReleaseFilter, withFilter} from '../lib/releaseFilter';
-import {searchCatalog, searchJump, type SearchItem, type SearchResponse} from '../lib/search';
+import {searchCatalog, searchJump, type SearchItem, type SearchResponse, type SearchType} from '../lib/search';
 import {useAsync} from '../lib/useAsync';
 
 export const meta = () => [{title: t('title.search')}];
@@ -69,27 +71,39 @@ const SORTS: SortOption[] = [{value: 'relevance', get label() { return t('search
 // 已为你搜索「…」; each item's `match` adds a subtle 别名匹配 / 英文标题 hint.
 // Choosing a sort, 时长 or 年份 switches the video results to
 // GET /api/releases?q=… (title / product-code match) with cursor paging.
-// The empty state shows 最近搜索 and 大家都在搜 (GET /api/search/hot).
-// TODO(tech plan 3.4): 类型 / 清晰度 / 字幕 filters, result counts.
+// The empty state shows 最近搜索 (synced to the account when signed in) and
+// 大家都在搜 (GET /api/search/hot).
+// 类型 tabs (全部 / 演员 / 视频, ?type=) carry the per-type counts (counts=1).
+// 清晰度 / 字幕 (and 语言) filters come from playback sources and only show
+// when GET /api/catalog/facets reports data for them.
 export default function SearchPage() {
   const t = useT();
   const [params, setParams] = useSearchParams();
   const q = (params.get('q') ?? '').trim();
+  const rawType = params.get('type');
+  const type: SearchType | undefined = rawType === 'performer' || rawType === 'release' ? rawType : undefined;
   const filter = parseReleaseFilter(params);
-  const browse = !!(filter.sort || filter.year || filter.min_runtime || filter.max_runtime || filter.tag || filter.maker || filter.performer);
+  const browse = type !== 'performer' && !!(filter.sort || filter.year || filter.min_runtime || filter.max_runtime || filter.tag || filter.maker || filter.performer || filter.min_height || filter.subtitle || filter.audio_lang);
   const navigate = useNavigate();
-  const results = useAsync(signal => searchCatalog(q, LIMIT, signal), [q], q !== '');
+  const {status} = useAuth();
+  const results = useAsync(signal => searchCatalog(q, LIMIT, signal, {type, counts: true}), [q, type], q !== '');
+  const facets = useCatalogFacets(q !== '');
   const [recent, setRecent] = useState<string[]>([]);
-  const jump = !browse && results.data ? searchJump(results.data) : null;
+  const jump = !browse && !type && results.data ? searchJump(results.data) : null;
 
   useEffect(() => {
-    if (q) rememberSearch(q);
-    setRecent(readRecentSearches());
-  }, [q]);
+    if (status === 'unknown') return;
+    const controller = new AbortController();
+    syncRecentSearches(status === 'user', q || undefined, controller.signal).then(list => {
+      if (!controller.signal.aborted) setRecent(list);
+    });
+    return () => controller.abort();
+  }, [q, status]);
 
   const hits = results.data?.items;
   const performers = (hits ?? []).filter(h => h.type === 'performer');
   const releases = (hits ?? []).filter(h => h.type === 'release');
+  const counts = results.data?.counts;
   const clicked = useSearchTracking(q, results.data);
   const effective = results.data?.effective_query;
   const rescued = !!results.data?.rescued && !!effective;
@@ -122,8 +136,8 @@ export default function SearchPage() {
                     type="button"
                     className="text-btn"
                     onClick={() => {
-                      clearRecentSearches();
                       setRecent([]);
+                      void clearAllRecentSearches(status === 'user');
                     }}
                   >
                     {t('common.clear')}
@@ -151,6 +165,18 @@ export default function SearchPage() {
               <span className="muted">{hits.length >= LIMIT ? t('search.firstN', {n: LIMIT}) : t('search.count', {n: hits.length})}</span>
             )}
           </div>
+          {counts && (counts.performer > 0 || counts.release > 0 || type) && (
+            <TypeTabs
+              type={type}
+              counts={counts}
+              onChange={next => {
+                const p = new URLSearchParams(params);
+                if (next) p.set('type', next);
+                else p.delete('type');
+                setParams(p, {replace: true});
+              }}
+            />
+          )}
           {!browse && effective && effective !== results.data?.query && hits && hits.length > 0 && (
             <p className={rescued ? 'search-note search-note-rescued' : 'search-note'} role="status">
               {rescued ? t('search.rescued', {q, effective}) : t('search.synonym', {effective})}
@@ -184,10 +210,11 @@ export default function SearchPage() {
             </div>
           )}
 
-          {(browse || releases.length > 0) && (
+          {type !== 'performer' && (browse || releases.length > 0) && (
             <FilterBar
               filter={filter}
               onChange={update}
+              facets={facets}
               sortOptions={SORTS}
               sortValue={filter.sort ?? (browse ? 'newest' : 'relevance')}
               onSort={value => {
@@ -281,4 +308,24 @@ function MatchHint({hit}: {hit: SearchItem}) {
 function performerSub(hit: SearchItem): string {
   const year = formatYear(hit.birth_date);
   return [hit.canonical_name_ja, year && t('search.born', {year})].filter(Boolean).join(' · ');
+}
+
+/** 类型: 全部 / 演员 n / 视频 n (counts capped at 1000 by the API: "1000+"). */
+function TypeTabs({type, counts, onChange}: {type?: SearchType; counts: {performer: number; release: number}; onChange: (next?: SearchType) => void}) {
+  const t = useT();
+  const n = (v: number) => (v >= 1000 ? `${formatCount(1000)}+` : formatCount(v));
+  const tabs: {value?: SearchType; label: string}[] = [
+    {value: undefined, label: t('search.typeAll')},
+    {value: 'performer', label: t('search.typeActors', {n: n(counts.performer)})},
+    {value: 'release', label: t('search.typeVideos', {n: n(counts.release)})},
+  ];
+  return (
+    <div className="segmented segmented-sm search-types" role="radiogroup" aria-label={t('search.type')}>
+      {tabs.map(tab => (
+        <button key={tab.value ?? 'all'} type="button" role="radio" aria-checked={tab.value === type} className="segmented-item" onClick={() => onChange(tab.value)}>
+          {tab.label}
+        </button>
+      ))}
+    </div>
+  );
 }

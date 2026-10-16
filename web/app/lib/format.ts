@@ -123,6 +123,34 @@ export function formatSchedule(scheduledAt: string | null | undefined, releaseDa
   return date ? live(date) : t('schedule.tba');
 }
 
+const languageNames = () =>
+  cached('languageNames', locale => {
+    try {
+      return new Intl.DisplayNames([locale], {type: 'language'});
+    } catch {
+      return null;
+    }
+  });
+
+/** 日本語 / Japanese for a language code (playback audio / subtitle languages); the code itself when unknown. */
+export function languageName(code: string): string {
+  try {
+    return languageNames()?.of(code) || code;
+  } catch {
+    return code;
+  }
+}
+
+/** Day heading for the 即将上线 list: 今天 / 明天 / 后天 (relative) or the date; YYYY-MM-DD in. */
+export function upcomingDayLabel(date: string, now = new Date()): string {
+  const d = parseDate(date);
+  if (!d) return '';
+  const today = Date.UTC(now.getFullYear(), now.getMonth(), now.getDate());
+  const diff = Math.round((d.getTime() - today) / 86400000);
+  if (diff >= 0 && diff <= 2) return relativeFormat().format(diff, 'day');
+  return formatDate(date);
+}
+
 /** Stable placeholder colour index (0–9) for artwork we do not have yet. */
 export function swatch(key: string): number {
   let hash = 0;

@@ -2,7 +2,7 @@ import {useRef, useState} from 'react';
 import {Link} from '../lib/nav';
 import {formatCompact, formatDate, formatRuntime} from '../lib/format';
 import {useT} from '../lib/i18n';
-import {getTrending, movementLabel, PERIODS, performerName, reasonText, recTitle, recsMissing, type HeatItem, type Movement, type Period, type TrendingItem} from '../lib/recs';
+import {getTrending, movementLabel, PERIODS, performerName, reasonText, recTitle, recsMissing, type HeatItem, type Movement, type Period, type TrendingItem, type TrendingTag} from '../lib/recs';
 import {usePaged} from '../lib/usePaged';
 import {Avatar, CardReason, SectionHeader, Thumb} from './Cards';
 import {LoadMore} from './Paging';
@@ -16,8 +16,8 @@ import {HotSearches} from './HotSearches';
 //
 // 热搜词 (right column, under 演员热度榜): GET /api/search/hot, hidden when
 // the route is not deployed or the board is empty.
-// TODO(tech plan 3.4): genre chips (全部 / 剧情 / 悬疑 …) — the board has no
-// per-genre variant.
+// Genre chips (全部 / 剧情 / 悬疑 …): the board's most frequent tags (first
+// page "tags"); a chip filters the board with ?tag= (ranks stay board-wide).
 
 type Row = TrendingItem & {id: number};
 
@@ -62,13 +62,18 @@ export function MovementBadge({movement, delta}: {movement: Movement; delta: num
 export function TrendingBoard({period, onMissing, showHeat = true}: {period: Period; onMissing?: () => void; showHeat?: boolean}) {
   const t = useT();
   const [heat, setHeat] = useState<HeatItem[]>([]);
+  const [genres, setGenres] = useState<TrendingTag[]>([]);
+  const [genre, setGenre] = useState('');
   const missingRef = useRef(onMissing);
   missingRef.current = onMissing;
   const list = usePaged<Row>(
     async (cursor, signal) => {
       try {
-        const page = await getTrending(period, {limit: 20, cursor}, signal);
-        if (!cursor) setHeat(page.performers);
+        const page = await getTrending(period, {limit: 20, cursor, tag: genre || undefined}, signal);
+        if (!cursor) {
+          setHeat(page.performers);
+          setGenres(page.tags);
+        }
         // usePaged de-duplicates by id; board rows key on the release.
         return {...page, items: page.items.map(x => ({...x, id: x.release?.id ?? -x.rank}))};
       } catch (error) {
@@ -76,19 +81,45 @@ export function TrendingBoard({period, onMissing, showHeat = true}: {period: Per
         throw error;
       }
     },
-    [period],
+    [period, genre],
   );
 
   const rows = list.items.filter(r => r.release);
   return (
     <div className="trending-layout">
       <section className="trending-main" aria-label={t('trending.title')}>
+        {genres.length > 0 && (
+          <div className="chip-row trending-genres" role="radiogroup" aria-label={t('trending.genres')}>
+            {[{slug: '', name: t('trending.genreAll')}, ...genres].map(g => (
+              <button
+                key={g.slug || 'all'}
+                type="button"
+                role="radio"
+                aria-checked={g.slug === genre}
+                className={g.slug === genre ? 'chip chip-on' : 'chip'}
+                onClick={() => setGenre(g.slug)}
+              >
+                {g.name}
+              </button>
+            ))}
+          </div>
+        )}
         {list.error ? (
           recsMissing(list.error) ? null : <ErrorBanner error={list.error} onRetry={list.reload} />
         ) : list.loading ? (
           list.slow && <CardGridSkeleton count={6} variant="row" />
         ) : rows.length === 0 ? (
-          <EmptyState icon="trending" title={t('trending.empty')} body={t('trending.emptyBody')} actions={[{to: '/discover?tab=new', label: t('nav.new')}]} />
+          genre ? (
+            <EmptyState icon="trending" title={t('trending.emptyGenre')}>
+              <div className="empty-actions">
+                <button type="button" className="btn btn-primary" onClick={() => setGenre('')}>
+                  {t('trending.genreAll')}
+                </button>
+              </div>
+            </EmptyState>
+          ) : (
+            <EmptyState icon="trending" title={t('trending.empty')} body={t('trending.emptyBody')} actions={[{to: '/discover?tab=new', label: t('nav.new')}]} />
+          )
         ) : (
           <>
             <ol className="trending-list">

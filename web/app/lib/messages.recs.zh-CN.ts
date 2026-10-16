@@ -52,6 +52,9 @@ export const recsZhCN = {
   'trending.more': '加载更多',
   'trending.actors': '演员热度榜',
   'trending.actorsAll': '全部',
+  'trending.genres': '类型',
+  'trending.genreAll': '全部',
+  'trending.emptyGenre': '这个类型暂时没有上榜作品',
 
   // Release page 接下来播放
   'related.tabs': '推荐分类',

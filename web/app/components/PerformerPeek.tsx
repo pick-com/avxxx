@@ -3,8 +3,9 @@ import {createPortal} from 'react-dom';
 import {Link} from '../lib/nav';
 import {track} from '../lib/analytics';
 import {getPerformer, getPerformerReleases, type Performer, type PerformerDetail, type Release} from '../lib/api';
-import {ageAt, formatDate, formatYear} from '../lib/format';
+import {ageAt, formatCompact, formatDate, formatYear} from '../lib/format';
 import {t, useT} from '../lib/i18n';
+import {getPerformerRecs, performerName, type PerformerRecItem} from '../lib/recs';
 import {useAsync} from '../lib/useAsync';
 import {Avatar, Thumb} from './Cards';
 import {Sheet} from './Sheet';
@@ -13,18 +14,47 @@ import {FollowButton} from './SocialButtons';
 // PRD 6.3: desktop hover card and mobile half sheet (MobileActorSheet), both
 // from GET /api/performers/{slug} and GET /api/performers/{slug}/releases.
 //
-// Not shown for lack of backend (never filled with sample data):
 // 关注 + bell (NewWorkAlert) shares state with the performer page (lib/social).
-// TODO(tech plan 3.13 performer_stats): 粉丝 / 总播放 / 热度 stats.
-// TODO(tech plan 2.4 media_assets): portrait photos (placeholder avatar for now).
-// TODO(tech plan 3.5 performer_similar): 相似演员.
-// TODO(release_performers.role_type / character names): 「本片饰 …」.
+// Stats (粉丝 / 总播放 / 热度) come with GET /api/performers/{slug}; 相似演员 from
+// GET /api/recs?slot=similar_performers (hidden without the recs routes); the
+// credit on this release (本片主演 / 客串 / 饰 …) from the release cast
+// (GET /api/releases/{slug}/performers lead / role).
+// Not shown: portrait photos beyond the stored portrait (no media yet).
 // The works list is newest first (the endpoint's order), so it is labelled
 // 最新作品 rather than 代表作品 until there is a popularity signal.
 
 const PEEK_WORKS = 7;
 
 type PeekData = {detail: PerformerDetail; works: Release[]};
+
+const PEEK_SIMILAR = 4;
+const similarCache = new Map<string, Promise<PerformerRecItem[]>>();
+
+/** 相似演员 for the peek; empty when the recs routes are missing or fail. */
+function loadSimilar(slug: string): Promise<PerformerRecItem[]> {
+  let hit = similarCache.get(slug);
+  if (!hit) {
+    hit = getPerformerRecs('similar_performers', {performer: slug, limit: PEEK_SIMILAR}).then(
+      page => page.items,
+      () => [],
+    );
+    similarCache.set(slug, hit);
+  }
+  return hit;
+}
+
+// Role words that only say lead / guest; anything else is a character or
+// part name shown as 「本片饰 …」.
+const ROLE_WORDS = new Set(['lead', 'main', 'starring', 'primary', '主演', 'guest', 'cameo', 'support', 'supporting', '客串', '助演']);
+
+/** This release's credit for the performer: 本片饰 X / 本片主演 / 本片客串, or '' when unknown. */
+export function castRole(performer: Pick<Performer, 'lead' | 'role'>): string {
+  const role = performer.role?.trim() ?? '';
+  if (role && !ROLE_WORDS.has(role.toLowerCase())) return t('peek.roleAs', {role});
+  if (performer.lead === true) return t('peek.roleLead');
+  if (performer.lead === false) return t('peek.roleGuest');
+  return '';
+}
 
 // Hover and sheet share one request per performer for the page's lifetime.
 const cache = new Map<string, Promise<PeekData>>();
@@ -99,7 +129,10 @@ function PeekBody({performer, releaseDate, currentSlug, layout}: {
   const t = useT();
   const peek = usePeek(performer.slug, true);
   const age = castAge(performer, releaseDate);
+  const similar = useAsync(() => loadSimilar(performer.slug), [performer.slug]);
   const detail = peek.data?.detail;
+  const stats = detail?.stats;
+  const role = castRole(performer);
   const works = (peek.data?.works ?? []).filter(w => w.slug !== currentSlug).slice(0, layout === 'card' ? 3 : 6);
   const rows = detail ? facts(detail) : [];
   const href = `/performers/${encodeURIComponent(performer.slug)}`;
@@ -135,7 +168,15 @@ function PeekBody({performer, releaseDate, currentSlug, layout}: {
             <span className="peek-alt">{performer.canonical_name_ja}</span>
           )}
           {layout === 'card' && rows.length > 0 && <span className="peek-meta">{rows.slice(0, 2).map(([k, v]) => `${k} ${v}`).join(' · ')}</span>}
+          {role && <span className="peek-role">{role}</span>}
           {age !== null && <span className="peek-age">{t('peek.castAge', {age})}</span>}
+          {stats && (
+            <span className="peek-stats">
+              <span>{t('peek.followers', {n: formatCompact(stats.followers)})}</span>
+              {stats.computed_at && <span>{t('peek.plays', {n: formatCompact(stats.total_plays)})}</span>}
+              {stats.computed_at && stats.heat > 0 && <span>{t('peek.heat', {n: formatCompact(Math.round(stats.heat / 10))})}</span>}
+            </span>
+          )}
         </div>
       </div>
 
@@ -152,6 +193,20 @@ function PeekBody({performer, releaseDate, currentSlug, layout}: {
         <div className="peek-section">
           <span className="peek-label">{t('peek.latestWorks')}</span>
           {worksBlock ?? <p className="peek-note">{t('peek.noWorks')}</p>}
+        </div>
+      )}
+
+      {(similar.data?.length ?? 0) > 0 && (
+        <div className="peek-section">
+          <span className="peek-label">{t('performer.similar')}</span>
+          <div className="peek-similar">
+            {similar.data!.map(s => (
+              <Link key={s.id} to={`/performers/${encodeURIComponent(s.slug)}`} className="chip">
+                {performerName(s)}
+                <span className="chip-count">{t('performer.similarMatch', {n: s.match_percent})}</span>
+              </Link>
+            ))}
+          </div>
         </div>
       )}
 

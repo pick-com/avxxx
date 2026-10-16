@@ -1,8 +1,8 @@
 import type {ReactNode} from 'react';
-import {listReleasePage, needsFilterSupport, type Page, type Release, type ReleaseFilter} from '../lib/api';
-import {formatDate} from '../lib/format';
+import {listReleasePage, needsFilterSupport, type CatalogFacets, type Page, type Release, type ReleaseFilter} from '../lib/api';
+import {formatDate, languageName} from '../lib/format';
 import {t as translate, useT} from '../lib/i18n';
-import {DURATION_BUCKETS, bucketFor, durationLabel, yearOptions} from '../lib/releaseFilter';
+import {DURATION_BUCKETS, bucketFor, durationLabel, heightLabel, yearOptions} from '../lib/releaseFilter';
 import {usePaged} from '../lib/usePaged';
 import {ReleaseCard} from './Cards';
 import {Icon} from './Icon';
@@ -14,15 +14,17 @@ export type SortOption = {value: string; label: string};
 
 /**
  * Browse filter row: active facet chips (removable), 时长 / 年份 selects and a
- * sort switch. Only facets GET /api/releases supports are offered.
+ * sort switch. Only facets GET /api/releases supports are offered; 清晰度 /
+ * 字幕 / 语言 only when `facets` (GET /api/catalog/facets) has data for them.
  */
-export function FilterBar({filter, onChange, tagName, sortOptions, sortValue, onSort, children}: {
+export function FilterBar({filter, onChange, tagName, sortOptions, sortValue, onSort, facets, children}: {
   filter: ReleaseFilter;
   onChange: (patch: Patch) => void;
   tagName?: string;
   sortOptions: SortOption[];
   sortValue: string;
   onSort: (value: string) => void;
+  facets?: CatalogFacets | null;
   children?: ReactNode;
 }) {
   const t = useT();
@@ -31,7 +33,11 @@ export function FilterBar({filter, onChange, tagName, sortOptions, sortValue, on
   const active: {key: string; label: string; clear: Patch}[] = [];
   if (filter.tag) active.push({key: 'tag', label: `#${tagName || filter.tag}`, clear: {tag: undefined}});
   if (filter.maker) active.push({key: 'maker', label: t('filter.maker', {name: filter.maker}), clear: {maker: undefined}});
-  if (filter.performer) active.push({key: 'performer', label: t('filter.performer', {name: filter.performer}), clear: {performer: undefined}});
+  if (filter.performer) active.push({key: 'performer', label: t('filter.performer', {name: filter.performer}), clear: {performer: undefined, role: undefined}});
+  if (filter.role) active.push({key: 'role', label: filter.role === 'lead' ? t('filter.roleLead') : t('filter.roleGuest'), clear: {role: undefined}});
+  if (filter.min_height) active.push({key: 'min_height', label: t('filter.heightValue', {label: heightLabel(filter.min_height)}), clear: {min_height: undefined}});
+  if (filter.subtitle) active.push({key: 'subtitle', label: filter.subtitle === 'any' ? t('filter.subtitleAny') : t('filter.subtitleValue', {lang: languageName(filter.subtitle)}), clear: {subtitle: undefined}});
+  if (filter.audio_lang) active.push({key: 'audio_lang', label: t('filter.audioValue', {lang: languageName(filter.audio_lang)}), clear: {audio_lang: undefined}});
 
   return (
     <div className="filter-bar">
@@ -76,6 +82,46 @@ export function FilterBar({filter, onChange, tagName, sortOptions, sortValue, on
             ))}
           </select>
         </label>
+        {facets && facets.heights.length > 0 && (
+          <label className="filter-select">
+            <span className="sr-only">{t('filter.height')}</span>
+            <select value={filter.min_height ?? ''} onChange={e => onChange({min_height: e.target.value ? Number(e.target.value) : undefined})}>
+              <option value="">{t('filter.heightAll')}</option>
+              {facets.heights.map(h => (
+                <option key={h.value} value={h.value}>
+                  {t('filter.heightValue', {label: heightLabel(Number(h.value))})}
+                </option>
+              ))}
+            </select>
+          </label>
+        )}
+        {facets && facets.subtitled > 0 && (
+          <label className="filter-select">
+            <span className="sr-only">{t('filter.subtitle')}</span>
+            <select value={filter.subtitle ?? ''} onChange={e => onChange({subtitle: e.target.value || undefined})}>
+              <option value="">{t('filter.subtitleAll')}</option>
+              <option value="any">{t('filter.subtitleAny')}</option>
+              {facets.subtitle_langs.map(s => (
+                <option key={s.value} value={s.value}>
+                  {t('filter.subtitleValue', {lang: languageName(s.value)})}
+                </option>
+              ))}
+            </select>
+          </label>
+        )}
+        {facets && facets.audio_langs.length > 1 && (
+          <label className="filter-select">
+            <span className="sr-only">{t('filter.audio')}</span>
+            <select value={filter.audio_lang ?? ''} onChange={e => onChange({audio_lang: e.target.value || undefined})}>
+              <option value="">{t('filter.audioAll')}</option>
+              {facets.audio_langs.map(a => (
+                <option key={a.value} value={a.value}>
+                  {t('filter.audioValue', {lang: languageName(a.value)})}
+                </option>
+              ))}
+            </select>
+          </label>
+        )}
         {children}
         <span className="section-spacer" />
         <span className="filter-label">{t('common.sort')}</span>

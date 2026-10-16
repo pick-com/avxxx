@@ -23,6 +23,7 @@ type stubRecs struct {
 	enqueued   []string
 	perfRecs   []store.PerformerRec
 	heat       []store.BoardRow
+	gotTag     string
 }
 
 func (s *stubRecs) ReleaseIDBySlug(_ context.Context, slug string) (int64, error) {
@@ -51,7 +52,11 @@ func (s *stubRecs) RecInfos(_ context.Context, ids []int64, _ int64, _ string) (
 	}
 	return out, nil
 }
-func (s *stubRecs) TrendingBoard(context.Context, string, int, int) ([]store.BoardRow, error) {
+func (s *stubRecs) TrendingTags(context.Context, string, int) ([]store.TagCount, error) {
+	return []store.TagCount{{Slug: "drama", Name: "剧情", Count: 3}}, nil
+}
+func (s *stubRecs) TrendingBoard(_ context.Context, _, tag string, _, _ int) ([]store.BoardRow, error) {
+	s.gotTag = tag
 	prev := 5
 	return []store.BoardRow{{Rank: 1, PrevRank: &prev, ID: 2, Score: 3, ComputedAt: time.Now()}, {Rank: 2, ID: 99}}, nil
 }

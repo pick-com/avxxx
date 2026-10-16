@@ -52,6 +52,10 @@ type Store interface {
 	// prev_rank from the board they replace.
 	ReplaceTrending(ctx context.Context, period string, rows []TrendRow, at time.Time) error
 	ReplacePerformerHeat(ctx context.Context, period string, rows []TrendRow, at time.Time) error
+	// RefreshPerformerStats rebuilds performer_stats (Actor 统计, NavActors
+	// sorts and filters) after the heat boards it reads; it returns the
+	// number of performers written.
+	RefreshPerformerStats(ctx context.Context, at time.Time) (int64, error)
 
 	RecordRun(ctx context.Context, r audit.Run) error
 }
@@ -150,11 +154,14 @@ type TrendingReport struct {
 	StartedAt  time.Time      `json:"started_at"`
 	Releases   map[string]int `json:"releases"`   // board rows per period
 	Performers map[string]int `json:"performers"` // heat rows per period
-	DurationMS int64          `json:"duration_ms"`
+	// PerformerStats is the number of performer_stats rows rewritten.
+	PerformerStats int64 `json:"performer_stats"`
+	DurationMS     int64 `json:"duration_ms"`
 }
 
 // RunTrending recomputes every period's trending board and performer heat
-// ranking and records one nightly_runs row 'recs.trending'.
+// ranking, then performer_stats (which reads the month heat board), and
+// records one nightly_runs row 'recs.trending'.
 func (r *Runner) RunTrending(ctx context.Context) (rep TrendingReport, err error) {
 	start := r.now()
 	rep = TrendingReport{StartedAt: start, Releases: map[string]int{}, Performers: map[string]int{}}
@@ -187,6 +194,9 @@ func (r *Runner) RunTrending(ctx context.Context) (rep TrendingReport, err error
 			return rep, fmt.Errorf("write heat %s: %w", p, err)
 		}
 		rep.Performers[p] = len(hrows)
+	}
+	if rep.PerformerStats, err = r.Store.RefreshPerformerStats(ctx, start); err != nil {
+		return rep, fmt.Errorf("performer stats: %w", err)
 	}
 	rep.DurationMS = r.now().Sub(start).Milliseconds()
 	return rep, nil

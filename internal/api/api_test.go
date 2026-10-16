@@ -227,6 +227,12 @@ var expectedRoutes = []string{
 	"POST /api/admin/announcements",
 	"PUT /api/admin/announcements/{id}",
 	"DELETE /api/admin/announcements/{id}",
+	// Discover, search and performers (catalog.go, search.go).
+	"GET /api/upcoming",
+	"GET /api/catalog/facets",
+	"GET /api/me/search-history",
+	"POST /api/me/search-history",
+	"DELETE /api/me/search-history",
 	// Account and auth (auth.go).
 	"POST /api/auth/logout",
 	"POST /api/auth/password/forgot",

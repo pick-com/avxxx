@@ -63,7 +63,10 @@ export type HeatItem = {
   performer: RecPerformer;
 };
 
-export type TrendingPage = Page<TrendingItem> & {period: string; computedAt: string | null; performers: HeatItem[]};
+/** A genre chip above the board: one of the most frequent tags among its releases. */
+export type TrendingTag = {slug: string; name: string; count: number};
+
+export type TrendingPage = Page<TrendingItem> & {period: string; computedAt: string | null; performers: HeatItem[]; tags: TrendingTag[]};
 
 export type PerformerRecItem = {
   id: number;
@@ -165,14 +168,23 @@ export const getTonight = (opts: {duration?: TonightDuration; exclude?: number[]
     signal,
   ).then(r => ({...r, alternates: r.alternates ?? [], exclude: r.exclude ?? []}));
 
-type TrendingBody = {items: TrendingItem[] | null; next_cursor?: string | null; period: string; computed_at?: string | null; performers?: HeatItem[] | null};
+type TrendingBody = {
+  items: TrendingItem[] | null;
+  next_cursor?: string | null;
+  period: string;
+  computed_at?: string | null;
+  performers?: HeatItem[] | null;
+  tags?: TrendingTag[] | null;
+};
 
-export const getTrending = (period: Period, opts: {limit?: number; cursor?: string | null} = {}, signal?: AbortSignal): Promise<TrendingPage> =>
-  recsApi<TrendingBody>(`trending${query({period, limit: opts.limit, cursor: opts.cursor})}`, signal).then(body => ({
+/** getTrending: tag keeps the board's releases with that tag (genre chips; ranks stay board-wide). */
+export const getTrending = (period: Period, opts: {limit?: number; cursor?: string | null; tag?: string} = {}, signal?: AbortSignal): Promise<TrendingPage> =>
+  recsApi<TrendingBody>(`trending${query({period, tag: opts.tag, limit: opts.limit, cursor: opts.cursor})}`, signal).then(body => ({
     ...toPage(body),
     period: body.period,
     computedAt: body.computed_at ?? null,
     performers: body.performers ?? [],
+    tags: body.tags ?? [],
   }));
 
 export const getPerformerHeat = (period: Period, opts: {limit?: number; cursor?: string | null} = {}, signal?: AbortSignal): Promise<Page<HeatItem>> =>

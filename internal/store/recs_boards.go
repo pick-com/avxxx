@@ -26,11 +26,15 @@ type BoardRow struct {
 	Name       string    `json:"-"`
 }
 
-// TrendingBoard returns rows [offset, offset+limit) of a period's board.
+// TrendingBoard returns rows [offset, offset+limit) of a period's board;
+// a tag (release_tags.normalized_tag, the board's genre chips) keeps only
+// the board's releases with that tag, with their board-wide rank.
 // Releases held or unpublished since the run are dropped by RecInfos.
-func (s *Store) TrendingBoard(ctx context.Context, period string, offset, limit int) ([]BoardRow, error) {
+func (s *Store) TrendingBoard(ctx context.Context, period, tag string, offset, limit int) ([]BoardRow, error) {
 	rows, err := s.Query(ctx, `SELECT rank, prev_rank, release_id, score, plays, completion, computed_at
-		FROM trending_snapshots WHERE period=$1 ORDER BY rank OFFSET $2 LIMIT $3`, period, offset, limit)
+		FROM trending_snapshots ts WHERE period=$1
+		AND ($4='' OR EXISTS (SELECT 1 FROM release_tags rt WHERE rt.release_id=ts.release_id AND rt.normalized_tag=$4))
+		ORDER BY rank OFFSET $2 LIMIT $3`, period, offset, limit, tag)
 	if err != nil {
 		return nil, err
 	}
@@ -41,6 +45,29 @@ func (s *Store) TrendingBoard(ctx context.Context, period string, offset, limit 
 		b.Score, b.Completion = round3(float64(score)), round3(float64(comp))
 		return b, err
 	})
+}
+
+// TrendingTags are the most frequent tags among a period's board releases
+// (the genre chips above the board), most releases first.
+func (s *Store) TrendingTags(ctx context.Context, period string, limit int) ([]TagCount, error) {
+	rows, err := s.Query(ctx, `SELECT rt.normalized_tag, min(rt.tag), count(*)
+		FROM trending_snapshots ts JOIN release_tags rt ON rt.release_id=ts.release_id
+		WHERE ts.period=$1 GROUP BY 1 ORDER BY 3 DESC, 1 LIMIT $2`, period, limit)
+	if err != nil {
+		return nil, err
+	}
+	return pgx.CollectRows(rows, func(row pgx.CollectableRow) (TagCount, error) {
+		var t TagCount
+		err := row.Scan(&t.Slug, &t.Name, &t.Count)
+		return t, err
+	})
+}
+
+// TagCount is a tag with the number of releases it is on.
+type TagCount struct {
+	Slug  string `json:"slug"`
+	Name  string `json:"name"`
+	Count int64  `json:"count"`
 }
 
 // PerformerHeatBoard returns rows [offset, offset+limit) of a period's

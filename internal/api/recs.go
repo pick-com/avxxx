@@ -5,7 +5,7 @@ package api
 //	GET /api/recs?slot=home|related|similar_performers|performers|tonight
 //	    &release=<slug>&performer=<slug>&limit=&cursor=&lang=
 //	    &exclude=<id,id>&duration=any|30|60|120|series   (tonight)
-//	GET /api/trending?period=today|week|month|year&limit=&cursor=&lang=
+//	GET /api/trending?period=today|week|month|year&tag=&limit=&cursor=&lang=
 //	GET /api/trending/performers?period=&limit=&cursor=&lang=
 //	GET/PUT /api/admin/similarity-weights
 //	POST /api/admin/recs/rebuild?job=all|similarity|trending
@@ -35,7 +35,8 @@ type recsStore interface {
 	PerformerIDBySlug(ctx context.Context, slug string) (int64, error)
 	Recall(ctx context.Context, q store.RecQuery) (store.RecallResult, error)
 	RecInfos(ctx context.Context, ids []int64, seed int64, lang string) (map[int64]recs.Info, error)
-	TrendingBoard(ctx context.Context, period string, offset, limit int) ([]store.BoardRow, error)
+	TrendingBoard(ctx context.Context, period, tag string, offset, limit int) ([]store.BoardRow, error)
+	TrendingTags(ctx context.Context, period string, limit int) ([]store.TagCount, error)
 	PerformerHeatBoard(ctx context.Context, period string, offset, limit int) ([]store.BoardRow, error)
 	SimilarPerformers(ctx context.Context, id int64, offset, limit int) ([]store.PerformerRec, error)
 	RecommendedPerformers(ctx context.Context, userID int64, offset, limit int) ([]store.PerformerRec, error)
@@ -54,6 +55,7 @@ const (
 	recsMaxExclude   = 50
 	recsCursorSort   = "recs"
 	heatOnFirstPage  = 10
+	tagsOnFirstPage  = 12
 )
 
 func (srv *Server) recsRoutes() []route {
@@ -482,8 +484,10 @@ type heatItem struct {
 	Performer recPerformer `json:"performer"`
 }
 
-// getTrending is the NavTrending board (PRD 4.2). The first page also
-// carries the top performer heat rows.
+// getTrending is the NavTrending board (PRD 4.2). ?tag= keeps the board's
+// releases with that tag (genre chips; ranks stay board-wide). The first
+// page also carries the top performer heat rows and "tags", the most
+// frequent tags on the board (the chips themselves).
 func (srv *Server) getTrending(w http.ResponseWriter, r *http.Request) {
 	period, limit, offset, err := boardMeta(r.URL.Query())
 	if err != nil {
@@ -496,7 +500,8 @@ func (srv *Server) getTrending(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	ctx := r.Context()
-	rows, err := srv.recs.TrendingBoard(ctx, period, offset, limit)
+	tag := strings.TrimSpace(r.URL.Query().Get("tag"))
+	rows, err := srv.recs.TrendingBoard(ctx, period, tag, offset, limit)
 	if err != nil {
 		reply(w, nil, err)
 		return
@@ -552,6 +557,12 @@ func (srv *Server) getTrending(w http.ResponseWriter, r *http.Request) {
 		if l == nil {
 			l = l2
 		}
+		tags, err := srv.recs.TrendingTags(ctx, period, tagsOnFirstPage)
+		if err != nil {
+			reply(w, nil, err)
+			return
+		}
+		out["tags"] = tags
 	}
 	reply(w, withLang(out, l), nil)
 }

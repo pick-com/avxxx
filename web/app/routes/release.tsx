@@ -26,12 +26,12 @@ import {breadcrumbs, clip, compact, isoDate, isoMinutes, pageUrl, rootMeta, seoM
 import type {LangCode} from '../lib/api';
 import {markAutoplayNavigation} from '../lib/playAnalytics';
 import {usePlayerPrefs} from '../lib/playerPrefs';
-import {ageAt, formatDate, formatRuntime} from '../lib/format';
+import {ageAt, formatDate, formatRuntime, formatSchedule} from '../lib/format';
 import {discoverHref} from '../lib/releaseFilter';
 import {useAsync} from '../lib/useAsync';
 import {useCanonicalSlug} from '../lib/useCanonicalSlug';
 import {useMediaQuery} from '../lib/useMediaQuery';
-import {readQueue} from '../lib/queue';
+import {QUEUE_LISTS, readQueue, type Queue} from '../lib/queue';
 import {getRecs, performerName, reasonText, recTitle, inRelatedTab, type RecItem, type RelatedTab} from '../lib/recs';
 import type {ShellHandle} from './shell';
 
@@ -148,8 +148,8 @@ export const meta: MetaFunction<typeof loader> = ({data: d, params, matches}) =>
 // 相关推荐 / 同演员 / 同系列 tabs (tabs only when the reason codes allow).
 // Without the recs routes, or with no related rows, it falls back to the
 // first performer's other works.
-// 预约 shows for status 'upcoming', but GET /api/releases/{slug} only serves
-// published works today, so upcoming works are reserved from the feed.
+// 即将上线: GET /api/releases/{slug} also serves upcoming works; the page then
+// shows when it goes live and 预约 instead of the player.
 // TODO(PRD 15 AgeGate): gate playback with <AgeConfirm> once releases carry an
 // age rating; the API has no rating field yet, so the gate is not mounted.
 // TODO(tech plan 2.4 / 3.2 release_assets): 章节 · 截屏 strip.
@@ -178,7 +178,7 @@ export default function ReleasePage() {
   const listName = params.get('list');
   // The queue lives in this browser (sessionStorage): read after hydration.
   const [queue, setQueue] = useState<ReturnType<typeof readQueue>>(null);
-  useEffect(() => setQueue(listName === 'later' ? readQueue('later') : null), [listName]);
+  useEffect(() => setQueue(listName && (QUEUE_LISTS as readonly string[]).includes(listName) ? readQueue(listName) : null), [listName]);
   const queueIndex = queue ? queue.slugs.indexOf(slug) : -1;
   const nextSlug = queue && queueIndex >= 0 ? queue.slugs[queueIndex + 1] : undefined;
   const prefs = usePlayerPrefs();
@@ -192,7 +192,7 @@ export default function ReleasePage() {
   const queueNext = useAsync(signal => getRelease(nextSlug ?? '', signal), [nextSlug], !!nextSlug && ended);
   const next = nextSlug
     ? queueNext.data
-      ? {id: queueNext.data.id, slug: queueNext.data.slug, title: queueNext.data.canonical_title, query: '?list=later'}
+      ? {id: queueNext.data.id, slug: queueNext.data.slug, title: queueNext.data.canonical_title, query: `?list=${queue?.name ?? 'later'}`}
       : null
     : related
       ? {...related, query: ''}
@@ -243,7 +243,16 @@ export default function ReleasePage() {
   return (
     <div className="video-page" data-theater={theater && !mobile ? 'true' : 'false'}>
       <div className="video-main">
-        {/* PlayerHost keeps this instance playing in the mobile mini bar after leaving. */}
+        {release?.status === 'upcoming' ? (
+          <div className="release-upcoming" role="status">
+            <strong>{t('following.upcoming')}</strong>
+            {/* Local time: the server render may format it in another zone. */}
+            <span className="muted" suppressHydrationWarning>
+              {formatSchedule(release.scheduled_at, release.release_date)}
+            </span>
+          </div>
+        ) : (
+        /* PlayerHost keeps this instance playing in the mobile mini bar after leaving. */
         <HostedPlayer
           component={Player}
           slug={slug}
@@ -274,6 +283,7 @@ export default function ReleasePage() {
             ) : null
           }
         />
+        )}
 
         {!release ? (
           detail.slow && <BlockSkeleton lines={3} />
@@ -308,7 +318,7 @@ export default function ReleasePage() {
               <ReleaseMeta release={release} />
             )}
 
-            <Community slug={release.slug} releaseId={release.id} watched={!!resumeAt && resumeAt > 0} />
+            {release.status !== 'upcoming' && <Community slug={release.slug} releaseId={release.id} watched={!!resumeAt && resumeAt > 0} />}
 
             {performers.length > 0 && (
               <section className="cast">
@@ -339,7 +349,7 @@ export default function ReleasePage() {
       </div>
 
       <aside className="video-aside" aria-label={t('release.upNext')}>
-        {queue && queueIndex >= 0 && <QueuePanel slugs={queue.slugs} index={queueIndex} />}
+        {queue && queueIndex >= 0 && <QueuePanel queue={queue} index={queueIndex} />}
         {release && <UpNext slug={slug} performer={performers[0]} series={release.series ?? undefined} onFirst={setRelated} onList={setEndItems} />}
       </aside>
     </div>
@@ -678,27 +688,31 @@ function AutoplayNext({fromId, next, onGo, onCancel}: {
   );
 }
 
-/** 稍后观看 queue (全部播放 / 随机播放): position, 下一个, and the rest of the list. */
-function QueuePanel({slugs, index}: {slugs: string[]; index: number}) {
+/** Play queue (稍后观看 or an actor's 随机播放全部): position, 下一个, and the rest of the list. */
+function QueuePanel({queue, index}: {queue: Queue; index: number}) {
   const t = useT();
-  const later = useAsync(signal => getWatchLater(signal), []);
-  const titles = new Map((later.data ?? []).map(i => [i.slug, i.title]));
+  const {slugs} = queue;
+  const isLater = queue.name === 'later';
+  const later = useAsync(signal => getWatchLater(signal), [], isLater);
+  const titles = new Map([...Object.entries(queue.titles ?? {}), ...(later.data ?? []).map(i => [i.slug, i.title] as [string, string])]);
   const rest = slugs.slice(index + 1);
   return (
     <section className="aside-section queue-panel" aria-label={t('release.queue')}>
-      <SectionHeader title={t('nav.later')} sub={`${index + 1} / ${slugs.length}`} />
+      <SectionHeader title={isLater ? t('nav.later') : queue.title || t('release.queue')} sub={`${index + 1} / ${slugs.length}`} />
       {rest.length === 0 ? (
         <p className="muted">{t('release.queueLast')}</p>
       ) : (
         <div className="row-list">
           {rest.slice(0, 8).map((s, i) => (
-            <ReleaseRow key={s} slug={s} query="?list=later" title={titles.get(s) ?? s} meta={i === 0 ? t('release.queueNext') : t('release.queueNth', {n: index + i + 2})} />
+            <ReleaseRow key={s} slug={s} query={`?list=${queue.name}`} title={titles.get(s) ?? s} meta={i === 0 ? t('release.queueNext') : t('release.queueNth', {n: index + i + 2})} />
           ))}
         </div>
       )}
-      <Link to="/later" className="text-btn">
-        {t('release.queueManage')}
-      </Link>
+      {isLater && (
+        <Link to="/later" className="text-btn">
+          {t('release.queueManage')}
+        </Link>
+      )}
     </section>
   );
 }
