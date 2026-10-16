@@ -13,6 +13,8 @@ import type {ApiImage} from '../lib/api';
 import {useAsync} from '../lib/useAsync';
 import {useMediaQuery} from '../lib/useMediaQuery';
 import {useMediaSession} from '../lib/useMediaSession';
+import {castableSource} from '../lib/remotePlayback';
+import {useRemotePlayback} from '../lib/useRemotePlayback';
 import {useDanmakuPrefs} from '../lib/danmakuPrefs';
 import {useOnline} from '../lib/useOnline';
 import {applyVolume, writeVolume} from '../lib/volumePrefs';
@@ -103,6 +105,16 @@ type LockableOrientation = ScreenOrientation & {lock?: (orientation: string) => 
  * play / pause / stop / skip ±10 s / seek; previous / next track call
  * `onPreviousTrack` / `onNextTrack` (the page's queue, series or autoplay
  * next) and are hidden without them.
+ *
+ * Casting (lib/useRemotePlayback.ts): a 投屏 button in the control bar and
+ * the fullscreen touch controls while the browser reports a device (Remote
+ * Playback API: Chrome / Android cast menu, Safari AirPlay). Connecting /
+ * connected show on the button and in a small 「正在投屏到设备」 overlay;
+ * the controls stay up so the progress remains visible. hls.js (MSE)
+ * sources cannot be cast and set disableRemotePlayback (castableSource).
+ * Limit: the receiver fetches the stream itself, so a source bound to our
+ * Referer, cookies or a viewer-bound signature may fail there. The Google
+ * Cast SDK (custom receiver) is a follow-up, not built.
  */
 export type PlayerProps = Parameters<typeof Player>[0];
 
@@ -260,6 +272,14 @@ export function Player({slug, releaseId, title, resumeAt, startAt, onBack, theat
   const finePointer = useMediaQuery('(hover: hover) and (pointer: fine)');
   const online = useOnline();
   const clock = useVideoClock(stream ? videoEl : null);
+  // Native HLS (Safari, Android / recent desktop Chrome) plays the .m3u8 directly; otherwise
+  // hls.js feeds a MediaSource, which cannot be cast (castableSource).
+  const [nativeHls, setNativeHls] = useState(false);
+  useEffect(() => setNativeHls(document.createElement('video').canPlayType('application/vnd.apple.mpegurl') !== ''), []);
+  const castable = castableSource(stream ? {hls: isHlsEntry(stream), nativeHls} : null);
+  const cast = useRemotePlayback(stream ? videoEl : null, castable);
+  const casting = cast.state === 'connecting' || cast.state === 'connected';
+  const castControl = cast.state !== 'hidden' ? {state: cast.state, prompt: cast.prompt} : undefined;
   useMediaSession(
     stream ? videoEl : null,
     {title, artist, album, artwork: posterImage ?? (poster ? {url: poster} : null)},
@@ -296,7 +316,8 @@ export function Player({slug, releaseId, title, resumeAt, startAt, onBack, theat
   useEffect(() => {
     if (!clock.paused) poke();
   }, [clock.paused, poke]);
-  const chromeVisible = chromeOn || clock.paused || clock.ended || settings.open;
+  // Casting keeps the controls (and the progress) up: the picture is on the device.
+  const chromeVisible = chromeOn || clock.paused || clock.ended || settings.open || casting;
 
   // play_end when the release changes or the player goes away.
   useEffect(
@@ -1039,6 +1060,8 @@ export function Player({slug, releaseId, title, resumeAt, startAt, onBack, theat
               controls={false}
               autoPlay
               playsInline
+              // AirPlay (Safari) only for castable sources; see castableSource.
+              x-webkit-airplay={castable ? 'allow' : 'deny'}
               aria-label={title}
               onClick={() => {
                 if (mini) return;
@@ -1168,12 +1191,19 @@ export function Player({slug, releaseId, title, resumeAt, startAt, onBack, theat
               onOpenSettings={openSettings}
               reducedMotion={reducedMotion}
               onOpenEpisodes={hasEpisodes ? () => setEpisodesOpen(true) : undefined}
+              cast={castControl}
             />
           )}
 
           {stream && !mini && <DanmakuLayer ref={dmLayer} video={videoEl} feed={dmFeed} prefs={dmPrefs} reducedMotion={reducedMotion} />}
 
           {showControls && buffering && !clock.paused && <BufferingSpinner offline={!online} />}
+          {stream && !mini && casting && (
+            <div className="pc-cast" role="status" data-state={cast.state}>
+              <Icon name="cast" size={18} />
+              {cast.state === 'connecting' ? t('player.castConnecting') : t('player.casting')}
+            </div>
+          )}
           {showControls && !online && !buffering && !clock.paused && (
             <div className="pc-offline" role="status">
               <Icon name="offline" size={16} />
@@ -1219,6 +1249,7 @@ export function Player({slug, releaseId, title, resumeAt, startAt, onBack, theat
               }
               captions={{available: textTracks.length > 0, on: caption !== CAPTIONS_OFF, toggle: toggleCaptions}}
               pip={pipSupported ? {active: pip, toggle: () => void togglePip()} : undefined}
+              cast={castControl}
               theater={onToggleTheater ? {active: theater, toggle: onToggleTheater} : undefined}
               fullscreen={{active: fullscreen, toggle: () => void toggleFullscreen()}}
               onTogglePlay={() => {

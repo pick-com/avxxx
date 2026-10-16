@@ -30,6 +30,8 @@ const paths = {
   check: 'M5 12l5 5 9-10',
   settings: 'M4 7h10M18 7h2M4 17h4M12 17h8M16 5v4M10 15v4',
   pip: 'M3 5h18v14H3zM12 11h7v6h-7z',
+  cast: 'M3 9V5h18v14h-6M3 13a6 6 0 016 6M3 16.5a2.5 2.5 0 012.5 2.5M3 19h.01',
+  castOn: 'M3 9V5h18v14h-6M3 13a6 6 0 016 6M3 16.5a2.5 2.5 0 012.5 2.5M3 19h.01M7 9h10v6h-3',
   theater: 'M2 7h20v10H2z',
   fullscreen: 'M4 9V4h5M15 4h5v5M20 15v5h-5M9 20H4v-5',
   exitFullscreen: 'M9 4v5H4M20 9h-5V4M15 20v-5h5M4 15h5v5',

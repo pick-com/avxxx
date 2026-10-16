@@ -395,6 +395,56 @@
   pointer-events: none;
 }
 
+/* ---- Casting (投屏): button state and the 「正在投屏到设备」 overlay ---- */
+
+[data-cast='connected'] {
+  color: #f2a93b;
+}
+
+[data-cast='connecting'] svg {
+  animation: pc-cast-pulse 1.2s ease-in-out infinite;
+}
+
+@keyframes pc-cast-pulse {
+  50% {
+    opacity: 0.35;
+  }
+}
+
+.pc-cast {
+  position: absolute;
+  left: 50%;
+  top: 12px;
+  z-index: 4;
+  transform: translateX(-50%);
+  max-width: calc(100% - 24px);
+  padding: 6px 12px;
+  border-radius: 8px;
+  background: rgba(27, 28, 32, 0.92);
+  color: #ececee;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  white-space: nowrap;
+  pointer-events: none;
+}
+
+.pc-cast[data-state='connected'] svg {
+  color: #f2a93b;
+}
+
+/* Below the fullscreen touch controls' top row. */
+.player-shell[data-touch='true'] .pc-cast {
+  top: calc(68px + env(safe-area-inset-top));
+}
+
+@media (prefers-reduced-motion: reduce) {
+  [data-cast='connecting'] svg {
+    animation: none;
+  }
+}
+
 /* ---- Resume toast ---- */
 
 .pc-toast {

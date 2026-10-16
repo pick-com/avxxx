@@ -2,6 +2,7 @@ import {useEffect, useRef, useState, type CSSProperties, type PointerEvent as Re
 import {formatClock} from '../lib/format';
 import {useT} from '../lib/i18n';
 import {Icon} from './Icon';
+import {CastButton, type CastControl} from './PlayerControls';
 
 const TAP_MS = 250;
 const DOUBLE_TAP_MS = 300;
@@ -50,8 +51,9 @@ function useVideoClock(videoRef: RefObject<HTMLVideoElement | null>) {
  * - horizontal drag: seek, with a time preview; applied on release
  * - single tap: show / hide controls; lock button freezes all gestures
  * - 选集 (onOpenEpisodes, when the release is part of a series): the episodes drawer
+ * - 投屏 (cast, while a device is available): the browser's device picker
  */
-export function PlayerTouchLayer({videoRef, title, rate, qualityLabel, onExit, onOpenSettings, reducedMotion, onOpenEpisodes}: {
+export function PlayerTouchLayer({videoRef, title, rate, qualityLabel, onExit, onOpenSettings, reducedMotion, onOpenEpisodes, cast}: {
   videoRef: RefObject<HTMLVideoElement | null>;
   title: string;
   rate: number;
@@ -61,6 +63,8 @@ export function PlayerTouchLayer({videoRef, title, rate, qualityLabel, onExit, o
   reducedMotion: boolean;
   /** Opens the 选集 drawer; no button without it. */
   onOpenEpisodes?: () => void;
+  /** 投屏 button; none without it. */
+  cast?: CastControl;
 }) {
   const t = useT();
   const clock = useVideoClock(videoRef);
@@ -264,6 +268,7 @@ export function PlayerTouchLayer({videoRef, title, rate, qualityLabel, onExit, o
               <Icon name="back" size={22} />
             </button>
             <span className="touch-title">{title}</span>
+            {cast && <CastButton cast={cast} className="touch-btn" />}
             <button type="button" className="touch-text-btn" onClick={() => onOpenSettings('source')}>
               {t('player.source')}
             </button>

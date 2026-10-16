@@ -60,6 +60,28 @@ export function useVideoClock(video: HTMLVideoElement | null): VideoClock {
   return clock;
 }
 
+export type CastControl = {state: 'idle' | 'connecting' | 'connected'; prompt: () => void};
+
+/** 投屏 button (control bar and touch controls): opens the device picker; shows connecting / connected. */
+export function CastButton({cast, className}: {cast: CastControl; className: string}) {
+  const t = useT();
+  const label = cast.state === 'connecting' ? t('player.castConnecting') : cast.state === 'connected' ? t('player.castManage') : t('player.cast');
+  return (
+    <button
+      type="button"
+      className={className}
+      data-cast={cast.state}
+      aria-pressed={cast.state === 'connected'}
+      aria-haspopup="dialog"
+      aria-label={label}
+      title={label}
+      onClick={cast.prompt}
+    >
+      <Icon name={cast.state === 'idle' ? 'cast' : 'castOn'} size={20} />
+    </button>
+  );
+}
+
 export function chapterAt(chapters: Chapter[], time: number): {index: number; chapter: Chapter} | null {
   let found = -1;
   for (let i = 0; i < chapters.length; i++) if (chapters[i].start <= time) found = i;
@@ -79,6 +101,7 @@ export function PlayerControls({
   menus,
   captions,
   pip,
+  cast,
   theater,
   fullscreen,
   onTogglePlay,
@@ -99,6 +122,8 @@ export function PlayerControls({
   menus?: ReactNode;
   captions: {available: boolean; on: boolean; toggle: () => void};
   pip?: {active: boolean; toggle: () => void};
+  /** 投屏: only while a device is available (or a session is up). */
+  cast?: CastControl;
   theater?: {active: boolean; toggle: () => void};
   fullscreen: {active: boolean; toggle: () => void};
   onTogglePlay: () => void;
@@ -157,6 +182,7 @@ export function PlayerControls({
         <button type="button" className="pc-btn" aria-label={t('pc.settings')} aria-haspopup="dialog" title={t('pc.settings')} onClick={onOpenSettings}>
           <Icon name="settings" size={20} />
         </button>
+        {cast && <CastButton cast={cast} className="pc-btn" />}
         {pip && (
           <button type="button" className="pc-btn hide-mobile" aria-label={pip.active ? t('player.exitPip') : t('player.pip')} aria-pressed={pip.active} title={t('player.pip')} onClick={pip.toggle}>
             <Icon name="pip" size={20} />
