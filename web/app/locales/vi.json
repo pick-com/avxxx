@@ -1370,6 +1370,7 @@
   "player.goPartner": "Xem trên {provider}",
   "player.unavailable": "Tạm thời không phát được",
   "player.noSource": "Tác phẩm này chưa có nguồn phát khả dụng.",
+  "player.noSourceTitle": "Chưa có video",
   "player.regionBlocked": "Phim này chưa được cấp phép phát tại khu vực của bạn.",
   "player.retry": "Thử lại",
   "player.resolving": "Đang tải địa chỉ phát…",

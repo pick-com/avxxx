@@ -1370,6 +1370,7 @@
   "player.goPartner": "{provider} で視聴",
   "player.unavailable": "現在再生できません",
   "player.noSource": "この作品には利用できるソースがまだありません。",
+  "player.noSourceTitle": "再生できる動画がありません",
   "player.regionBlocked": "この作品はお住まいの地域では再生が許諾されていません。",
   "player.retry": "再試行",
   "player.resolving": "再生URLを読み込み中…",

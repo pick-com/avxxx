@@ -1370,6 +1370,7 @@
   "player.goPartner": "Ver en {provider}",
   "player.unavailable": "No se puede reproducir por ahora",
   "player.noSource": "Este lanzamiento aún no tiene fuentes disponibles.",
+  "player.noSourceTitle": "Vídeo no disponible",
   "player.regionBlocked": "Este título no tiene licencia para reproducirse en tu región.",
   "player.retry": "Reintentar",
   "player.resolving": "Cargando la dirección de reproducción…",

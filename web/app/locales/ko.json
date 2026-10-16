@@ -1370,6 +1370,7 @@
   "player.goPartner": "{provider}에서 보기",
   "player.unavailable": "지금은 재생할 수 없어요",
   "player.noSource": "이 작품은 아직 이용 가능한 소스가 없어요.",
+  "player.noSourceTitle": "재생 가능한 영상이 없습니다",
   "player.regionBlocked": "이 작품은 현재 지역에서 재생 권한이 없습니다.",
   "player.retry": "다시 시도",
   "player.resolving": "재생 주소를 불러오는 중…",

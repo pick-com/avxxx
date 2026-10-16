@@ -1370,6 +1370,7 @@
   "player.goPartner": "ไปดูที่ {provider}",
   "player.unavailable": "ยังเล่นไม่ได้ในตอนนี้",
   "player.noSource": "ผลงานนี้ยังไม่มีแหล่งวิดีโอที่ใช้ได้",
+  "player.noSourceTitle": "ยังไม่มีวิดีโอ",
   "player.regionBlocked": "เรื่องนี้ยังไม่ได้รับอนุญาตให้เล่นในภูมิภาคของคุณ",
   "player.retry": "ลองอีกครั้ง",
   "player.resolving": "กำลังโหลดที่อยู่สำหรับเล่น…",

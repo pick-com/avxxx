@@ -1370,6 +1370,7 @@
   "player.goPartner": "Watch on {provider}",
   "player.unavailable": "Can't play right now",
   "player.noSource": "This release has no available source yet.",
+  "player.noSourceTitle": "No video available",
   "player.regionBlocked": "This title isn't licensed for playback in your region.",
   "player.retry": "Retry",
   "player.resolving": "Loading playback URL…",

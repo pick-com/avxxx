@@ -97,7 +97,7 @@ type LockableOrientation = ScreenOrientation & {lock?: (orientation: string) => 
  */
 export type PlayerProps = Parameters<typeof Player>[0];
 
-export function Player({slug, releaseId, title, resumeAt, startAt, onBack, theater = false, onToggleTheater, onEnded, autoStart = false, overlay, entryReason, related = [], onReplay, mini = false, episodes}: {
+export function Player({slug, releaseId, title, resumeAt, startAt, onBack, theater = false, onToggleTheater, onEnded, autoStart = false, overlay, entryReason, related = [], onReplay, mini = false, episodes, poster}: {
   slug: string;
   /** releases.id for analytics (play_request / progress); no tracking without it. */
   releaseId?: number;
@@ -124,6 +124,8 @@ export function Player({slug, releaseId, title, resumeAt, startAt, onBack, theat
   mini?: boolean;
   /** The release's series in episode order: 选集 in the fullscreen touch controls. */
   episodes?: PlayerEpisodes;
+  /** The release's stored cover: shown behind the start / status states. */
+  poster?: string;
 }) {
   const t = useT();
   const {status} = useAuth();
@@ -997,6 +999,9 @@ export function Player({slug, releaseId, title, resumeAt, startAt, onBack, theat
             </button>
           )}
 
+          {/* Cover behind every non-video state (start, loading, 暂无视频资源). */}
+          {poster && !stream && entry?.render !== 'embed' && <img className="player-poster" src={poster} alt="" aria-hidden="true" decoding="async" />}
+
           {stream ? (
             <video
               key={stream.key}
@@ -1079,11 +1084,18 @@ export function Player({slug, releaseId, title, resumeAt, startAt, onBack, theat
               <strong>{t('player.unavailable')}</strong>
               <span>{t('player.regionBlocked')}</span>
             </div>
+          ) : mode === 'legacy' && info.error instanceof ApiError && info.error.status === 404 ? (
+            // No playable source at all: say so on the cover; retrying cannot help.
+            <div className="player-state player-state-nosource" role="status">
+              <Icon name="film" size={30} />
+              <strong>{t('player.noSourceTitle')}</strong>
+              <span>{t('player.noSource')}</span>
+            </div>
           ) : mode === 'legacy' && info.error ? (
             <div className="player-state">
               <Icon name="alert" size={28} />
               <strong>{t('player.unavailable')}</strong>
-              <span>{info.error instanceof ApiError && info.error.status === 404 ? t('player.noSource') : info.error.message}</span>
+              <span>{info.error.message}</span>
               <button type="button" className="btn btn-on-dark" onClick={info.reload}>
                 {t('player.retry')}
               </button>
