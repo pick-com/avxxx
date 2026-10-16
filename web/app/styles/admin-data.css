@@ -179,3 +179,67 @@
   color: var(--faint);
   min-height: 14px;
 }
+
+/* AdminDedupe compare table and decisions (routes/admin-dedupe.tsx). */
+
+.compare-table th[scope='row'] {
+  width: 96px;
+  white-space: nowrap;
+  vertical-align: top;
+  color: var(--muted);
+  font-weight: 400;
+}
+
+.compare-table td {
+  vertical-align: top;
+  overflow-wrap: anywhere;
+  white-space: normal;
+}
+
+.compare-table tr.compare-differ td {
+  background: var(--adm-amber-bg);
+  color: var(--adm-amber-fg);
+}
+
+.compare-table tr.compare-same td {
+  color: var(--adm-green-fg);
+}
+
+.compare-flag {
+  display: block;
+  font-size: 11px;
+  color: var(--adm-amber-fg);
+}
+
+.compare-cover {
+  width: 140px;
+  max-width: 100%;
+  height: auto;
+  border-radius: 6px;
+  display: block;
+}
+
+.compare-links {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.dedupe-decisions {
+  display: grid;
+  gap: 10px;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+}
+
+.dedupe-decision {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  font-size: 13px;
+}

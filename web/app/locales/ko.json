@@ -263,6 +263,7 @@
   "release.idContentId": "콘텐츠 ID",
   "release.idOther": "번호",
   "release.tags": "태그",
+  "release.otherVersions": "다른 버전",
   "release.age": "약 {age}세",
   "release.favorite": "즐겨찾기",
   "release.favorited": "즐겨찾기됨",

@@ -1,0 +1,23 @@
+/* 其他版本 on the release page (components/OtherVersions.tsx). */
+
+.other-versions-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.other-versions-list li {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 10px;
+  align-items: baseline;
+  font-size: 14px;
+}
+
+.other-versions-meta {
+  font-size: 13px;
+  color: var(--faint);
+}

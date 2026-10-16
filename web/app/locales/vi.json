@@ -263,6 +263,7 @@
   "release.idContentId": "Mã nội dung",
   "release.idOther": "Mã số",
   "release.tags": "Thẻ",
+  "release.otherVersions": "Phiên bản khác",
   "release.age": "Khoảng {age} tuổi",
   "release.favorite": "Yêu thích",
   "release.favorited": "Đã yêu thích",

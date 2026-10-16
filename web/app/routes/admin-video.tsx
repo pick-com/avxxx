@@ -539,6 +539,8 @@ const ACTION_LABELS: Record<string, string> = {
   remove_rights_proof: '移除版权凭证',
   add_release: '从搜索词补片',
   create_upcoming: '从搜索词建预约页',
+  link_versions: '关联为其他版本',
+  unlink_versions: '取消其他版本关联',
 };
 
 function HistoryTab({r, onChanged}: {r: AdminRelease; onChanged: () => void}) {

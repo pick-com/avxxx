@@ -263,6 +263,7 @@
   "release.idContentId": "コンテンツID",
   "release.idOther": "番号",
   "release.tags": "タグ",
+  "release.otherVersions": "その他のバージョン",
   "release.age": "約 {age} 歳",
   "release.favorite": "お気に入り",
   "release.favorited": "お気に入り済み",

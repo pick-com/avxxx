@@ -263,6 +263,7 @@
   "release.idContentId": "รหัสเนื้อหา",
   "release.idOther": "หมายเลข",
   "release.tags": "แท็ก",
+  "release.otherVersions": "เวอร์ชันอื่น",
   "release.age": "ประมาณ {age} ปี",
   "release.favorite": "รายการโปรด",
   "release.favorited": "อยู่ในรายการโปรดแล้ว",

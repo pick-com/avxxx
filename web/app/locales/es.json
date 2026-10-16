@@ -263,6 +263,7 @@
   "release.idContentId": "ID de contenido",
   "release.idOther": "ID",
   "release.tags": "Etiquetas",
+  "release.otherVersions": "Otras versiones",
   "release.age": "Unos {age} años",
   "release.favorite": "Favorito",
   "release.favorited": "En favoritos",

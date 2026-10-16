@@ -11,6 +11,7 @@ import {Community} from '../components/Ratings';
 import {Comments} from '../components/Comments';
 import {ShareButton, VoteButtons} from '../components/ReleaseActions';
 import {SourceCredits} from '../components/SourceCredits';
+import {OtherVersions} from '../components/OtherVersions';
 import {SourceEvidence} from '../components/SourceEvidence';
 import {FavoritePicker} from '../components/PlaylistPicker';
 import {LaterButton, ReserveButton} from '../components/SocialButtons';
@@ -367,6 +368,7 @@ export default function ReleasePage() {
             ) : (
               <ReleaseMeta release={release} />
             )}
+            <OtherVersions items={release.other_versions} />
 
             {release.status !== 'upcoming' && <Community slug={release.slug} releaseId={release.id} watched={!!resumeAt && resumeAt > 0} />}
 

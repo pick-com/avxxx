@@ -505,6 +505,9 @@ type ReleaseDetail struct {
 	// ScheduledAt is when an upcoming release goes live (absent: published,
 	// or the date is not fixed yet).
 	ScheduledAt *time.Time `json:"scheduled_at,omitempty"`
+	// OtherVersions are published releases linked as versions of the same
+	// work (其他版本, migration 047 release_versions).
+	OtherVersions []VersionRef `json:"other_versions"`
 }
 
 // ReleaseDetailBySlug returns a published or upcoming release (即将上线,
@@ -555,7 +558,12 @@ func (s *Store) ReleaseDetailBySlug(ctx context.Context, slug string) (ReleaseDe
 		}
 		x.Identifiers = append(x.Identifiers, i)
 	}
-	return x, rows.Err()
+	if err = rows.Err(); err != nil {
+		return x, err
+	}
+	rows.Close()
+	x.OtherVersions, err = s.ReleaseVersions(ctx, x.ID, true)
+	return x, err
 }
 
 // ---- search ----

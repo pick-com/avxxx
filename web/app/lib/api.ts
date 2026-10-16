@@ -302,6 +302,21 @@ export type ReleaseDetail = Release & {
   series?: {id: number; slug: string; name: string; display_name?: string} | null;
   /** When an upcoming release goes live (status 'upcoming'; absent: date not fixed). */
   scheduled_at?: string | null;
+  /** 其他版本: published releases linked as versions of the same work (migration 047). */
+  other_versions?: ReleaseVersionRef[] | null;
+};
+
+/** One entry of ReleaseDetail.other_versions (store.VersionRef). */
+export type ReleaseVersionRef = {
+  id: number;
+  slug: string;
+  title: string;
+  release_date?: string | null;
+  runtime_minutes?: number | null;
+  edition_type: string;
+  censorship_type?: string | null;
+  code?: string;
+  status: string;
 };
 
 export type Performer = {
