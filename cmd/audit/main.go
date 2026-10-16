@@ -74,6 +74,16 @@
 //
 //	audit -site-metrics                         run the job now (yesterday and today, or the backfill), print, exit
 //	audit -site-metrics -site-metrics-days 90   rebuild the last N days (at most the event retention)
+//
+// It also claims 'i18n_machine' jobs (every I18N_MT_EVERY, default 1h,
+// cmd/scheduler; or 机器翻译 in /admin/i18n): OpenRouter machine translation
+// (internal/mtjob, internal/i18n/openrouter.go) of admin-selected fields and
+// of missing release titles in I18N_MT_LANGS, saved as 'machine' drafts for
+// human review. Without OPENROUTER_API_KEY the run records not_configured.
+// OPENROUTER_DAILY_CAP (default 200 requests per UTC day, shared through
+// mt_usage) and I18N_MT_MAX_PER_RUN (default 60 strings) bound it.
+//
+//	audit -mt          run the machine translation job now, print the report, exit
 package main
 
 import (
@@ -81,9 +91,11 @@ import (
 	"avxxx/internal/catalog"
 	"avxxx/internal/completeness"
 	"avxxx/internal/crosscheck"
+	"avxxx/internal/i18n"
 	"avxxx/internal/images"
 	"avxxx/internal/media"
 	"avxxx/internal/medialink"
+	"avxxx/internal/mtjob"
 	"avxxx/internal/objstore"
 	"avxxx/internal/obs"
 	"avxxx/internal/playcurve"
@@ -126,6 +138,7 @@ func main() {
 	watchStatsDays := flag.Int("watch-stats-days", 0, "with -watch-stats: rebuild the last N dates instead of today's (at most the 90-day event retention)")
 	siteMetricsNow := flag.Bool("site-metrics", false, "rebuild site_daily_metrics (AdminDashboard KPIs) once and exit")
 	siteMetricsDays := flag.Int("site-metrics-days", 0, "with -site-metrics: rebuild the last N days (at most the 90-day event retention)")
+	mtNow := flag.Bool("mt", false, "run the machine translation job once and exit")
 	flag.Parse()
 
 	obs.SetupLogging("audit")
@@ -226,6 +239,12 @@ func main() {
 		if err != nil {
 			obs.Fatal("run failed", err)
 		}
+	case *mtNow:
+		rep, err := mtRunner(s, 0).Run(ctx)
+		printJSON(rep)
+		if err != nil {
+			obs.Fatal("run failed", err)
+		}
 	case *completenessNow:
 		rep, err := runCompleteness(ctx, s, 0)
 		printJSON(rep)
@@ -270,7 +289,7 @@ func work(ctx context.Context, s *store.Store) {
 			slog.Error("reap expired jobs", "err", err)
 		}
 		claimed := false
-		for _, kind := range []string{store.JobKindSourceHealth, store.JobKindRecsTrending, store.JobKindReleaseCurves, store.JobKindSearchStats, store.JobKindAudit, store.JobKindRecsSimilarity, store.JobKindMediaLink, store.JobKindCompletenessSnapshot, store.JobKindCrossCheck, store.JobKindMediaPurge, store.JobKindMediaFetch, store.JobKindWatchStats, store.JobKindWatchStatsNightly, store.JobKindSiteMetrics} {
+		for _, kind := range []string{store.JobKindSourceHealth, store.JobKindRecsTrending, store.JobKindReleaseCurves, store.JobKindSearchStats, store.JobKindAudit, store.JobKindRecsSimilarity, store.JobKindMediaLink, store.JobKindCompletenessSnapshot, store.JobKindCrossCheck, store.JobKindMediaPurge, store.JobKindMediaFetch, store.JobKindWatchStats, store.JobKindWatchStatsNightly, store.JobKindSiteMetrics, store.JobKindMachineTranslation} {
 			id, version, err := s.ClaimJob(ctx, kind)
 			if errors.Is(err, pgx.ErrNoRows) {
 				continue
@@ -376,6 +395,24 @@ func mediaPurgeRunner(ctx context.Context, s *store.Store, jobID int64) (*images
 	return &images.PurgeRunner{Store: s, Objects: objects, Config: cfg, JobID: jobID}, nil
 }
 
+// mtRunner builds the machine translation job: the OpenRouter translator
+// (nil without OPENROUTER_API_KEY, so the run records not_configured) with
+// the daily cap shared through mt_usage, and the I18N_MT_* bounds. Warnings
+// never contain the key.
+func mtRunner(s *store.Store, jobID int64) *mtjob.Runner {
+	cfg, warn := mtjob.ConfigFromEnv(os.Getenv)
+	orc, owarn := i18n.OpenRouterConfigFromEnv(os.Getenv)
+	for _, w := range append(warn, owarn...) {
+		slog.Warn("machine translation config", "warning", w)
+	}
+	cfg.BatchSize = orc.BatchSize
+	rn := &mtjob.Runner{Store: s, Config: cfg, JobID: jobID}
+	if tr, err := i18n.NewOpenRouter(orc, s.MTBudget(store.MTProviderOpenRouter), &http.Client{}); err == nil {
+		rn.Translator = tr
+	}
+	return rn
+}
+
 // execute runs one job of kind and returns its result counts.
 func execute(ctx context.Context, s *store.Store, kind string, id int64) (any, error) {
 	switch kind {
@@ -405,6 +442,8 @@ func execute(ctx context.Context, s *store.Store, kind string, id int64) (any, e
 		return (&watchstats.Runner{Store: s, JobID: id, Kind: kind}).Run(ctx)
 	case store.JobKindSiteMetrics:
 		return (&sitemetrics.Runner{Store: s, JobID: id}).Run(ctx)
+	case store.JobKindMachineTranslation:
+		return mtRunner(s, id).Run(ctx)
 	}
 	if kind == store.JobKindSourceHealth {
 		rep, err := (&audit.HealthRunner{Store: s, Config: healthConfig(), JobID: id}).Run(ctx)

@@ -5,6 +5,7 @@ import (
 	"avxxx/internal/completeness"
 	"avxxx/internal/crosscheck"
 	"avxxx/internal/images"
+	"avxxx/internal/mtjob"
 	"avxxx/internal/obs"
 	"avxxx/internal/playcurve"
 	"avxxx/internal/recs"
@@ -154,6 +155,16 @@ func main() {
 			log.Fatalf("invalid SITE_METRICS_EVERY %q: want a duration between 5m and 24h", v)
 		}
 	}
+	// Machine translation (internal/mtjob, run by cmd/audit): once per
+	// I18N_MT_EVERY slot (default 1h). Without OPENROUTER_API_KEY on the
+	// audit worker each run is a cheap not_configured no-op; the free-tier
+	// budget is the job's OPENROUTER_DAILY_CAP, not this cadence.
+	mtEvery := time.Hour
+	if v := os.Getenv("I18N_MT_EVERY"); v != "" {
+		if mtEvery, err = time.ParseDuration(v); err != nil || mtEvery < 10*time.Minute || mtEvery > 24*time.Hour {
+			log.Fatalf("invalid I18N_MT_EVERY %q: want a duration between 10m and 24h", v)
+		}
+	}
 	interval := 60 * time.Second
 	var lastAuthPrune time.Time
 	for ctx.Err() == nil {
@@ -208,6 +219,9 @@ func main() {
 		}
 		if _, err := s.EnqueueKindSince(ctx, sitemetrics.JobKind, time.Now().Truncate(siteMetricsEvery)); err != nil {
 			log.Printf("enqueue site metrics: %v", err)
+		}
+		if _, err := s.EnqueueKindSince(ctx, mtjob.JobKind, time.Now().Truncate(mtEvery)); err != nil {
+			log.Printf("enqueue machine translation: %v", err)
 		}
 		n, err := s.EnqueueDue(ctx)
 		if err != nil {

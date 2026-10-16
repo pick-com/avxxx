@@ -290,11 +290,29 @@ type GlossaryTerm struct {
 	Translation string
 }
 
-// Translator produces machine translations, stored with status machine.
-//
-// TODO(tech plan 3.10): the machine-translation provider is still to be
-// chosen; there is deliberately no implementation and nothing calls an
-// external service yet.
+// Batch is one machine-translation request: Texts translated from From to
+// To, in order. Glossary entries are must-use term translations. UI marks UI
+// strings, whose {placeholders} and ICU plural/select blocks must survive
+// verbatim (content is validated the same way; titles rarely carry braces).
+type Batch struct {
+	From     string
+	To       string
+	Texts    []string
+	Glossary []GlossaryTerm
+	UI       bool
+}
+
+// Result is a Translator's answer: Texts[i] translates Batch.Texts[i]; Model
+// is the provider model that produced them (provenance for reviewers).
+type Result struct {
+	Texts []string
+	Model string
+}
+
+// Translator produces machine translations, stored with status machine and
+// never served until a human submits and reviews them (tech plan 3.10). The
+// implementation is OpenRouter (openrouter.go); without OPENROUTER_API_KEY
+// there is none and nothing calls an external service.
 type Translator interface {
-	Translate(ctx context.Context, text, from, to string, glossary []GlossaryTerm) (string, error)
+	TranslateBatch(ctx context.Context, b Batch) (Result, error)
 }

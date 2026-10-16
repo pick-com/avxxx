@@ -537,6 +537,9 @@ export type TranslationTask = {
   reviewed_at: string | null;
   updated_by: string | null;
   updated_at: string | null;
+  // Provenance when the row started as machine output (migration 052).
+  mt_model?: string | null;
+  mt_at?: string | null;
 };
 export type TranslationStats = {total_fields: number; by_lang: Record<string, Record<string, number>>};
 export type GlossaryEntry = {id: number; term: string; lang: string; translation: string; note: string; updated_by: string | null; updated_at: string};
@@ -548,6 +551,15 @@ const tPath = (t: {entity_type: string; entity_id: string; field: string; lang: 
 export const getTranslationTasks = (f: {lang?: string; status?: string; entity_type?: string; missing?: boolean; cursor?: string | null; limit?: number}) =>
   api<{items: TranslationTask[] | null; next_cursor: string | null}>(`admin/i18n/translations${qs(f)}`).then(pageOf);
 export const getTranslationStats = () => api<TranslationStats>('admin/i18n/stats');
+// 机器翻译 (internal/api/admin_i18n_mt.go): OpenRouter drafts via the
+// i18n_machine job; output lands as status machine and needs review.
+export type MTStatus = {configured: boolean; provider: string; models: string[]; daily_cap: number; used_today: number; pending: number; failing: number; max_items: number};
+export type MTQueueResult = {requested: number; queued: number; skipped: number; job_id?: number; enqueued?: boolean};
+export const getMTStatus = () => api<MTStatus>('admin/i18n/machine-translate');
+export const machineTranslate = (lang: string, items: {entity_type: string; entity_id: string; field: string}[]) =>
+  api<MTQueueResult>('admin/i18n/machine-translate', {method: 'POST', body: {lang, items}});
+/** A task the machine may fill: no translation, or an unreviewed machine draft. */
+export const mtEligible = (t: TranslationTask) => t.status === 'missing' || (t.status === 'machine' && !t.reviewed_value);
 export const markStale = () => api<{marked_stale: number}>('admin/i18n/translations/mark-stale', {method: 'POST'});
 export const saveTranslation = (t: TranslationTask, value: string) => api<TranslationTask>(tPath(t), {method: 'PUT', body: {value}});
 export const submitTranslation = (t: TranslationTask) => api<TranslationTask>(`${tPath(t)}/submit`, {method: 'POST'});

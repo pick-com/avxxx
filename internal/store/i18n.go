@@ -94,6 +94,10 @@ type TranslationTask struct {
 	ReviewedAt    *time.Time `json:"reviewed_at"`
 	UpdatedBy     *string    `json:"updated_by"`
 	UpdatedAt     *time.Time `json:"updated_at"`
+	// MTModel / MTAt: provenance when the row started as machine output
+	// (migration 052), kept after a human edits it.
+	MTModel *string    `json:"mt_model"`
+	MTAt    *time.Time `json:"mt_at"`
 }
 
 // TaskFilter selects translation tasks. Missing lists source fields without
@@ -127,7 +131,7 @@ func DecodeTaskCursor(raw string) (*Cursor, error) {
 }
 
 const taskColumns = `t.id,t.value,t.status,t.reviewed_value,t.submitted_at IS NOT NULL,
-	t.source_hash<>i18n_hash(src),t.submitted_at,t.reviewed_at,t.updated_by,t.updated_at`
+	t.source_hash<>i18n_hash(src),t.submitted_at,t.reviewed_at,t.updated_by,t.updated_at,t.mt_model,t.mt_at`
 
 // buildTaskQuery renders f as SQL selecting limit+1 tasks in
 // (entity_type, entity_id, field, lang) order.
@@ -193,7 +197,7 @@ func (s *Store) TranslationTasks(ctx context.Context, f TaskFilter) ([]Translati
 			t.Status = StatusMissing
 		} else {
 			err = rows.Scan(&t.EntityType, &t.EntityID, &t.Field, &t.Lang, &t.Source, &t.ID, &t.Value, &t.Status, &t.ReviewedValue,
-				&t.Submitted, &t.Outdated, &t.SubmittedAt, &t.ReviewedAt, &t.UpdatedBy, &t.UpdatedAt)
+				&t.Submitted, &t.Outdated, &t.SubmittedAt, &t.ReviewedAt, &t.UpdatedBy, &t.UpdatedAt, &t.MTModel, &t.MTAt)
 		}
 		if err != nil {
 			return nil, "", err
@@ -223,7 +227,7 @@ func (s *Store) translationTask(ctx context.Context, q querier, ref i18n.Ref, la
 	t, err := pgx.CollectExactlyOneRow(rows, func(r pgx.CollectableRow) (TranslationTask, error) {
 		var t TranslationTask
 		err := r.Scan(&t.EntityType, &t.EntityID, &t.Field, &t.Lang, &t.Source, &t.ID, &t.Value, &t.Status, &t.ReviewedValue,
-			&t.Submitted, &t.Outdated, &t.SubmittedAt, &t.ReviewedAt, &t.UpdatedBy, &t.UpdatedAt)
+			&t.Submitted, &t.Outdated, &t.SubmittedAt, &t.ReviewedAt, &t.UpdatedBy, &t.UpdatedAt, &t.MTModel, &t.MTAt)
 		return t, err
 	})
 	return t, err

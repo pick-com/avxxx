@@ -10,10 +10,13 @@ import {
   createGlossary,
   deleteGlossary,
   getGlossary,
+  getMTStatus,
   getTranslationStats,
   getTranslationTasks,
   getUIStrings,
+  machineTranslate,
   markStale,
+  mtEligible,
   putUIString,
   reviewTranslation,
   saveTranslation,
@@ -103,6 +106,12 @@ function Editor({task, glossary, onSaved}: {task: TranslationTask; glossary: Glo
           {value.length} 字符{task.status === 'machine' ? ' · 当前为机器翻译' : ''}
           {task.updated_by ? ` · 上次 ${task.updated_by} ${fmtTime(task.updated_at)}` : ''}
         </span>
+        {task.mt_model && (
+          <span className="adm-field-hint">
+            机器翻译来源：<span className="mono">{task.mt_model}</span>
+            {task.mt_at ? ` · ${fmtTime(task.mt_at)}` : ''}（需人工核对后提交审校）
+          </span>
+        )}
       </label>
       <div className="adm-field">
         术语表
@@ -147,6 +156,8 @@ function TasksView({glossary}: {glossary: GlossaryEntry[]}) {
   const [error, setError] = useState('');
   const [loaded, setLoaded] = useState(false);
   const [sel, setSel] = useState<string | null>(null);
+  const [picked, setPicked] = useState<Set<string>>(() => new Set());
+  const mt = useAdminLoad(() => getMTStatus());
 
   const load = async (cursor: string | null) => {
     setBusy(true);
@@ -155,7 +166,10 @@ function TasksView({glossary}: {glossary: GlossaryEntry[]}) {
       const page = await getTranslationTasks({lang, status: missing ? '' : status, entity_type: entityType, missing, cursor, limit: 50});
       setItems(prev => (cursor ? [...prev, ...page.items] : page.items));
       setNext(page.next_cursor);
-      if (!cursor) setSel(page.items[0] ? taskKey(page.items[0]) : null);
+      if (!cursor) {
+        setSel(page.items[0] ? taskKey(page.items[0]) : null);
+        setPicked(new Set());
+      }
       setLoaded(true);
     } catch (cause) {
       setError(adminErrorText(cause));
@@ -181,6 +195,35 @@ function TasksView({glossary}: {glossary: GlossaryEntry[]}) {
   const total = stats.data?.total_fields ?? 0;
   const byLang = stats.data?.by_lang ?? {};
   const cur = items.find(t => taskKey(t) === sel) ?? null;
+  const eligible = items.filter(mtEligible);
+  const maxPick = mt.data?.max_items ?? 200;
+  const togglePick = (k: string) =>
+    setPicked(prev => {
+      const n = new Set(prev);
+      if (n.has(k)) n.delete(k);
+      else if (n.size < maxPick) n.add(k);
+      return n;
+    });
+  const allPicked = eligible.length > 0 && eligible.every(t => picked.has(taskKey(t)));
+  const pickAll = () => setPicked(allPicked ? new Set() : new Set(eligible.slice(0, maxPick).map(taskKey)));
+  const runMT = () => {
+    const chosen = items.filter(t => picked.has(taskKey(t)));
+    void act
+      .attempt(
+        'mt',
+        () => machineTranslate(lang, chosen.map(t => ({entity_type: t.entity_type, entity_id: t.entity_id, field: t.field}))),
+        v =>
+          v.queued === 0
+            ? '没有可机翻的字段（已有人工译文的会跳过）'
+            : `已排队 ${v.queued} 条机器翻译${v.skipped ? `，跳过 ${v.skipped} 条` : ''}${v.enqueued === false ? '；任务正在运行，下一轮处理' : ''}。完成后状态为「机翻」，需人工审校才上线。`,
+      )
+      .then(v => v && (setPicked(new Set()), mt.reload()));
+  };
+  const mtTitle = !mt.data
+    ? ''
+    : mt.data.configured
+      ? `OpenRouter · ${mt.data.models[0] ?? ''} · 今日 ${mt.data.used_today}/${mt.data.daily_cap} 次请求 · 排队 ${mt.data.pending}`
+      : '未配置 OPENROUTER_API_KEY，机器翻译不可用';
   const replace = (t: TranslationTask) => {
     setItems(prev => prev.map(x => (taskKey(x) === taskKey(t) ? t : x)));
     stats.reload();
@@ -237,6 +280,15 @@ function TasksView({glossary}: {glossary: GlossaryEntry[]}) {
         <button
           type="button"
           className="btn btn-secondary btn-sm"
+          title={mtTitle}
+          disabled={!mt.data?.configured || picked.size === 0 || act.pending === 'mt'}
+          onClick={runMT}
+        >
+          机器翻译{picked.size ? ` (${picked.size})` : ''}
+        </button>
+        <button
+          type="button"
+          className="btn btn-secondary btn-sm"
           disabled={act.pending === 'stale'}
           onClick={() => void act.attempt('stale', () => markStale(), v => `已标记 ${v.marked_stale} 条为需更新`).then(v => v && (stats.reload(), load(null)))}
         >
@@ -244,6 +296,7 @@ function TasksView({glossary}: {glossary: GlossaryEntry[]}) {
         </button>
       </div>
       <AdminNotice error={error} />
+      {mtTitle && <p className="adm-field-hint">机器翻译：{mtTitle}。勾选缺失或机翻待审的字段后点「机器翻译」；结果为「机翻」草稿，不会直接上线。</p>}
 
       <div className="adm-i18n">
         <section className="adm-card">
@@ -251,6 +304,9 @@ function TasksView({glossary}: {glossary: GlossaryEntry[]}) {
             <table className="adm-table">
               <thead>
                 <tr>
+                  <th>
+                    <input type="checkbox" aria-label="全选可机翻的字段" checked={allPicked} disabled={eligible.length === 0} onChange={pickAll} />
+                  </th>
                   <th>类型</th>
                   <th>原文</th>
                   <th>{LANG_NAMES[lang]}</th>
@@ -258,12 +314,21 @@ function TasksView({glossary}: {glossary: GlossaryEntry[]}) {
                 </tr>
               </thead>
               <tbody>
-                {loaded && items.length === 0 && <EmptyRow cols={4}>没有符合条件的翻译</EmptyRow>}
+                {loaded && items.length === 0 && <EmptyRow cols={5}>没有符合条件的翻译</EmptyRow>}
                 {items.map(t => {
                   const st = taskStatus(t);
                   const k = taskKey(t);
                   return (
                     <tr key={k} className={`clickable ${sel === k ? 'sel' : ''}`} onClick={() => setSel(k)}>
+                      <td onClick={e => e.stopPropagation()}>
+                        <input
+                          type="checkbox"
+                          aria-label={`选择 ${k} 机器翻译`}
+                          checked={picked.has(k)}
+                          disabled={!mtEligible(t)}
+                          onChange={() => togglePick(k)}
+                        />
+                      </td>
                       <td>
                         {ENTITY_LABELS[t.entity_type] ?? t.entity_type}
                         <div className="adm-source-meta">

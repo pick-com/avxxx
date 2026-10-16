@@ -51,6 +51,13 @@
           DMM_API_ID={{ dmm_api_id | default('') }}
           DMM_AFFILIATE_ID={{ dmm_affiliate_id | default('') }}
           THEPORNDB_API_TOKEN={{ theporndb_api_token | default('') }}
+          # Machine translation (OpenRouter free models); empty = off. Key from vault.
+          OPENROUTER_API_KEY={{ openrouter_api_key | default('') }}
+          OPENROUTER_MODEL={{ openrouter_model | default('') }}
+          OPENROUTER_REFERER={{ openrouter_referer | default(public_base_url | default(base_url | default(''))) }}
+          OPENROUTER_TITLE={{ openrouter_title | default('') }}
+          OPENROUTER_DAILY_CAP={{ openrouter_daily_cap | default(200) }}
+          I18N_MT_LANGS={{ i18n_mt_langs | default('zh-CN,zh-TW,en') }}
           LOG_HASH_KEY={{ log_hash_key | default('') }}
           # Alertmanager receivers (monitoring profile); empty = not configured.
           ALERT_WEBHOOK_URL={{ alert_webhook_url | default('') }}
