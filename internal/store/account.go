@@ -577,7 +577,9 @@ func (s *Store) WriteDataExport(ctx context.Context, userID int64, w io.Writer) 
 // ---------------------------------------------------------------------------
 // Onboarding interests
 
-var tagSlugRe = regexp.MustCompile(`^[\p{L}\p{N}][\p{L}\p{N}._-]{0,99}$`)
+// Tag slugs as GET /api/tags returns them: no whitespace, quotes, angle
+// brackets, slashes or control characters; at most 100 characters.
+var tagSlugRe = regexp.MustCompile(`^[^\s\p{Cc}/\\<>"'` + "`" + `]{1,100}$`)
 
 // Interests returns the user's onboarding interest tags.
 func (s *Store) Interests(ctx context.Context, userID int64) ([]string, error) {
