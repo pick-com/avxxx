@@ -428,7 +428,7 @@ func TestBlockDetection(t *testing.T) {
 		{"429 seconds", 429, map[string]string{"Retry-After": "90"}, "", true, "rate_limited", 90 * time.Second},
 		{"429 huge", 429, map[string]string{"Retry-After": "99999999"}, "", true, "rate_limited", MaxBlockBackoff},
 		{"cloudflare 200 challenge", 200, nil, `<html><head><title>Just a moment...</title></head><body><script src="/cdn-cgi/challenge-platform/h/b/orchestrate/chl_page/v1"></script></body></html>`, true, "challenge", DefaultBlockBackoff},
-		{"cf-mitigated header", 403, map[string]string{"cf-mitigated": "challenge"}, "", true, "forbidden", DefaultBlockBackoff},
+		{"cf-mitigated header", 403, map[string]string{"cf-mitigated": "challenge"}, "", true, "challenge", DefaultBlockBackoff},
 		{"503 challenge", 503, nil, `<form id="challenge-form"></form>`, true, "challenge", DefaultBlockBackoff},
 		{"503 retry-after", 503, map[string]string{"Retry-After": "60"}, "maintenance", true, "unavailable", time.Minute},
 		{"bare 503 is an outage", 503, nil, "maintenance", false, "", 0},

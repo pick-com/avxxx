@@ -33,6 +33,8 @@ ThePornDB API token（`theporndb` 适配器，third_party_api 层级）放进 va
 
 OpenRouter 机器翻译 key 放进 vault：`openrouter_api_key`（openrouter.ai 账户的 API key，只以 `Authorization: Bearer` 发往 `openrouter.ai`，不写日志、不入库）。默认使用免费模型（`openrouter_model` 可覆盖，逗号分隔的回退列表），`openrouter_daily_cap`（默认 200 次/UTC 日）限制请求数。空值时机器翻译关闭：`i18n_machine` 任务记录 `not_configured`，`/admin/i18n` 的「机器翻译」按钮不可用。机翻结果只写成「机翻」草稿，需要人工提交审校后才上线；可用 `docker compose run --rm audit /usr/local/bin/audit -mt` 手动跑一次。
 
+目录抓取出口代理（XSList / JAVLibrary 等 `egress_policy=vpn` 来源）放进 vault：`catalog_proxy_url`（全局）和/或 `catalog_proxy_vpn`（供抓取策略 `proxy_url=env:CATALOG_PROXY_VPN` 的来源），值如 `socks5h://user:pass@host.docker.internal:1080`，渲染为 `.env` 的 `CATALOG_PROXY_URL` / `CATALOG_PROXY_VPN`。凭据只在 vault 与 `.env`，日志只显示 `***@host:port`；默认空值即直连，`vpn` 来源无代理时拒绝运行。VPN 本身由运维在主机上连接。启用步骤见 `docs/DEPLOYMENT.md` 2.8。
+
 Web 前端（SSR，compose 服务 `web`，主机 `127.0.0.1:3000`）随部署一起构建和启动。传入 `-e public_base_url=https://<域名>`（不传时用 `base_url`）作为 canonical / hreflang / 站点地图的对外地址；主机反向代理把 `/api/` 转给 `127.0.0.1:8080`、其余转给 `127.0.0.1:3000`（见 `docs/PRODUCTION_OPERATIONS.md`「Web 前端（SSR）与反向代理」）。部署还会安装每日 SEO 检查 cron（写入后台「收录健康分」），`-e seo_check_enabled=false` 可关闭。它用 vault 里的 `seo_report_token`（后台「用户与权限 → 服务令牌」创建、范围只有 `POST /api/admin/seo/report` 的 `svc_…` 令牌，渲染为 `.env` 的 `SEO_REPORT_TOKEN`）上报；该变量为空时才回退用 `admin_token`。
 
 可观测性（`docs/PRODUCTION_OPERATIONS.md`「日志、指标与告警」）：传入 `-e log_hash_key=<随机长字符串>` 让日志中的用户哈希在重启后保持稳定；传入 `-e monitoring_enabled=true` 额外启动 compose `monitoring` profile 中的 Prometheus（只监听 `127.0.0.1:9095`，通过 `ssh -L 9095:127.0.0.1:9095` 访问）。各服务的 `/metrics` 只在 compose 网络内可达，不对外发布端口。

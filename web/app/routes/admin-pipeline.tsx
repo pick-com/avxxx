@@ -21,6 +21,7 @@ const EMPTY_POLICY: CrawlPolicyInput = {
   min_request_interval: '5 seconds',
   daily_page_budget: 1000,
   daily_byte_budget: 0,
+  proxy_url: '',
 };
 
 function PolicyForm({source, policy, busy, onSave, onCancel}: {
@@ -38,6 +39,7 @@ function PolicyForm({source, policy, busy, onSave, onCancel}: {
           min_request_interval: policy.min_request_interval,
           daily_page_budget: policy.daily_page_budget,
           daily_byte_budget: policy.daily_byte_budget,
+          proxy_url: policy.proxy_url ?? '',
         }
       : EMPTY_POLICY,
   );
@@ -71,7 +73,16 @@ function PolicyForm({source, policy, busy, onSave, onCancel}: {
           每日字节预算
           <input type="number" min={0} value={p.daily_byte_budget} onChange={e => set('daily_byte_budget', Number(e.target.value) || 0)} />
         </label>
+        <label className="adm-field">
+          出口代理
+          <input
+            value={p.proxy_url ?? ''}
+            onChange={e => set('proxy_url', e.target.value)}
+            placeholder="留空继承全局；direct；env:CATALOG_PROXY_VPN；socks5://10.8.0.1:1080"
+          />
+        </label>
       </div>
+      <p className="adm-field-hint">出口代理不能包含账号密码：带凭据的地址写入 CATALOG_PROXY_* 环境变量，这里填 env:变量名。</p>
       <div className="adm-form-actions">
         <button type="submit" className="btn btn-primary btn-sm" disabled={busy}>
           保存策略
@@ -215,6 +226,7 @@ export default function AdminPipeline() {
                           发现 {p.discovery_interval || '—'} · 刷新 {p.detail_refresh_interval || '—'}
                           <br />
                           最小间隔 {p.min_request_interval} · 每日 {p.daily_page_budget || '∞'} 页 / {p.daily_byte_budget || '∞'} 字节
+                          {p.proxy_url ? <> · 代理 {p.proxy_url}</> : null}
                           <br />
                           基线 {p.baseline_completed_at ? fmtTime(p.baseline_completed_at) : '未完成'}
                         </div>

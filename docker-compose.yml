@@ -144,12 +144,22 @@ services:
       # Contact URL or email in the crawler User-Agent; empty disables catalog crawls.
       CATALOG_CONTACT: ${CATALOG_CONTACT:-}
       CATALOG_USER_AGENT: ${CATALOG_USER_AGENT:-}
+      # Catalog egress (docs/DEPLOYMENT.md "Catalog egress"): proxy for every
+      # catalog crawl; CATALOG_PROXY_VPN serves sources whose crawl policy
+      # proxy_url is env:CATALOG_PROXY_VPN. A proxy on the Docker host is
+      # host.docker.internal (see extra_hosts).
+      CATALOG_PROXY_URL: ${CATALOG_PROXY_URL:-}
+      CATALOG_PROXY_VPN: ${CATALOG_PROXY_VPN:-}
       DMM_API_ID: ${DMM_API_ID:-}
       DMM_AFFILIATE_ID: ${DMM_AFFILIATE_ID:-}
       THEPORNDB_API_TOKEN: ${THEPORNDB_API_TOKEN:-}
       METRICS_ADDR: 0.0.0.0:9092
       LOG_FORMAT: ${LOG_FORMAT:-json}
       LOG_LEVEL: ${LOG_LEVEL:-info}
+    # Lets CATALOG_PROXY_URL reach a proxy on the Docker host (Linux needs
+    # the mapping; Docker Desktop provides it anyway).
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     depends_on:
       db:
         condition: service_healthy

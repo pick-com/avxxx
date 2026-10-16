@@ -58,6 +58,9 @@
           OPENROUTER_TITLE={{ openrouter_title | default('') }}
           OPENROUTER_DAILY_CAP={{ openrouter_daily_cap | default(200) }}
           I18N_MT_LANGS={{ i18n_mt_langs | default('zh-CN,zh-TW,en') }}
+          # Catalog egress proxy (vault: may carry credentials); empty = direct.
+          CATALOG_PROXY_URL={{ catalog_proxy_url | default('') }}
+          CATALOG_PROXY_VPN={{ catalog_proxy_vpn | default('') }}
           LOG_HASH_KEY={{ log_hash_key | default('') }}
           # Alertmanager receivers (monitoring profile); empty = not configured.
           ALERT_WEBHOOK_URL={{ alert_webhook_url | default('') }}

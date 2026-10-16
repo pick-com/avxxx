@@ -14,8 +14,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"net/http"
+	"os"
 	"strconv"
+	"sync"
 	"time"
 )
 
@@ -31,9 +32,20 @@ type Runner struct {
 	// UserAgentErr is set catalog jobs fail with config_error.
 	UserAgent    string
 	UserAgentErr error
-	Robots       *catalog.Robots
+	// Robots is the shared robots.txt cache for sources that use the
+	// process-wide egress (no proxy_url of their own); build its client with
+	// catalog.NewHTTPClient over the same egress. Sources with their own
+	// proxy_url get a cache per egress (robots.txt is read through the same
+	// path as the pages).
+	Robots *catalog.Robots
+	// Getenv reads CATALOG_PROXY_URL / CATALOG_PROXY_* / HTTPS_PROXY
+	// (default os.Getenv).
+	Getenv func(string) string
 	// FetchFeed fetches an RSS/Atom source (default scraper.Fetch).
 	FetchFeed func(context.Context, model.Source) ([]model.Item, error)
+
+	mu          sync.Mutex
+	egressRobot map[string]*catalog.Robots
 }
 
 // Execute runs one claimed job and returns the feed items (RSS only) and the
@@ -44,7 +56,7 @@ func (r *Runner) Execute(ctx context.Context, job store.ClaimedJob) ([]model.Ite
 		if r.UserAgentErr != nil {
 			return nil, &catalog.GateError{Code: catalog.CodeConfig, Reason: r.UserAgentErr.Error()}
 		}
-		return nil, RunCatalog(ctx, r.Store, r.Registry, job, r.UserAgent, r.Robots)
+		return nil, r.runCatalog(ctx, job)
 	}
 	fetch := r.FetchFeed
 	if fetch == nil {
@@ -59,6 +71,34 @@ func (r *Runner) Execute(ctx context.Context, job store.ClaimedJob) ([]model.Ite
 // fetches, checkpoint advance only after fully persisted batches, verify
 // reports instead of catalog writes, and block parking for 403/429/challenge.
 func RunCatalog(ctx context.Context, st *store.Store, registry *catalog.Registry, job store.ClaimedJob, ua string, robots *catalog.Robots) error {
+	return (&Runner{Store: st, Registry: registry, UserAgent: ua, Robots: robots}).runCatalog(ctx, job)
+}
+
+// robotsFor returns the robots.txt cache for a source's egress.
+func (r *Runner) robotsFor(e catalog.Egress, own bool) *catalog.Robots {
+	if !own && r.Robots != nil {
+		return r.Robots
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.egressRobot == nil {
+		r.egressRobot = map[string]*catalog.Robots{}
+	}
+	k := e.Key()
+	if rb, ok := r.egressRobot[k]; ok {
+		return rb
+	}
+	rb := catalog.NewRobots(catalog.NewHTTPClient(20*time.Second, e), r.UserAgent)
+	r.egressRobot[k] = rb
+	return rb
+}
+
+func (r *Runner) runCatalog(ctx context.Context, job store.ClaimedJob) error {
+	st, registry, ua := r.Store, r.Registry, r.UserAgent
+	getenv := r.Getenv
+	if getenv == nil {
+		getenv = os.Getenv
+	}
 	source := job.Source
 	adapter, ok := registry.Get(source.Adapter)
 	if !ok {
@@ -76,7 +116,21 @@ func RunCatalog(ctx context.Context, st *store.Store, registry *catalog.Registry
 		return nil
 	}
 	redactor, _ := adapter.(catalog.Redactor)
-	client, err := catalog.HTTPClientFor(adapter, &http.Client{Timeout: 30 * time.Second})
+	// Egress (FINAL_DATA_DESIGN 8): the source's proxy_url, else
+	// CATALOG_PROXY_URL, else HTTPS_PROXY/HTTP_PROXY. An unresolvable proxy
+	// is a config_error, never a silent direct connection.
+	egress, err := catalog.ResolveEgress(policy.ProxyURL, getenv)
+	if err != nil {
+		return &catalog.GateError{Code: catalog.CodeConfig, Reason: fmt.Sprintf("source %d (%s) egress: %s", source.ID, source.Adapter, catalog.RedactProxyURL(err.Error()))}
+	}
+	if source.EgressPolicy == "vpn" && egress.Mode == catalog.EgressNone {
+		// A VPN-only source must not leave through the host's own address by
+		// accident. proxy_url=direct is the explicit "this host's route is
+		// the VPN" opt-out.
+		return &catalog.GateError{Code: catalog.CodeConfig, Reason: fmt.Sprintf("source %d (%s) has egress_policy vpn but no proxy: set its crawl policy proxy_url, %s or HTTPS_PROXY (or proxy_url=direct when this host itself routes through the VPN)", source.ID, source.Adapter, catalog.ProxyEnv)}
+	}
+	jl = jl.With("egress", egress.Desc)
+	client, err := catalog.HTTPClientFor(adapter, catalog.NewHTTPClient(30*time.Second, egress))
 	if err != nil {
 		// Not configured (e.g. DMM credentials missing): a config_error that
 		// the queue does not retry; nothing was fetched.
@@ -84,7 +138,7 @@ func RunCatalog(ctx context.Context, st *store.Store, registry *catalog.Registry
 	}
 	policy.Fetch.MaxRetryWait = MaxInlineRetryWait
 	fetcher := catalog.NewFetcher(client, policy.Fetch)
-	fetcher.UserAgent, fetcher.Robots, fetcher.Automatic = ua, robots, job.Phase.Automatic()
+	fetcher.UserAgent, fetcher.Robots, fetcher.Automatic = ua, r.robotsFor(egress, policy.ProxyURL != ""), job.Phase.Automatic()
 	crawl := &catalog.Crawl{
 		SourceID:    source.ID,
 		StartURL:    source.URL,

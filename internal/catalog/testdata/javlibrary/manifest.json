@@ -1,0 +1,10 @@
+{
+  "source": "javlibrary",
+  "fixtures": [
+    {"file": "discovery/newrelease_page1.html", "url": "https://www.javlibrary.com/en/vl_newrelease.php", "entity": "discovery", "origin": "synthetic"},
+    {"file": "discovery/newrelease_page2.html", "url": "https://www.javlibrary.com/en/vl_newrelease.php?&mode=&page=2", "entity": "discovery", "origin": "synthetic"},
+    {"file": "releases/javlizzzz1.html", "url": "https://www.javlibrary.com/en/?v=javlizzzz1", "entity": "release", "origin": "synthetic"},
+    {"file": "releases/javlizzzz2.html", "url": "https://www.javlibrary.com/en/?v=javlizzzz2", "entity": "release", "origin": "synthetic"},
+    {"file": "releases/no_title.html", "url": "https://www.javlibrary.com/en/?v=javlizzzz9", "entity": "release", "origin": "synthetic", "expect": "skip"}
+  ]
+}

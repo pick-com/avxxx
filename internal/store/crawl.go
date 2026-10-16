@@ -4,6 +4,7 @@ import (
 	"avxxx/internal/catalog"
 	"context"
 	"errors"
+	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -60,12 +61,17 @@ type CrawlPolicy struct {
 	BaselinePagesPerRun     int64      `json:"baseline_pages_per_run"`
 	EnabledAt               *time.Time `json:"enabled_at"`
 	BaselineCompletedAt     *time.Time `json:"baseline_completed_at"`
+	// ProxyURL is the source's egress (catalog.ValidateSourceProxy): "" =
+	// inherit CATALOG_PROXY_URL / HTTPS_PROXY, "direct", "env:CATALOG_PROXY_<X>"
+	// or a proxy URL without credentials. On upsert, nil keeps the stored
+	// value (older clients do not send it) and "" clears it.
+	ProxyURL *string `json:"proxy_url"`
 }
 
 func (s *Store) CrawlPolicies(ctx context.Context) ([]CrawlPolicy, error) {
 	r, err := s.Query(ctx, `SELECT source_id,COALESCE(discovery_interval::text,''),COALESCE(detail_refresh_interval::text,''),min_request_interval::text,
-		daily_page_budget,daily_byte_budget,baseline_daily_page_budget,baseline_daily_byte_budget,baseline_pages_per_run,enabled_at,baseline_completed_at
-		FROM source_crawl_policies ORDER BY source_id`)
+		daily_page_budget,daily_byte_budget,baseline_daily_page_budget,baseline_daily_byte_budget,baseline_pages_per_run,enabled_at,baseline_completed_at,
+		COALESCE(proxy_url,'') FROM source_crawl_policies ORDER BY source_id`)
 	if err != nil {
 		return nil, err
 	}
@@ -73,10 +79,12 @@ func (s *Store) CrawlPolicies(ctx context.Context) ([]CrawlPolicy, error) {
 	out := []CrawlPolicy{}
 	for r.Next() {
 		var p CrawlPolicy
+		var proxy string
 		if err = r.Scan(&p.SourceID, &p.DiscoveryInterval, &p.DetailRefreshInterval, &p.MinRequestInterval, &p.DailyPageBudget, &p.DailyByteBudget,
-			&p.BaselineDailyPageBudget, &p.BaselineDailyByteBudget, &p.BaselinePagesPerRun, &p.EnabledAt, &p.BaselineCompletedAt); err != nil {
+			&p.BaselineDailyPageBudget, &p.BaselineDailyByteBudget, &p.BaselinePagesPerRun, &p.EnabledAt, &p.BaselineCompletedAt, &proxy); err != nil {
 			return nil, err
 		}
+		p.ProxyURL = &proxy
 		out = append(out, p)
 	}
 	return out, r.Err()
@@ -91,15 +99,23 @@ func (s *Store) UpsertCrawlPolicy(ctx context.Context, p CrawlPolicy) error {
 	if p.DailyPageBudget < 0 || p.DailyByteBudget < 0 || p.BaselineDailyPageBudget < 0 || p.BaselineDailyByteBudget < 0 {
 		return invalid("budgets must not be negative")
 	}
+	if p.ProxyURL != nil {
+		v := strings.TrimSpace(*p.ProxyURL)
+		if err := catalog.ValidateSourceProxy(v); err != nil {
+			return invalid("%s", err.Error())
+		}
+		p.ProxyURL = &v
+	}
 	_, err := s.Exec(ctx, `INSERT INTO source_crawl_policies(source_id,discovery_interval,detail_refresh_interval,min_request_interval,daily_page_budget,daily_byte_budget,
-		baseline_daily_page_budget,baseline_daily_byte_budget,baseline_pages_per_run)
-		VALUES($1,NULLIF($2,'')::interval,NULLIF($3,'')::interval,$4::interval,$5,$6,$7,$8,$9)
+		baseline_daily_page_budget,baseline_daily_byte_budget,baseline_pages_per_run,proxy_url)
+		VALUES($1,NULLIF($2,'')::interval,NULLIF($3,'')::interval,$4::interval,$5,$6,$7,$8,$9,NULLIF($11,''))
 		ON CONFLICT(source_id) DO UPDATE SET discovery_interval=EXCLUDED.discovery_interval,detail_refresh_interval=EXCLUDED.detail_refresh_interval,
 		min_request_interval=EXCLUDED.min_request_interval,daily_page_budget=EXCLUDED.daily_page_budget,daily_byte_budget=EXCLUDED.daily_byte_budget,
 		baseline_daily_page_budget=EXCLUDED.baseline_daily_page_budget,baseline_daily_byte_budget=EXCLUDED.baseline_daily_byte_budget,
-		baseline_pages_per_run=EXCLUDED.baseline_pages_per_run`,
+		baseline_pages_per_run=EXCLUDED.baseline_pages_per_run,
+		proxy_url=CASE WHEN $10::boolean THEN EXCLUDED.proxy_url ELSE source_crawl_policies.proxy_url END`,
 		p.SourceID, p.DiscoveryInterval, p.DetailRefreshInterval, p.MinRequestInterval, p.DailyPageBudget, p.DailyByteBudget,
-		p.BaselineDailyPageBudget, p.BaselineDailyByteBudget, p.BaselinePagesPerRun)
+		p.BaselineDailyPageBudget, p.BaselineDailyByteBudget, p.BaselinePagesPerRun, p.ProxyURL != nil, strOr(p.ProxyURL))
 	return err
 }
 
@@ -109,6 +125,9 @@ type RunPolicy struct {
 	MaxPages int
 	// Exhausted is true when the phase's daily budget is already spent.
 	Exhausted bool
+	// ProxyURL is the source's proxy_url setting ("" = inherit); resolve it
+	// with catalog.ResolveEgress.
+	ProxyURL string
 }
 
 // FetchPolicy builds today's remaining request budget for one phase of a
@@ -123,11 +142,11 @@ func (s *Store) FetchPolicy(ctx context.Context, sourceID int64, phase catalog.P
 	var pageBudget, byteBudget, basePages, baseBytes, perRun, pagesUsed, bytesUsed int64
 	err := s.QueryRow(ctx, `SELECT EXTRACT(EPOCH FROM p.min_request_interval)::float8, COALESCE(p.daily_page_budget,0), COALESCE(p.daily_byte_budget,0),
 		COALESCE(p.baseline_daily_page_budget,0), COALESCE(p.baseline_daily_byte_budget,0), COALESCE(p.baseline_pages_per_run,$3),
-		COALESCE(u.pages,0), COALESCE(u.bytes,0)
+		COALESCE(u.pages,0), COALESCE(u.bytes,0), COALESCE(p.proxy_url,'')
 FROM sources s
 LEFT JOIN source_crawl_policies p ON p.source_id=s.id
 LEFT JOIN source_crawl_usage u ON u.source_id=s.id AND u.usage_date=current_date AND u.phase=$2
-WHERE s.id=$1`, sourceID, string(phase), defaultBaselinePagesPerRun).Scan(&minSeconds, &pageBudget, &byteBudget, &basePages, &baseBytes, &perRun, &pagesUsed, &bytesUsed)
+WHERE s.id=$1`, sourceID, string(phase), defaultBaselinePagesPerRun).Scan(&minSeconds, &pageBudget, &byteBudget, &basePages, &baseBytes, &perRun, &pagesUsed, &bytesUsed, &out.ProxyURL)
 	if err != nil {
 		return out, err
 	}

@@ -219,6 +219,12 @@ type RobotsVerdict struct {
 	// verify jobs may proceed.
 	Unavailable bool
 	Reason      string
+	// Challenge is set when robots.txt itself was answered with a bot
+	// challenge (ChallengeStatus is its HTTP status): the host is challenging
+	// this egress, so the Fetcher reports the source blocked instead of
+	// fetching anything.
+	Challenge       bool
+	ChallengeStatus int
 }
 
 // RobotsChecker answers robots.txt questions for the Fetcher.
@@ -242,9 +248,10 @@ type Robots struct {
 }
 
 type robotsEntry struct {
-	rules   *RobotsRules
-	failure string
-	expires time.Time
+	rules     *RobotsRules
+	failure   string
+	challenge int // HTTP status of a challenge served instead of robots.txt
+	expires   time.Time
 }
 
 // NewRobots builds a cache with 24h success / 10m failure lifetimes.
@@ -276,7 +283,7 @@ func (r *Robots) Check(ctx context.Context, rawURL string) RobotsVerdict {
 		r.hosts[origin] = e
 	}
 	if e.failure != "" {
-		return RobotsVerdict{Unavailable: true, Reason: e.failure}
+		return RobotsVerdict{Unavailable: true, Reason: e.failure, Challenge: e.challenge != 0, ChallengeStatus: e.challenge}
 	}
 	path := u.EscapedPath()
 	if u.RawQuery != "" {
@@ -306,6 +313,15 @@ func (r *Robots) fetch(ctx context.Context, origin string) robotsEntry {
 	}
 	defer resp.Body.Close()
 	body, err := io.ReadAll(io.LimitReader(resp.Body, maxRobotsBytes))
+	if isChallenge(resp, body) {
+		// A bot challenge (e.g. Cloudflare's 403 "Just a moment...") instead
+		// of robots.txt is not "no robots.txt" (RFC 9309 4xx = allow all):
+		// the rules are unknown. The Fetcher reports the source blocked
+		// (reason challenge) without fetching any page, for every phase.
+		e := fail(fmt.Sprintf("robots.txt answered with a bot challenge (HTTP %d)", resp.StatusCode))
+		e.challenge = resp.StatusCode
+		return e
+	}
 	switch {
 	case resp.StatusCode >= 200 && resp.StatusCode < 300:
 		if err != nil {

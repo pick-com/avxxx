@@ -1,0 +1,11 @@
+{
+  "source": "xslist",
+  "fixtures": [
+    {"file": "discovery/ranking_page1.html", "url": "https://xslist.org/en/ranking", "entity": "discovery", "origin": "synthetic"},
+    {"file": "discovery/ranking_page2.html", "url": "https://xslist.org/en/ranking?page=2", "entity": "discovery", "origin": "synthetic"},
+    {"file": "discovery/search_hanako.html", "url": "https://xslist.org/search?lg=en&query=Hanako+Gousei", "entity": "discovery", "origin": "synthetic"},
+    {"file": "performers/model_90001.html", "url": "https://xslist.org/en/model/90001.html", "entity": "performer", "origin": "synthetic"},
+    {"file": "performers/model_90002.html", "url": "https://xslist.org/en/model/90002.html", "entity": "performer", "origin": "synthetic"},
+    {"file": "performers/model_no_name.html", "url": "https://xslist.org/en/model/90009.html", "entity": "performer", "origin": "synthetic", "expect": "skip"}
+  ]
+}
