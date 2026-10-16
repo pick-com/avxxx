@@ -35,3 +35,16 @@ CREATE TABLE IF NOT EXISTS release_versions (
   CHECK (a_id < b_id)
 );
 CREATE INDEX IF NOT EXISTS release_versions_b ON release_versions (b_id);
+
+-- Settings › 播放 › 默认片源: the playback provider (playback_sources.provider)
+-- a viewer prefers; '' = automatic (the admin priority order). play-config
+-- moves that provider's sources ahead of the others within the same group
+-- (main versions before alternates, active before degraded) for the
+-- signed-in viewer (store.OrderPlaybackSourcesFor).
+ALTER TABLE user_settings ADD COLUMN IF NOT EXISTS preferred_provider text NOT NULL DEFAULT '';
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'user_settings_preferred_provider_len') THEN
+    ALTER TABLE user_settings ADD CONSTRAINT user_settings_preferred_provider_len CHECK (char_length(preferred_provider) <= 100);
+  END IF;
+END $$;

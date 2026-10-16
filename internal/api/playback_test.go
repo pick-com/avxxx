@@ -20,6 +20,11 @@ type stubPlaybackStore struct {
 	resume  map[int64]int
 	curves  map[string][]int16
 	replay  map[string][]int16
+	prefer  map[int64]string
+}
+
+func (s *stubPlaybackStore) PreferredProvider(_ context.Context, userID int64) (string, error) {
+	return s.prefer[userID], nil
 }
 
 func (s *stubPlaybackStore) PlaybackForRelease(_ context.Context, slug string) (store.PlaybackRelease, []store.PlaybackSource, error) {
@@ -172,5 +177,33 @@ func TestPlayConfigEmptySources(t *testing.T) {
 	}
 	if body["release"].(map[string]any)["duration_seconds"] != nil || body["resume"] != nil {
 		t.Errorf("body %v", body)
+	}
+}
+
+// Settings 默认片源: a signed-in viewer's preferred provider plays first.
+func TestPlayConfigPreferredProvider(t *testing.T) {
+	st := newStub()
+	st.sources = []store.PlaybackSource{
+		{ID: 12, Kind: store.KindOfficialEmbed, Provider: "p", Label: "main", URL: ptr("https://e/12"), VersionKind: store.VersionMain, Priority: 1, HealthScore: 1, Status: "active"},
+		{ID: 15, Kind: store.KindExternalLink, Provider: "q", Label: "q", URL: ptr("https://e/15"), VersionKind: store.VersionMain, Priority: 9, HealthScore: 1, Status: "active"},
+	}
+	st.prefer = map[int64]string{7: "q"}
+	first := func(auth string) any {
+		t.Helper()
+		rec, body := doPlayConfig(t, st, "/api/releases/juq-743/play-config", auth)
+		srcs, ok := body["sources"].([]any)
+		if !ok || len(srcs) == 0 {
+			t.Fatalf("%d %s", rec.Code, rec.Body)
+		}
+		return srcs[0].(map[string]any)["id"]
+	}
+	if id := first(""); id != 12.0 {
+		t.Errorf("anonymous first %v", id)
+	}
+	if id := first("Bearer good"); id != 15.0 {
+		t.Errorf("preferred first %v", id)
+	}
+	if id := first("Bearer bad"); id != 12.0 {
+		t.Errorf("invalid token first %v", id)
 	}
 }

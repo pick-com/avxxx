@@ -100,6 +100,7 @@ var expectedRoutes = []string{
 	"POST /api/admin/audit/run",
 	"GET /api/admin/dashboard",
 	"GET /api/admin/site-metrics",
+	"GET /api/playback/providers",
 	"GET /api/i18n/ui/{lang}",
 	"GET /api/admin/i18n/translations",
 	"GET /api/admin/i18n/stats",

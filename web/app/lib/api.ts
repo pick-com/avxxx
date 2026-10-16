@@ -816,7 +816,14 @@ export type UserSettings = {
   personalize_recs?: boolean;
   /** 弹幕个人屏蔽词 (migration 045); absent on older backends. */
   danmaku_block_words?: string[];
+  /** 默认片源 (migration 047): provider play-config orders first; '' = automatic. Absent on older backends. */
+  preferred_provider?: string;
 };
+
+/** A provider a viewer can pick as 默认片源 (GET /api/playback/providers). */
+export type PlaybackProvider = {provider: string; releases: number};
+export const getPlaybackProviders = (signal?: AbortSignal) =>
+  api<{items: PlaybackProvider[] | null}>('playback/providers', {signal}).then(d => d.items ?? []);
 
 /** One release inside a (possibly merged, one-per-day) notification. */
 export type NotificationRelease = {

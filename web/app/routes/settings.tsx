@@ -5,6 +5,7 @@ import {Icon, type IconName} from '../components/Icon';
 import {EmptyState, ErrorBanner, BlockSkeleton} from '../components/States';
 import {PushDeviceRow} from '../components/PushOptIn';
 import {AccountSettings, DataExportRow} from '../components/AccountSettings';
+import {ClearSearchHistoryRow, DefaultSourceRow} from '../components/SettingsExtras';
 import {Switch, SwitchRow} from '../components/Switch';
 import {clearWatchHistory, type LangCode, type NotifyChannel, type NotifyKind, type QualityPref, type UserSettings} from '../lib/api';
 import {useAuth} from '../lib/auth';
@@ -25,10 +26,11 @@ export const meta = () => [{title: translate('settings.pageTitle')}];
 // 账号 (components/AccountSettings.tsx): 昵称、密码、已登录设备、第三方登录、
 // 注销账号 on /api/me/*. 通知: reservation_timing (上线时 / 上线前一天 / 都提醒)
 // and notify_daily_cap. 隐私: personalize_recs and 下载我的数据 (GET /api/me/export).
+// 默认片源 and 清除搜索记录 are in components/SettingsExtras.tsx.
 //
 // Not built (no backend or decision yet):
 // TODO(tech plan 3.13): 跳过片头 (needs intro markers; only a curve-based
-// suggestion exists), 默认片源、字幕大小、配音、清除搜索记录.
+// suggestion exists), 字幕大小、配音.
 // TODO(PRD 16 / 20): 广告偏好 section. There is no 青少年模式: the site is
 // adults-only behind the site-entry 18+ gate (DESIGN_ALIGNMENT #8).
 
@@ -245,6 +247,7 @@ function PlaybackSection({s}: {s: UserSettings}) {
           onChange={v => save('quality_pref', {quality_pref: v}, cur => ({...cur, quality_pref: v}))}
         />
         <BoolRow k="data_saver" label={t('settings.dataSaver')} description={t('settings.dataSaverDesc')} s={s} />
+        <DefaultSourceRow s={s} />
       </Group>
       <Group title={t('settings.habits')}>
         <BoolRow k="autoplay" label={t('settings.autoplay')} description={t('settings.autoplayDesc')} s={s} />
@@ -626,6 +629,7 @@ function PrivacySection({s}: {s: UserSettings}) {
             {t('settings.view')}
           </Link>
         </div>
+        <ClearSearchHistoryRow />
         <DataExportRow />
       </Group>
     </>
