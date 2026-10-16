@@ -29,6 +29,15 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
+	// Playback source health (tech plan 3.3) is enqueued once per
+	// SOURCE_HEALTH_EVERY slot (default 10m, aligned to the clock); the
+	// cmd/audit worker runs it.
+	healthEvery := 10 * time.Minute
+	if v := os.Getenv("SOURCE_HEALTH_EVERY"); v != "" {
+		if healthEvery, err = time.ParseDuration(v); err != nil || healthEvery < time.Minute {
+			log.Fatalf("invalid SOURCE_HEALTH_EVERY %q: want a duration of at least 1m", v)
+		}
+	}
 	interval := 60 * time.Second
 	for ctx.Err() == nil {
 		slot := audit.LastSlot(time.Now(), auditHour, auditMinute)
@@ -36,6 +45,9 @@ func main() {
 			log.Printf("enqueue nightly audit: %v", err)
 		} else if ok {
 			log.Printf("enqueued nightly audit for %s", slot.Format(time.RFC3339))
+		}
+		if _, err := s.EnqueueKindSince(ctx, audit.JobKindSourceHealth, time.Now().Truncate(healthEvery)); err != nil {
+			log.Printf("enqueue source health: %v", err)
 		}
 		n, err := s.EnqueueDue(ctx)
 		if err != nil {
@@ -49,6 +61,15 @@ func main() {
 			log.Printf("notify fan-out: %v", err)
 		} else if res.Promoted > 0 || res.Releases > 0 {
 			log.Printf("notify fan-out: promoted=%d releases=%d notifications=%d outbox=%d", res.Promoted, res.Releases, res.Notifications, res.Outbox)
+		}
+		// Danmaku peak curves (PRD 5.5.1). Runs inline like the fan-out: a
+		// bounded, DB-only pass over releases queued by new danmaku, moderation
+		// or mutes; the store applies the cadence (1 min for releases younger
+		// than 7 days, 10 min otherwise), so this 60 s tick is the 1 min clock.
+		if res, err := s.RecomputeDanmakuCurves(ctx, 200); err != nil {
+			log.Printf("danmaku curves: %v", err)
+		} else if res.Releases > 0 {
+			log.Printf("danmaku curves: releases=%d curves=%d", res.Releases, res.Curves)
 		}
 		select {
 		case <-ctx.Done():

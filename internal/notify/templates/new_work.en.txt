@@ -1,0 +1,13 @@
+{{define "subject"}}{{if eq .Count 1}}New release: {{(index .Items 0).Title}}{{else}}{{.Count}} new releases from performers you follow{{end}}{{end}}
+{{define "push_title"}}{{if eq .Count 1}}New release{{else}}{{.Count}} new releases{{end}}{{end}}
+{{define "push_body"}}{{range $i, $it := .Items}}{{if $i}}, {{end}}{{$it.Title}}{{end}}{{if .More}} and more{{end}}{{end}}
+{{define "text"}}Hi{{if .Name}} {{.Name}}{{end}},
+
+{{if eq .Count 1}}A performer you follow has a new release:{{else}}Performers you follow have {{.Count}} new releases today:{{end}}
+
+{{range .Items}}- {{.Title}}{{if .Performers}} ({{.Performers}}){{end}}{{if .Reservation}} [reserved]{{end}}
+  {{.URL}}
+{{end}}{{if .More}}...and {{.More}} more: {{.ListURL}}
+{{end}}
+Don't want these emails? Turn them off in your notification settings: {{.SettingsURL}}
+{{end}}

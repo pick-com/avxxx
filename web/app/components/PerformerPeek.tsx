@@ -6,12 +6,13 @@ import {ageAt, formatDate, formatYear} from '../lib/format';
 import {useAsync} from '../lib/useAsync';
 import {Avatar, Thumb} from './Cards';
 import {Sheet} from './Sheet';
+import {FollowButton} from './SocialButtons';
 
 // PRD 6.3: desktop hover card and mobile half sheet (MobileActorSheet), both
 // from GET /api/performers/{slug} and GET /api/performers/{slug}/releases.
 //
 // Not shown for lack of backend (never filled with sample data):
-// TODO(tech plan 3.13 follows): 关注 button.
+// 关注 + bell (NewWorkAlert) shares state with the performer page (lib/social).
 // TODO(tech plan 3.13 performer_stats): 粉丝 / 总播放 / 热度 stats.
 // TODO(tech plan 2.4 media_assets): portrait photos (placeholder avatar for now).
 // TODO(tech plan 3.5 performer_similar): 相似演员.
@@ -136,6 +137,7 @@ function PeekBody({performer, releaseDate, currentSlug, layout}: {
 
       {layout === 'sheet' && (
         <div className="peek-actions">
+          <FollowButton slug={performer.slug} name={performer.canonical_name} block />
           <Link to={href} className="btn btn-secondary peek-action">
             完整主页
           </Link>
@@ -167,6 +169,7 @@ function PeekBody({performer, releaseDate, currentSlug, layout}: {
 
       {layout === 'card' && (
         <div className="peek-actions peek-actions-card">
+          <FollowButton slug={performer.slug} name={performer.canonical_name} size="sm" block />
           <Link to={href} className="btn btn-secondary btn-sm peek-action">
             查看主页
           </Link>

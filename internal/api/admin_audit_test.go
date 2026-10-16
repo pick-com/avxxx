@@ -23,6 +23,8 @@ type stubAudit struct {
 	enqueued   bool
 	dashErr    error
 	gotFilter  audit.IssueFilter
+	healthErr  error
+	gotHealth  audit.SourceHealthFilter
 	gotDismiss struct {
 		id   int64
 		note string
@@ -51,6 +53,16 @@ func (s *stubAudit) AdminDashboard(context.Context) (audit.Dashboard, error) {
 	d.AddIssueCount("R-AGE", "blocking", 2)
 	d.SetHealth(100, 2)
 	return d, s.dashErr
+}
+
+func (s *stubAudit) SourceHealthList(_ context.Context, f audit.SourceHealthFilter) ([]audit.SourceHealthItem, string, error) {
+	s.gotHealth = f
+	if s.healthErr != nil {
+		return nil, "", s.healthErr
+	}
+	score := 72
+	return []audit.SourceHealthItem{{SourceID: 5, ReleaseID: 2, Status: audit.SourceDegraded, Score: &score, Band: audit.BandDegraded,
+		Trend: []audit.SourceHealthPoint{}}}, "", nil
 }
 
 func auditMux(st *stubAudit) *http.ServeMux {
@@ -87,6 +99,12 @@ func TestAdminAuditStatusCodes(t *testing.T) {
 		{"run failure", "POST", "/api/admin/audit/run", "", stubAudit{enqueueErr: errors.New("boom")}, 500, "request failed"},
 		{"dashboard", "GET", "/api/admin/dashboard", "", stubAudit{}, 200, `"band":"excellent"`},
 		{"dashboard failure", "GET", "/api/admin/dashboard", "", stubAudit{dashErr: errors.New("boom")}, 500, "request failed"},
+		{"source health", "GET", "/api/admin/playback-sources/health", "", stubAudit{}, 200, `"band":"degraded"`},
+		{"source health band", "GET", "/api/admin/playback-sources/health?band=insufficient_data&trend=6", "", stubAudit{}, 200, `"next_cursor":null`},
+		{"source health bad band", "GET", "/api/admin/playback-sources/health?band=ok", "", stubAudit{}, 400, "band must be"},
+		{"source health bad trend", "GET", "/api/admin/playback-sources/health?trend=500", "", stubAudit{}, 400, "invalid trend"},
+		{"source health bad cursor", "GET", "/api/admin/playback-sources/health?cursor=zz", "", stubAudit{healthErr: fmt.Errorf("%w: malformed cursor", store.ErrInvalidQuery)}, 400, "malformed cursor"},
+		{"source health failure", "GET", "/api/admin/playback-sources/health", "", stubAudit{healthErr: errors.New("boom")}, 500, "request failed"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -131,7 +149,7 @@ func TestDashboardShape(t *testing.T) {
 	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
 		t.Fatal(err)
 	}
-	for _, k := range []string{"generated_at", "releases", "performers", "issues", "jobs", "nightly_runs", "identity_candidates_open", "conflicts_open", "catalog_health"} {
+	for _, k := range []string{"generated_at", "releases", "performers", "issues", "jobs", "nightly_runs", "identity_candidates_open", "conflicts_open", "catalog_health", "source_health"} {
 		if _, ok := got[k]; !ok {
 			t.Errorf("dashboard missing %q", k)
 		}
@@ -139,5 +157,22 @@ func TestDashboardShape(t *testing.T) {
 	health := got["catalog_health"].(map[string]any)
 	if health["score"] != float64(98) || health["band"] != "excellent" {
 		t.Errorf("catalog_health %v", health)
+	}
+}
+
+func TestSourceHealthPassesFilter(t *testing.T) {
+	st := &stubAudit{}
+	req := httptest.NewRequest("GET", "/api/admin/playback-sources/health?band=severe&trend=24&limit=10&cursor=abc", nil)
+	req.Header.Set("Authorization", "Bearer secret")
+	rec := httptest.NewRecorder()
+	auditMux(st).ServeHTTP(rec, req)
+	if want := (audit.SourceHealthFilter{Band: "severe", Trend: 24, Limit: 10, Cursor: "abc"}); st.gotHealth != want {
+		t.Errorf("filter %+v, want %+v", st.gotHealth, want)
+	}
+	req = httptest.NewRequest("GET", "/api/admin/playback-sources/health", nil)
+	rec = httptest.NewRecorder()
+	auditMux(st).ServeHTTP(rec, req)
+	if rec.Code != http.StatusUnauthorized {
+		t.Errorf("without token: %d", rec.Code)
 	}
 }

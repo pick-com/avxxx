@@ -2,6 +2,7 @@ import {Link, useLocation, useSearchParams} from 'react-router';
 import {useAuth} from '../lib/auth';
 import {themeLabels, useTheme, type ThemePref} from '../lib/theme';
 import {Icon, type IconName} from './Icon';
+import {NotificationBell} from './Notifications';
 import {SearchBox} from './SearchBox';
 
 const nextPref: Record<ThemePref, ThemePref> = {system: 'dark', dark: 'light', light: 'system'};
@@ -58,7 +59,7 @@ export function TopBar({onToggleNav, navExpanded}: {onToggleNav: () => void; nav
         <Icon name="search" />
       </Link>
       <ThemeToggle />
-      {/* TODO(tech plan 3.7): notification bell once GET /api/me/notifications/unread-count exists. */}
+      <NotificationBell />
       {/* TODO(tech plan 3.10): language switcher; only 简体中文 ships in this wave. */}
       <button type="button" className="lang-pill hide-mobile" aria-disabled="true" title="多语种即将支持" aria-label="切换语言（即将支持），当前简体中文">
         <Icon name="globe" size={16} />

@@ -1,8 +1,9 @@
-import {useCallback, useEffect, useRef, useState} from 'react';
+import {useCallback, useEffect, useId, useMemo, useRef, useState} from 'react';
 import type HlsType from 'hls.js';
-import {getPlayback, resolvePlayback, saveWatchProgress, type Stream} from '../lib/api';
+import {getPlayConfig, getPlayback, resolvePlayback, saveWatchProgress} from '../lib/api';
 import {useAuth} from '../lib/auth';
 import {formatClock} from '../lib/format';
+import {entriesFromConfig, entriesFromStreams, isHlsEntry, type PlayEntry} from '../lib/playSources';
 import {useAsync} from '../lib/useAsync';
 import {useMediaQuery} from '../lib/useMediaQuery';
 import {Icon} from './Icon';
@@ -20,15 +21,21 @@ type Phase = 'idle' | 'resolving' | 'ready' | 'failed';
 type Level = {index: number; height: number; bitrate: number};
 type AudioTrack = {id: number; name: string};
 
-const isHlsStream = (stream: Stream) => stream.protocol === 'hls' || /\.m3u8(\?|#|$)/i.test(stream.url);
-
 type FullscreenVideo = HTMLVideoElement & {webkitEnterFullscreen?: () => void; webkitSupportsFullscreen?: boolean};
 type LockableOrientation = ScreenOrientation & {lock?: (orientation: string) => Promise<void>; unlock?: () => void};
 
 /**
  * Player area for Video / MobileVideo / MobilePlayerFull. Always dark, also in
- * the light theme (PRD 5.1, 8). Flow: GET playback?source=javtiful, then POST
- * its resolve_path for streams on demand.
+ * the light theme (PRD 5.1, 8).
+ *
+ * Sources: GET play-config (tech plan 3.3) lists versioned sources in play
+ * order. video sources play in <video>; official_embed renders in a sandboxed
+ * iframe; external_link opens the partner page in a new tab. Switching keeps
+ * the position between shared-progress versions (正片 / 高画质 / 配音) and
+ * starts alternate versions (其他版本) from 0 (PRD 5.2). A fatal error moves
+ * to the next source and says so (States 04). When play-config is missing
+ * (404 before the backend lands) or has nothing playable, the player falls
+ * back silently to GET playback?source=javtiful + POST resolve_path.
  *
  * HLS: hls.js is loaded (as a separate chunk) only for an HLS stream in a
  * browser without native HLS; Safari plays HLS natively. Quality levels and
@@ -39,21 +46,31 @@ type LockableOrientation = ScreenOrientation & {lock?: (orientation: string) => 
  * native controls give way to PlayerTouchLayer (gestures, lock).
  *
  * Not built yet: sprite previews and chapters (tech plan 2.4 / 3.2), caption
- * tracks (no subtitle data yet), multi-source switching (tech plan 3.3
- * play-config / playback_sources).
+ * tracks (play-config subtitles are still empty), region / quality hints to
+ * play-config.
+ *
+ * Progress: only shared-progress video sources save watch progress; an
+ * alternate version would otherwise overwrite the main version's position
+ * (watch_history has one row per release).
  */
-export function Player({slug, title, resumeAt, onBack, theater = false, onToggleTheater}: {
+export function Player({slug, title, resumeAt, onBack, theater = false, onToggleTheater, onEnded}: {
   slug: string;
   title: string;
   resumeAt?: number;
   onBack?: () => void;
   theater?: boolean;
   onToggleTheater?: () => void;
+  /** Called when a <video> source plays to the end (play queues). */
+  onEnded?: () => void;
 }) {
   const {status} = useAuth();
-  const info = useAsync(signal => getPlayback(slug, signal), [slug]);
+  // play-config first; null (404 / not deployed / any failure) means legacy.
+  const config = useAsync(signal => getPlayConfig(slug, signal), [slug]);
+  const configEntries = useMemo(() => entriesFromConfig(config.data), [config.data]);
+  const mode: 'pending' | 'config' | 'legacy' = config.loading ? 'pending' : configEntries.length > 0 ? 'config' : 'legacy';
+  const info = useAsync(signal => getPlayback(slug, signal), [slug], mode === 'legacy');
   const [phase, setPhase] = useState<Phase>('idle');
-  const [streams, setStreams] = useState<Stream[]>([]);
+  const [entries, setEntries] = useState<PlayEntry[]>([]);
   const [current, setCurrent] = useState(0);
   const [failure, setFailure] = useState('');
   const [notice, setNotice] = useState('');
@@ -61,9 +78,21 @@ export function Player({slug, title, resumeAt, onBack, theater = false, onToggle
   const shellRef = useRef<HTMLDivElement>(null);
   const hlsRef = useRef<HlsType | null>(null);
   const lastSaved = useRef({at: 0, position: -1});
-  // Position to restore once the next stream's metadata loads (resume point, or
-  // the current position when switching lines).
+  // Position to restore once the next video's metadata loads (resume point, or
+  // the shared position when switching sources).
   const pendingSeek = useRef(0);
+  // Last known position of the shared-progress versions (PRD 5.2).
+  const sharedPos = useRef(0);
+  // play-config resume (needs the user token) wins over the history-derived prop.
+  const resumeFrom = (() => {
+    const at = config.data?.resume?.position_seconds ?? resumeAt;
+    return at && at > 5 ? at : 0;
+  })();
+
+  const entry = phase === 'ready' ? entries[current] : undefined;
+  const stream = entry?.render === 'video' ? entry : undefined;
+  const entryRef = useRef<PlayEntry | undefined>(undefined);
+  entryRef.current = entry;
 
   const [levels, setLevels] = useState<Level[]>([]);
   const [level, setLevel] = useState(AUTO);
@@ -86,12 +115,13 @@ export function Player({slug, title, resumeAt, onBack, theater = false, onToggle
 
   useEffect(() => {
     setPhase('idle');
-    setStreams([]);
+    setEntries([]);
     setCurrent(0);
     setFailure('');
     setNotice('');
     lastSaved.current = {at: 0, position: -1};
     pendingSeek.current = 0;
+    sharedPos.current = 0;
   }, [slug]);
 
   const showFlash = useCallback((text: string) => {
@@ -106,6 +136,9 @@ export function Player({slug, title, resumeAt, onBack, theater = false, onToggle
   const save = useCallback(
     (keepalive: boolean) => {
       if (status !== 'user') return;
+      // Alternate versions keep their own progress; never overwrite the shared one.
+      const playing = entryRef.current;
+      if (!playing || playing.alt || playing.render !== 'video') return;
       const video = videoRef.current;
       if (!video || !video.currentTime) return;
       const position = Math.floor(video.currentTime);
@@ -133,15 +166,28 @@ export function Player({slug, title, resumeAt, onBack, theater = false, onToggle
     };
   }, [save]);
 
-  const start = async () => {
+  const start = async (index?: number) => {
+    setFailure('');
+    setNotice('');
+    sharedPos.current = resumeFrom;
+    if (mode === 'config') {
+      const resumeSource = config.data?.resume?.source_id;
+      let i = index ?? configEntries.findIndex(e => e.sourceId === resumeSource);
+      if (i < 0) i = configEntries.findIndex(e => e.render !== 'external');
+      if (i < 0) i = 0;
+      pendingSeek.current = configEntries[i]?.alt ? 0 : resumeFrom;
+      setEntries(configEntries);
+      setCurrent(i);
+      setPhase('ready');
+      return;
+    }
     if (!info.data) return;
     setPhase('resolving');
-    setFailure('');
     try {
       const result = await resolvePlayback(info.data.resolve_path);
       if (result.length === 0) throw new Error('没有找到可用的播放地址');
-      pendingSeek.current = resumeAt && resumeAt > 5 ? resumeAt : 0;
-      setStreams(result);
+      pendingSeek.current = resumeFrom;
+      setEntries(entriesFromStreams(result));
       setCurrent(0);
       setPhase('ready');
     } catch (cause) {
@@ -150,21 +196,38 @@ export function Player({slug, title, resumeAt, onBack, theater = false, onToggle
     }
   };
 
+  // Shared-progress versions continue from the shared position; alternate
+  // versions start from 0 (PRD 5.2).
+  const switchTo = (index: number, auto = false) => {
+    const from = entries[current];
+    const to = entries[index];
+    if (!to || index === current) return;
+    const video = videoRef.current;
+    if (from && !from.alt && from.render === 'video' && video && video.currentTime > 0) sharedPos.current = video.currentTime;
+    if (!auto) {
+      save(false);
+      setNotice('');
+    }
+    pendingSeek.current = to.alt ? 0 : sharedPos.current;
+    setCurrent(index);
+  };
+
   const onVideoError = () => {
-    // States 04: on failure move to the next stream automatically and say so.
-    if (current + 1 < streams.length) {
-      const next = current + 1;
-      setNotice(`线路 ${current + 1} 加载失败，已自动切到线路 ${next + 1}`);
-      setCurrent(next);
+    // States 04: on failure move to the next playable source and say so.
+    // External links need the user, so the automatic chain skips them.
+    const from = entries[current];
+    const nextIndex = entries.findIndex((e, i) => i > current && e.render !== 'external');
+    if (from && nextIndex >= 0) {
+      const next = entries[nextIndex];
+      setNotice(`${from.name} 加载失败，已自动切到${next.name}${next.alt ? '（其他版本，从头播放）' : ''}`);
+      switchTo(nextIndex, true);
       return;
     }
-    setFailure('所有线路都加载失败');
+    setFailure(mode === 'config' ? '所有片源都加载失败' : '所有线路都加载失败');
     setPhase('failed');
   };
   const onVideoErrorRef = useRef(onVideoError);
   onVideoErrorRef.current = onVideoError;
-
-  const stream = phase === 'ready' ? streams[current] : undefined;
 
   // Attach the stream: native src, or hls.js when HLS is not native.
   useEffect(() => {
@@ -175,7 +238,7 @@ export function Player({slug, title, resumeAt, onBack, theater = false, onToggle
     setPlayingLevel(-1);
     setAudioTracks([]);
     setAudioTrack(0);
-    if (!isHlsStream(stream) || video.canPlayType('application/vnd.apple.mpegurl') !== '') {
+    if (!isHlsEntry(stream) || video.canPlayType('application/vnd.apple.mpegurl') !== '') {
       video.src = stream.url;
       return;
     }
@@ -413,7 +476,7 @@ export function Player({slug, title, resumeAt, onBack, theater = false, onToggle
     return () => document.removeEventListener('keydown', onKey);
   }, [phase, seekBy, toggleCaptions, toggleFullscreen, toggleMute, togglePlay]);
 
-  const resumeLabel = resumeAt && resumeAt > 5 ? `从 ${formatClock(resumeAt)} 继续` : '';
+  const resumeLabel = resumeFrom ? `从 ${formatClock(resumeFrom)} 继续` : '';
 
   // Menu data shared by the desktop bar and the mobile settings sheet.
   const sortedLevels = [...levels].sort((a, b) => b.height - a.height || b.bitrate - a.bitrate);
@@ -427,8 +490,14 @@ export function Player({slug, title, resumeAt, onBack, theater = false, onToggle
   const rateOptions: Choice<number>[] = RATES.map(r => ({value: r, label: r === 1 ? '1.0×（正常）' : `${r}×`}));
   const captionOptions: Choice<number>[] = textTracks.length ? [{value: CAPTIONS_OFF, label: '关闭'}, ...textTracks.map((t, i) => ({value: i, label: t}))] : [];
   const audioOptions: Choice<number>[] = audioTracks.map(t => ({value: t.id, label: t.name}));
+  const sourceOptions: Choice<number>[] = entries.map((e, i) => ({
+    value: i,
+    label: e.version ? `${e.name} · ${e.version}` : e.name,
+    hint: [e.hint, e.render === 'external' ? '在新标签页打开' : ''].filter(Boolean).join(' · '),
+  }));
 
   const openSettings = (tab: SettingsTab) => setSettings({open: true, tab});
+  const loadingSources = mode === 'pending' || (mode === 'legacy' && info.loading);
 
   return (
     <div className="player-wrap">
@@ -446,9 +515,9 @@ export function Player({slug, title, resumeAt, onBack, theater = false, onToggle
             </button>
           )}
 
-          {phase === 'ready' && stream ? (
+          {stream ? (
             <video
-              key={stream.url}
+              key={stream.key}
               ref={videoRef}
               className="player-video"
               controls={!touchMode}
@@ -465,11 +534,16 @@ export function Player({slug, title, resumeAt, onBack, theater = false, onToggle
                   video.currentTime = target;
                 }
               }}
-              onTimeUpdate={() => {
+              onTimeUpdate={event => {
+                const t = event.currentTarget.currentTime;
+                if (!stream.alt && t > 0) sharedPos.current = t;
                 if (Date.now() - lastSaved.current.at >= SAVE_INTERVAL_MS) save(false);
               }}
               onPause={() => save(true)}
-              onEnded={() => save(true)}
+              onEnded={() => {
+                save(true);
+                onEnded?.();
+              }}
               onError={onVideoError}
               onDoubleClick={event => {
                 // Desktop double click: our shell fullscreen, so the bar stays.
@@ -478,7 +552,27 @@ export function Player({slug, title, resumeAt, onBack, theater = false, onToggle
                 void toggleFullscreen();
               }}
             />
-          ) : info.error ? (
+          ) : entry?.render === 'embed' ? (
+            <iframe
+              key={entry.key}
+              className="player-embed"
+              src={entry.url}
+              title={`${title} · ${entry.name}`}
+              sandbox="allow-scripts allow-same-origin allow-presentation"
+              referrerPolicy="no-referrer"
+              allow="autoplay; fullscreen; picture-in-picture; encrypted-media"
+              allowFullScreen
+            />
+          ) : entry?.render === 'external' ? (
+            <div className="player-state">
+              <strong>{entry.name}需要在合作方网站观看</strong>
+              {entry.hint && <span>{entry.hint}</span>}
+              <a className="btn btn-on-dark" href={entry.url} target="_blank" rel="noopener noreferrer">
+                {entry.provider ? `前往 ${entry.provider} 观看` : '在新标签页打开'}
+                <Icon name="external" size={16} />
+              </a>
+            </div>
+          ) : mode === 'legacy' && info.error ? (
             <div className="player-state">
               <strong>暂时无法播放</strong>
               <span>{info.error.message === '内容不存在或已下架' ? '这部作品还没有可用的片源。' : info.error.message}</span>
@@ -490,17 +584,17 @@ export function Player({slug, title, resumeAt, onBack, theater = false, onToggle
             <div className="player-state">
               <strong>暂时无法播放</strong>
               <span>{failure}</span>
-              <button type="button" className="btn btn-on-dark" onClick={start}>
+              <button type="button" className="btn btn-on-dark" onClick={() => void start()}>
                 重试
               </button>
             </div>
-          ) : info.loading || phase === 'resolving' ? (
+          ) : loadingSources || phase === 'resolving' ? (
             <div className="player-state" aria-live="polite">
-              {(info.slow || phase === 'resolving') && <span>{phase === 'resolving' ? '正在加载播放地址…' : '正在查找片源…'}</span>}
+              {(config.slow || info.slow || phase === 'resolving') && <span>{phase === 'resolving' ? '正在加载播放地址…' : '正在查找片源…'}</span>}
             </div>
           ) : (
             <div className="player-state">
-              <button type="button" className="play-big" aria-label={resumeLabel ? `播放，${resumeLabel}` : '播放'} onClick={start}>
+              <button type="button" className="play-big" aria-label={resumeLabel ? `播放，${resumeLabel}` : '播放'} onClick={() => void start()}>
                 <Icon name="play" size={30} filled />
               </button>
               {resumeLabel && <span>{resumeLabel}</span>}
@@ -509,7 +603,7 @@ export function Player({slug, title, resumeAt, onBack, theater = false, onToggle
 
           {touchMode && stream && (
             <PlayerTouchLayer
-              key={stream.url}
+              key={stream.key}
               videoRef={videoRef}
               title={title}
               rate={rate}
@@ -536,31 +630,33 @@ export function Player({slug, title, resumeAt, onBack, theater = false, onToggle
 
         {phase === 'ready' && !touchMode && (
           <div className="player-bar" role="toolbar" aria-label="播放器设置">
-            {/* Desktop: inline menus. */}
-            <div className="pbar-group hide-mobile">
-              {qualityOptions.length > 0 && (
-                <PlayerMenu label="清晰度" buttonText={qualityText} options={qualityOptions} value={level} onChange={chooseLevel} />
-              )}
-              <PlayerMenu label="倍速" buttonText={rate === 1 ? '倍速' : `${rate}×`} options={rateOptions} value={rate} onChange={setRate} />
-              <button
-                type="button"
-                className="pbar-btn pbar-text"
-                aria-pressed={caption !== CAPTIONS_OFF}
-                aria-disabled={textTracks.length === 0}
-                title={textTracks.length === 0 ? '暂无字幕' : '字幕 (C)'}
-                onClick={toggleCaptions}
-              >
-                <Icon name="cc" size={18} />
-                <span className="sr-only">字幕</span>
-              </button>
-            </div>
+            {/* Desktop: inline menus (video sources only; embeds bring their own controls). */}
+            {stream && (
+              <div className="pbar-group hide-mobile">
+                {qualityOptions.length > 0 && (
+                  <PlayerMenu label="清晰度" buttonText={qualityText} options={qualityOptions} value={level} onChange={chooseLevel} />
+                )}
+                <PlayerMenu label="倍速" buttonText={rate === 1 ? '倍速' : `${rate}×`} options={rateOptions} value={rate} onChange={setRate} />
+                <button
+                  type="button"
+                  className="pbar-btn pbar-text"
+                  aria-pressed={caption !== CAPTIONS_OFF}
+                  aria-disabled={textTracks.length === 0}
+                  title={textTracks.length === 0 ? '暂无字幕' : '字幕 (C)'}
+                  onClick={toggleCaptions}
+                >
+                  <Icon name="cc" size={18} />
+                  <span className="sr-only">字幕</span>
+                </button>
+              </div>
+            )}
             {/* Mobile: one button opens MobileSources. */}
-            <button type="button" className="pbar-btn pbar-text show-mobile" onClick={() => openSettings('quality')}>
+            <button type="button" className="pbar-btn pbar-text show-mobile" onClick={() => openSettings(stream ? 'quality' : 'source')}>
               <Icon name="settings" size={18} />
               设置{rate !== 1 ? ` · ${rate}×` : ''}
             </button>
             <span className="section-spacer" />
-            {pipSupported && (
+            {pipSupported && stream && (
               <button type="button" className="pbar-btn" aria-label={pip ? '退出画中画' : '画中画'} aria-pressed={pip} title="画中画" onClick={togglePip}>
                 <Icon name="pip" size={20} />
               </button>
@@ -588,6 +684,7 @@ export function Player({slug, title, resumeAt, onBack, theater = false, onToggle
           initialTab={settings.tab}
           onClose={() => setSettings(s => ({...s, open: false}))}
           container={fullscreen ? shellRef.current : null}
+          source={{options: sourceOptions, value: current, onChange: i => switchTo(i), versioned: mode === 'config'}}
           quality={{options: qualityOptions, value: level, onChange: chooseLevel}}
           rate={{options: rateOptions, value: rate, onChange: setRate}}
           captions={{options: captionOptions, value: caption, onChange: chooseCaption}}
@@ -595,28 +692,75 @@ export function Player({slug, title, resumeAt, onBack, theater = false, onToggle
         />
       </div>
 
-      {streams.length > 1 && !fullscreen && (
+      {/* Video 片源 row (PRD 5.2): desktop only; phones switch in the settings sheet. */}
+      {mode === 'config' && !fullscreen && (
+        <SourcesRow
+          entries={configEntries}
+          current={phase === 'ready' ? current : -1}
+          onPick={i => (phase === 'ready' ? switchTo(i) : void start(i))}
+        />
+      )}
+
+      {mode === 'legacy' && entries.length > 1 && !fullscreen && (
         <div className="stream-row" role="group" aria-label="播放线路">
           <span className="stream-label">线路</span>
-          {streams.map((s, i) => (
+          {entries.map((s, i) => (
             <button
-              key={s.url}
+              key={s.key}
               type="button"
               className={i === current ? 'chip chip-on' : 'chip'}
               aria-pressed={i === current}
-              onClick={() => {
-                if (i === current) return;
-                save(false);
-                pendingSeek.current = videoRef.current?.currentTime ?? 0;
-                setNotice('');
-                setCurrent(i);
-              }}
+              onClick={() => switchTo(i)}
             >
-              {s.quality || s.protocol.toUpperCase() || `线路 ${i + 1}`}
+              {s.hint || s.name}
             </button>
           ))}
         </div>
       )}
     </div>
+  );
+}
+
+/**
+ * Collapsed by default: one line with the current source; opening it lists
+ * every source with its version (正片 / 高画质 / 配音 / 其他版本) and spec.
+ */
+function SourcesRow({entries, current, onPick}: {entries: PlayEntry[]; current: number; onPick: (index: number) => void}) {
+  const [open, setOpen] = useState(false);
+  const listId = useId();
+  const active = entries[current];
+  if (entries.length === 0) return null;
+  return (
+    <section className="sources hide-mobile" aria-label="片源">
+      <button type="button" className="sources-toggle" aria-expanded={open} aria-controls={listId} onClick={() => setOpen(o => !o)}>
+        <span className="sources-label">片源</span>
+        <span className="sources-current">{active ? `${active.name}${active.version ? ` · ${active.version}` : ''}` : '自动选择'}</span>
+        <span className="section-spacer" />
+        <span className="sources-count">
+          共 {entries.length} 个 · {open ? '收起' : '展开'}
+        </span>
+        <Icon name="chevronDown" size={16} />
+      </button>
+      {open && (
+        <div id={listId} className="sources-list" role="radiogroup" aria-label="选择片源">
+          <p className="sources-note">切换片源会保留播放进度；时长不同的版本从头播放。</p>
+          {entries.map((e, i) => (
+            <button
+              key={e.key}
+              type="button"
+              role="radio"
+              aria-checked={i === current}
+              className="sources-item"
+              onClick={() => onPick(i)}
+            >
+              <span className="sources-item-name">{e.name}</span>
+              <span className="sources-item-hint">{e.hint}</span>
+              <span className={e.alt ? 'sources-tag sources-tag-alt' : 'sources-tag'}>{e.version}</span>
+              {e.render === 'external' && <Icon name="external" size={16} />}
+            </button>
+          ))}
+        </div>
+      )}
+    </section>
   );
 }

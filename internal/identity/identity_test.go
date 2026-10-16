@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"reflect"
 	"testing"
+	"time"
 )
 
 func TestNormalizeName(t *testing.T) {
@@ -328,5 +329,145 @@ func TestMergePlanRoundTrip(t *testing.T) {
 	}
 	if !reflect.DeepEqual(plan, back) {
 		t.Errorf("round trip changed plan:\n%+v\n%+v", plan, back)
+	}
+}
+
+func planByTable(t *testing.T, in MergeInput) map[string]TablePlan {
+	t.Helper()
+	plan, err := BuildMergePlan(in)
+	if err != nil {
+		t.Fatal(err)
+	}
+	out := map[string]TablePlan{}
+	for _, tp := range plan.Tables {
+		out[tp.Table] = tp
+	}
+	// Plans are stored as JSON and replayed by undo: patches must survive.
+	b, err := json.Marshal(plan)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var back MergePlan
+	if err = json.Unmarshal(b, &back); err != nil || !reflect.DeepEqual(plan, back) {
+		t.Fatalf("round trip changed plan: %v", err)
+	}
+	return out
+}
+
+func keys(ms []json.RawMessage) []string {
+	out := []string{}
+	for _, m := range ms {
+		out = append(out, string(m))
+	}
+	return out
+}
+
+func checkPatch(t *testing.T, got RowPatch, side, key, set, before string) {
+	t.Helper()
+	if got.Side != side || string(got.Key) != key || string(got.Set) != set || string(got.Before) != before {
+		t.Errorf("patch = {%s %s %s %s}, want {%s %s %s %s}", got.Side, got.Key, got.Set, got.Before, side, key, set, before)
+	}
+}
+
+func TestBuildMergePlanFollows(t *testing.T) {
+	raw := func(s string) json.RawMessage { return json.RawMessage(s) }
+	in := MergeInput{
+		EntityType: PerformerType, TargetID: 1, SourceID: 2,
+		Target: raw(`{"id":1,"canonical_name":"A"}`), Source: raw(`{"id":2,"canonical_name":"A"}`),
+		TargetRows: map[string][]json.RawMessage{"follows": {
+			raw(`{"user_id":7,"performer_id":1,"notify_mode":"lead_only","created_at":"2026-03-01T00:00:00+00:00"}`),
+			raw(`{"user_id":8,"performer_id":1,"notify_mode":"all","created_at":"2026-01-01T00:00:00+00:00"}`),
+		}},
+		SourceRows: map[string][]json.RawMessage{"follows": {
+			// Earlier and more permissive: both columns fold into the target.
+			raw(`{"user_id":7,"performer_id":2,"notify_mode":"all","created_at":"2026-02-01T00:00:00+09:00"}`),
+			// Later and less permissive: dropped, target unchanged.
+			raw(`{"user_id":8,"performer_id":2,"notify_mode":"off","created_at":"2026-05-01T00:00:00+00:00"}`),
+			raw(`{"user_id":9,"performer_id":2,"notify_mode":"off","created_at":"2026-05-01T00:00:00+00:00"}`),
+		}},
+	}
+	tp := planByTable(t, in)["follows"]
+	if got := keys(tp.Move); !reflect.DeepEqual(got, []string{`[9]`}) || len(tp.Drop) != 2 {
+		t.Fatalf("follows: move %v drop %d", got, len(tp.Drop))
+	}
+	if len(tp.Patch) != 1 {
+		t.Fatalf("follows patches = %+v, want 1", tp.Patch)
+	}
+	checkPatch(t, tp.Patch[0], PatchTarget, `[7]`,
+		`{"created_at":"2026-02-01T00:00:00+09:00","notify_mode":"all"}`,
+		`{"created_at":"2026-03-01T00:00:00+00:00","notify_mode":"lead_only"}`)
+}
+
+func TestBuildMergePlanReleaseUserTables(t *testing.T) {
+	raw := func(s string) json.RawMessage { return json.RawMessage(s) }
+	now := time.Date(2026, 10, 15, 1, 2, 3, 0, time.UTC)
+	in := MergeInput{
+		EntityType: ReleaseType, TargetID: 10, SourceID: 11, Target: raw(`{"id":10}`), Source: raw(`{"id":11}`), Now: now,
+		TargetRows: map[string][]json.RawMessage{
+			"reservations":          {raw(`{"user_id":7,"release_id":10}`)},
+			"watch_later":           {raw(`{"user_id":7,"release_id":10,"position":5}`), raw(`{"user_id":8,"release_id":10,"position":1}`)},
+			"notification_receipts": {raw(`{"user_id":7,"release_id":10,"reason":"follow"}`)},
+			"playback_sources":      {raw(`{"id":1,"release_id":10}`)},
+			"audit_issues":          {raw(`{"id":50,"entity_id":10,"rule":"R-META","status":"open","resolved_at":null,"resolution_note":null}`)},
+		},
+		SourceRows: map[string][]json.RawMessage{
+			"reservations":          {raw(`{"user_id":7,"release_id":11}`), raw(`{"user_id":8,"release_id":11}`)},
+			"watch_later":           {raw(`{"user_id":7,"release_id":11,"position":2}`), raw(`{"user_id":8,"release_id":11,"position":3}`)},
+			"notification_receipts": {raw(`{"user_id":7,"release_id":11,"reason":"reservation"}`), raw(`{"user_id":9,"release_id":11,"reason":"follow"}`)},
+			"playback_sources":      {raw(`{"id":2,"release_id":11}`), raw(`{"id":3,"release_id":11}`)},
+			"audit_issues": {
+				raw(`{"id":60,"entity_id":11,"rule":"R-META","status":"open","resolved_at":null,"resolution_note":null}`),
+				raw(`{"id":61,"entity_id":11,"rule":"R-AGE","status":"open","resolved_at":null,"resolution_note":null}`),
+			},
+		},
+	}
+	by := planByTable(t, in)
+	for table, want := range map[string]struct {
+		move  []string
+		drop  int
+		patch int
+	}{
+		"reservations":          {[]string{`[8]`}, 1, 0},
+		"watch_later":           {[]string{}, 2, 1},
+		"notification_receipts": {[]string{`[9]`}, 1, 0},
+		"playback_sources":      {[]string{`[2]`, `[3]`}, 0, 0},
+		"audit_issues":          {[]string{`[61]`}, 0, 1},
+	} {
+		tp := by[table]
+		if got := keys(tp.Move); !reflect.DeepEqual(got, want.move) || len(tp.Drop) != want.drop || len(tp.Patch) != want.patch {
+			t.Errorf("%s: move %v drop %d patch %d, want %v %d %d", table, got, len(tp.Drop), len(tp.Patch), want.move, want.drop, want.patch)
+		}
+	}
+	// User 7 keeps the lower position; user 8's target position is already lower.
+	checkPatch(t, by["watch_later"].Patch[0], PatchTarget, `[7]`, `{"position":2}`, `{"position":5}`)
+	// The duplicate open issue stays on the merged release, closed as fixed.
+	checkPatch(t, by["audit_issues"].Patch[0], PatchSource, `[60]`,
+		`{"resolution_note":"merged into release 10, which has the same open issue","resolved_at":"2026-10-15T01:02:03Z","status":"fixed"}`,
+		`{"resolution_note":null,"resolved_at":null,"status":"open"}`)
+	if cols, err := PatchColumns(by["audit_issues"].Patch[0].Set); err != nil || !reflect.DeepEqual(cols, []string{"resolution_note", "resolved_at", "status"}) {
+		t.Errorf("PatchColumns = %v %v", cols, err)
+	}
+}
+
+// Every table with a column pointing at a mergeable entity must be listed,
+// or its rows would be stranded on the hidden merged entity.
+func TestMergeTablesCoverUserTables(t *testing.T) {
+	has := func(specs []TableSpec, table, fk string) bool {
+		for _, s := range specs {
+			if s.Table == table && s.FK == fk {
+				return true
+			}
+		}
+		return false
+	}
+	for _, c := range []struct{ table, fk string }{{"follows", "performer_id"}, {"audit_issues", "entity_id"}} {
+		if !has(PerformerTables, c.table, c.fk) {
+			t.Errorf("PerformerTables misses %s.%s", c.table, c.fk)
+		}
+	}
+	for _, c := range []struct{ table, fk string }{{"reservations", "release_id"}, {"watch_later", "release_id"}, {"notification_receipts", "release_id"}, {"playback_sources", "release_id"}, {"audit_issues", "entity_id"}} {
+		if !has(ReleaseTables, c.table, c.fk) {
+			t.Errorf("ReleaseTables misses %s.%s", c.table, c.fk)
+		}
 	}
 }

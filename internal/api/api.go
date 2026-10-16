@@ -2,6 +2,7 @@
 package api
 
 import (
+	"avxxx/internal/community"
 	"avxxx/internal/media"
 	"avxxx/internal/store"
 	"crypto/subtle"
@@ -28,6 +29,18 @@ type Server struct {
 	social   socialStore // follows, reservations, watch-later, settings, notifications
 	// audit backs the admin audit and dashboard routes (admin_audit.go).
 	audit auditAdmin
+	// i18n backs content translations, glossary and UI strings (i18n.go,
+	// admin_i18n.go); nil serves catalog routes untranslated.
+	i18n i18nStore
+	// community backs danmaku, ratings, reviews and reports (community.go);
+	// moderation backs the AdminOps moderation routes (moderation.go).
+	community  communityStore
+	moderation moderationStore
+	// limiter enforces the danmaku / review posting limits (PRD 5.5).
+	limiter community.Limiter
+	// push stores Web Push subscriptions (push.go); pushCfg is read from env.
+	push    pushStore
+	pushCfg pushConfig
 	// adminToken is ADMIN_TOKEN, read once at construction. Empty disables
 	// every admin route (they all return 401).
 	adminToken string
@@ -47,12 +60,16 @@ func New(s *store.Store, mediaHandler *media.Handler) http.Handler {
 
 // Register adds every API route to mux.
 func Register(mux *http.ServeMux, s *store.Store, mediaHandler *media.Handler) {
-	srv := &Server{store: s, media: mediaHandler, adminToken: os.Getenv("ADMIN_TOKEN")}
+	srv := &Server{store: s, media: mediaHandler, adminToken: os.Getenv("ADMIN_TOKEN"), limiter: community.NewMemoryLimiter(), pushCfg: pushConfigFromEnv(os.Getenv)}
 	if s != nil {
+		srv.push = s
 		srv.accounts = s
 		srv.identity = s
 		srv.social = s
 		srv.audit = s
+		srv.i18n = s
+		srv.community = s
+		srv.moderation = s
 	}
 	for _, rt := range srv.routes() {
 		mux.HandleFunc(rt.pattern, rt.handler)
@@ -66,12 +83,16 @@ func (srv *Server) routes() []route {
 	rs = append(rs, srv.accountRoutes()...)
 	rs = append(rs, srv.socialRoutes()...)
 	rs = append(rs, srv.notificationRoutes()...)
+	rs = append(rs, srv.pushRoutes()...)
 	rs = append(rs, srv.catalogRoutes()...)
 	rs = append(rs, srv.mediaRoutes()...)
 	rs = append(rs, srv.playbackRoutes()...)
 	rs = append(rs, srv.adminRoutes()...)
 	rs = append(rs, srv.eventRoutes()...)
 	rs = append(rs, srv.adminAuditRoutes()...)
+	rs = append(rs, srv.adminI18nRoutes()...)
+	rs = append(rs, srv.communityRoutes()...)
+	rs = append(rs, srv.moderationRoutes()...)
 	return srv.followMerges(rs)
 }
 

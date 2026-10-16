@@ -35,11 +35,25 @@ const paths = {
   unlock: 'M5 11h14v9H5zM8 11V8a4 4 0 017.5-2',
   cc: 'M3 5h18v14H3zM10 10a2.5 2.5 0 100 4M17 10a2.5 2.5 0 100 4',
   chevronDown: 'M6 9l6 6 6-6',
+  external: 'M14 4h6v6M20 4l-9 9M18 14v6H4V6h6',
+  undo: 'M9 14L4 9l5-5M4 9h11a5 5 0 010 10h-3',
   volume: 'M4 9h4l5-4v14l-5-4H4zM16 8a5 5 0 010 8',
   mute: 'M4 9h4l5-4v14l-5-4H4zM16 9l5 6M21 9l-5 6',
   brightness: 'M12 17a5 5 0 100-10 5 5 0 000 10zM12 2v2M12 20v2M2 12h2M20 12h2',
   rewind: 'M11 6l-7 6 7 6zM20 6l-7 6 7 6z',
   forward: 'M13 6l7 6-7 6zM4 6l7 6-7 6z',
+  // Social (NewWorkAlert, NavLater, Notifications).
+  bell: 'M6 16V11a6 6 0 0112 0v5l2 2H4zM10 21h4',
+  bellOff: 'M6 16V11a6 6 0 019-5.2M18 11v5l2 2H8M10 21h4M3 3l18 18',
+  bellLead: 'M6 16V11a6 6 0 0112 0v5l2 2H4zM10 21h4M12 9v4',
+  plus: 'M12 5v14M5 12h14',
+  later: 'M12 21a9 9 0 100-18 9 9 0 000 18zM12 7v5l3 2',
+  grip: 'M9 6h.01M15 6h.01M9 12h.01M15 12h.01M9 18h.01M15 18h.01',
+  shuffle: 'M3 7h4l10 10h4M3 17h4l3-3M14 10l3-3h4M18 4l3 3-3 3M18 14l3 3-3 3',
+  calendar: 'M4 6h16v14H4zM4 10h16M8 3v4M16 3v4',
+  trash: 'M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3',
+  chevronRight: 'M9 6l6 6-6 6',
+  cookie: 'M12 3a9 9 0 109 9 4 4 0 01-5-4 4 4 0 01-4-5zM8.5 12h.01M12 16h.01M15.5 14h.01',
 } as const;
 
 export type IconName = keyof typeof paths;

@@ -1,19 +1,31 @@
 import {useEffect, useState} from 'react';
 import {useParams} from 'react-router';
 import {Avatar, ReleaseCard, SectionHeader} from '../components/Cards';
+import {LoadMore} from '../components/Paging';
+import {FollowButton} from '../components/SocialButtons';
 import {BlockSkeleton, CardGridSkeleton, EmptyState, ErrorBanner} from '../components/States';
-import {getPerformer, getPerformerReleases, type PerformerDetail} from '../lib/api';
-import {ageAt, formatDate, formatYear} from '../lib/format';
+import {getPerformer, getPerformerReleases, listPerformerPage, listReleasePage, type PerformerDetail} from '../lib/api';
+import {ageAt, formatCount, formatDate, formatYear} from '../lib/format';
 import {useAsync} from '../lib/useAsync';
+import {useCanonicalSlug} from '../lib/useCanonicalSlug';
+import {usePaged} from '../lib/usePaged';
 
 export const meta = () => [{title: 'REEL · 演员'}];
 
-const WORKS_LIMIT = 100;
+const PAGE_SIZE = 24;
+const LEGACY_LIMIT = 100;
 
 // Actor / MobileActor.
 //
+// Works: GET /api/releases?performer={slug} (newest first, cursor paged). On a
+// backend without that filter (no next_cursor) the page falls back to
+// GET /api/performers/{slug}/releases?limit=100.
+// works_count: from GET /api/performers?q={name} (catalog-filters backend);
+// otherwise the number of works loaded.
+//
 // Omitted for lack of backend:
-// TODO(tech plan 3.13 follows): 关注 button.
+// 关注 + bell (NewWorkAlert) via PUT/DELETE /api/me/follows/{slug}.
+// TODO(PRD 17): 即将上线 shelf — there is no public endpoint for a performer's upcoming works yet.
 // TODO(tech plan 3.13 performer_stats): 总播放 / 粉丝 / 热度 stats.
 // TODO(tech plan 3.13 release_performers.role_type): 主演 / 客串 filters; 最热 sort.
 // TODO(tech plan 3.5 performer_similar): 相似演员.
@@ -22,9 +34,22 @@ const WORKS_LIMIT = 100;
 export default function PerformerPage() {
   const {slug = ''} = useParams();
   const detail = useAsync(signal => getPerformer(slug, signal), [slug]);
-  const works = useAsync(signal => getPerformerReleases(slug, WORKS_LIMIT, signal), [slug]);
+  const works = usePaged(async (cursor, signal) => {
+    const page = await listReleasePage({performer: slug}, PAGE_SIZE, cursor, signal);
+    if (page.paged) return page;
+    // Old backend ignored ?performer= and returned every release.
+    const items = await getPerformerReleases(slug, LEGACY_LIMIT, signal);
+    return {items, nextCursor: null, paged: false};
+  }, [slug]);
+  const name = detail.data?.canonical_name;
+  const stats = useAsync(
+    signal => listPerformerPage('works', 20, null, name, signal).then(page => page.items.find(p => p.slug === slug)?.works_count),
+    [slug, name],
+    !!name,
+  );
   const [tab, setTab] = useState<'works' | 'info'>('works');
 
+  useCanonicalSlug('performers', slug, detail.data?.slug);
   useEffect(() => setTab('works'), [slug]);
   useEffect(() => {
     if (detail.data) document.title = `${detail.data.canonical_name} · REEL`;
@@ -44,8 +69,15 @@ export default function PerformerPage() {
   }
 
   const p = detail.data;
-  const count = works.data?.length ?? 0;
-  const countLabel = count >= WORKS_LIMIT ? `${WORKS_LIMIT}+` : String(count);
+  const loadedCount = works.items.length;
+  const countLabel =
+    typeof stats.data === 'number'
+      ? formatCount(stats.data)
+      : works.loading
+        ? ''
+        : works.hasMore || (works.paged === false && loadedCount >= LEGACY_LIMIT)
+          ? `${loadedCount}+`
+          : String(loadedCount);
 
   return (
     <div className="page performer-page" data-tab={tab}>
@@ -59,7 +91,8 @@ export default function PerformerPage() {
           <div className="performer-head">
             <h1>{p.canonical_name}</h1>
             {p.canonical_name_ja && <p className="muted">{p.canonical_name_ja}</p>}
-            {works.data && (
+            <FollowButton slug={p.slug} name={p.canonical_name} />
+            {countLabel && (
               <div className="stat-row">
                 <div className="stat">
                   <span className="stat-value">{countLabel}</span>
@@ -87,30 +120,33 @@ export default function PerformerPage() {
       )}
 
       <section className="performer-works shelf">
-        <SectionHeader title={works.data ? `出演作品 · ${countLabel}` : '出演作品'} sub="按发行日期，最新在前" />
+        <SectionHeader title={countLabel ? `出演作品 · ${countLabel}` : '出演作品'} sub="按发行日期，最新在前" />
         {works.error ? (
           <ErrorBanner error={works.error} onRetry={works.reload} />
-        ) : works.slow ? (
-          <CardGridSkeleton count={10} />
-        ) : works.data && works.data.length === 0 ? (
+        ) : works.loading ? (
+          works.slow && <CardGridSkeleton count={10} />
+        ) : works.items.length === 0 ? (
           <EmptyState title="还没有收录作品" body="这位演员的作品还在整理中。" actions={[{to: '/', label: '去首页逛逛'}]} />
         ) : (
-          <div className="card-grid">
-            {(works.data ?? []).map(r => {
-              const age = ageAt(p?.birth_date, r.release_date);
-              const year = formatYear(r.release_date);
-              return (
-                <ReleaseCard
-                  key={r.id}
-                  slug={r.slug}
-                  title={r.canonical_title}
-                  badge={r.runtime_minutes ? `${r.runtime_minutes} 分` : undefined}
-                  meta={[r.maker_name, formatDate(r.release_date)].filter(Boolean).join(' · ')}
-                  sub={year && age !== null ? `${year} 年发行 · 约 ${age} 岁` : undefined}
-                />
-              );
-            })}
-          </div>
+          <>
+            <div className="card-grid">
+              {works.items.map(r => {
+                const age = ageAt(p?.birth_date, r.release_date);
+                const year = formatYear(r.release_date);
+                return (
+                  <ReleaseCard
+                    key={r.id}
+                    slug={r.slug}
+                    title={r.canonical_title}
+                    badge={r.runtime_minutes ? `${r.runtime_minutes} 分` : undefined}
+                    meta={[r.maker_name, formatDate(r.release_date)].filter(Boolean).join(' · ')}
+                    sub={year && age !== null ? `${year} 年发行 · 约 ${age} 岁` : undefined}
+                  />
+                );
+              })}
+            </div>
+            <LoadMore state={works} label="更多作品" />
+          </>
         )}
       </section>
     </div>

@@ -406,6 +406,7 @@ type ReleaseIdentifier struct {
 type ReleaseDetail struct {
 	model.Release
 	DirectorName string              `json:"director_name"`
+	Synopsis     string              `json:"synopsis,omitempty"` // original text; see display_synopsis for ?lang=
 	Tags         []TagRef            `json:"tags"`
 	Identifiers  []ReleaseIdentifier `json:"identifiers"`
 }
@@ -414,9 +415,9 @@ type ReleaseDetail struct {
 // identifiers. A missing or unpublished release is pgx.ErrNoRows.
 func (s *Store) ReleaseDetailBySlug(ctx context.Context, slug string) (ReleaseDetail, error) {
 	var x ReleaseDetail
-	err := s.QueryRow(ctx, `SELECT `+releaseColumns+`,COALESCE(r.director_name,'')
+	err := s.QueryRow(ctx, `SELECT `+releaseColumns+`,COALESCE(r.director_name,''),COALESCE(r.synopsis,'')
 		FROM releases r WHERE r.slug=$1 AND r.merged_into_id IS NULL AND r.status='published'`, slug).
-		Scan(&x.ID, &x.Slug, &x.CanonicalTitle, &x.TitleJA, &x.ReleaseDate, &x.RuntimeMinutes, &x.MakerName, &x.LabelName, &x.SeriesName, &x.Status, &x.DirectorName)
+		Scan(&x.ID, &x.Slug, &x.CanonicalTitle, &x.TitleJA, &x.ReleaseDate, &x.RuntimeMinutes, &x.MakerName, &x.LabelName, &x.SeriesName, &x.Status, &x.DirectorName, &x.Synopsis)
 	if err != nil {
 		return x, err
 	}

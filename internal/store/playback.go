@@ -212,11 +212,16 @@ func containsFold(list []string, v string) bool {
 	return slices.ContainsFunc(list, func(s string) bool { return strings.EqualFold(strings.TrimSpace(s), v) })
 }
 
-// FilterPlayable keeps active sources allowed in region, preserving order.
+// FilterPlayable keeps active and degraded sources allowed in region,
+// preserving order. Degraded sources (source health below 80, set by the
+// source health job) stay in the list as a last resort, ordered after every
+// active one: they keep their fallback value and keep producing the events
+// that let the health job move them back to active. Disabled sources are
+// never served.
 func FilterPlayable(srcs []PlaybackSource, region string) []PlaybackSource {
 	out := make([]PlaybackSource, 0, len(srcs))
 	for _, x := range srcs {
-		if x.Status == "active" && RegionAllowed(x, region) {
+		if (x.Status == "active" || x.Status == "degraded") && RegionAllowed(x, region) {
 			out = append(out, x)
 		}
 	}
@@ -243,13 +248,20 @@ func qualityRank(x PlaybackSource, quality int) int {
 
 // OrderPlaybackSources sorts in place. Alternate versions go after every
 // shared-progress source (PRD 5.2: the default is the main version and the
-// automatic fallback chain must keep progress), then tech plan 3.3: quality
-// preference match, health_score (high first), priority (low first), id.
+// automatic fallback chain must keep progress); within each group degraded
+// sources go after active ones; then tech plan 3.3: quality preference
+// match, health_score (high first), priority (low first), id.
 // Call after ApplyAltVersionRule.
 func OrderPlaybackSources(srcs []PlaybackSource, quality int) {
 	slices.SortStableFunc(srcs, func(a, b PlaybackSource) int {
 		if a.IsAltVersion != b.IsAltVersion {
 			if b.IsAltVersion {
+				return -1
+			}
+			return 1
+		}
+		if ad, bd := a.Status == "degraded", b.Status == "degraded"; ad != bd {
+			if bd {
 				return -1
 			}
 			return 1

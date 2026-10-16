@@ -148,7 +148,8 @@ func TestPlanPlayback(t *testing.T) {
 		t.Fatalf("duration %v, want 7210", plan.DurationSeconds)
 	}
 	// 12 is a director's cut (>2% longer): it goes below shared-progress sources despite better health.
-	if want := []int64{10, 11, 12}; !slices.Equal(ids(plan.Sources), want) {
+	// 15 is degraded: served as a last resort after the active shared-progress sources.
+	if want := []int64{10, 11, 15, 12}; !slices.Equal(ids(plan.Sources), want) {
 		t.Fatalf("sources %v, want %v", ids(plan.Sources), want)
 	}
 	alt := map[int64]bool{}

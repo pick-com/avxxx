@@ -1,0 +1,146 @@
+import type {ReactNode} from 'react';
+import {listReleasePage, needsFilterSupport, type Release, type ReleaseFilter} from '../lib/api';
+import {formatDate} from '../lib/format';
+import {DURATION_BUCKETS, bucketFor, durationLabel, yearOptions} from '../lib/releaseFilter';
+import {usePaged} from '../lib/usePaged';
+import {ReleaseCard} from './Cards';
+import {Icon} from './Icon';
+import {LoadMore} from './Paging';
+import {CardGridSkeleton, EmptyState, ErrorBanner} from './States';
+
+type Patch = Partial<Record<keyof ReleaseFilter, string | number | undefined>>;
+export type SortOption = {value: string; label: string};
+
+/**
+ * Browse filter row: active facet chips (removable), 时长 / 年份 selects and a
+ * sort switch. Only facets GET /api/releases supports are offered.
+ */
+export function FilterBar({filter, onChange, tagName, sortOptions, sortValue, onSort, children}: {
+  filter: ReleaseFilter;
+  onChange: (patch: Patch) => void;
+  tagName?: string;
+  sortOptions: SortOption[];
+  sortValue: string;
+  onSort: (value: string) => void;
+  children?: ReactNode;
+}) {
+  const bucket = bucketFor(filter);
+  const customDuration = !bucket && (filter.min_runtime || filter.max_runtime);
+  const active: {key: string; label: string; clear: Patch}[] = [];
+  if (filter.tag) active.push({key: 'tag', label: `#${tagName || filter.tag}`, clear: {tag: undefined}});
+  if (filter.maker) active.push({key: 'maker', label: `片商：${filter.maker}`, clear: {maker: undefined}});
+  if (filter.performer) active.push({key: 'performer', label: `演员：${filter.performer}`, clear: {performer: undefined}});
+
+  return (
+    <div className="filter-bar">
+      {active.length > 0 && (
+        <div className="chip-row chip-row-wrap" aria-label="当前筛选">
+          {active.map(a => (
+            <button key={a.key} type="button" className="chip chip-on" aria-label={`移除筛选 ${a.label}`} onClick={() => onChange(a.clear)}>
+              {a.label}
+              <Icon name="close" size={14} />
+            </button>
+          ))}
+        </div>
+      )}
+      <div className="filter-row">
+        <label className="filter-select">
+          <span className="sr-only">时长</span>
+          <select
+            value={bucket?.key ?? (customDuration ? 'custom' : '')}
+            onChange={e => {
+              const b = DURATION_BUCKETS.find(x => x.key === e.target.value);
+              onChange({min_runtime: b?.min, max_runtime: b?.max});
+            }}
+          >
+            <option value="">时长：全部</option>
+            {customDuration && <option value="custom">时长：{durationLabel(filter)}</option>}
+            {DURATION_BUCKETS.map(b => (
+              <option key={b.key} value={b.key}>
+                时长：{b.label}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className="filter-select">
+          <span className="sr-only">发行年份</span>
+          <select value={filter.year ?? ''} onChange={e => onChange({year: e.target.value ? Number(e.target.value) : undefined})}>
+            <option value="">年份：全部</option>
+            {filter.year && !yearOptions().includes(filter.year) && <option value={filter.year}>{filter.year} 年</option>}
+            {yearOptions().map(y => (
+              <option key={y} value={y}>
+                {y} 年
+              </option>
+            ))}
+          </select>
+        </label>
+        {children}
+        <span className="section-spacer" />
+        <span className="filter-label">排序</span>
+        <div className="segmented segmented-sm" role="radiogroup" aria-label="排序">
+          {sortOptions.map(o => (
+            <button key={o.value} type="button" role="radio" aria-checked={o.value === sortValue} className="segmented-item" onClick={() => onSort(o.value)}>
+              {o.label}
+            </button>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+const PAGE_SIZE = 24;
+
+export function releaseCardProps(r: Release) {
+  return {
+    slug: r.slug,
+    title: r.canonical_title,
+    badge: r.runtime_minutes ? `${r.runtime_minutes} 分` : undefined,
+    meta: [r.maker_name, formatDate(r.release_date)].filter(Boolean).join(' · ') || undefined,
+  };
+}
+
+/**
+ * Filtered, cursor-paged release grid (GET /api/releases). On a backend
+ * without filter support (no next_cursor) a filtered request would come back
+ * unfiltered, so the results are withheld and the user is told instead.
+ */
+export function ReleaseResults({filter, onClear, clearLabel = '查看全部新上线', empty, gridClassName = 'card-grid', renderCard}: {
+  filter: ReleaseFilter;
+  onClear: () => void;
+  clearLabel?: string;
+  empty: ReactNode;
+  gridClassName?: string;
+  renderCard?: (r: Release) => ReactNode;
+}) {
+  const key = JSON.stringify(filter);
+  const list = usePaged((cursor, signal) => listReleasePage(filter, PAGE_SIZE, cursor, signal), [key]);
+  const unsupported = list.paged === false && needsFilterSupport(filter);
+
+  if (list.error) return <ErrorBanner error={list.error} onRetry={list.reload} />;
+  if (list.loading) return list.slow ? <CardGridSkeleton count={10} /> : null;
+  if (unsupported) {
+    return (
+      <EmptyState
+        icon="search"
+        title="筛选和排序即将上线"
+        body="当前服务还不支持按标签、片商、时长、年份筛选或换排序方式。"
+      >
+        <div className="empty-actions">
+          <button type="button" className="btn btn-primary" onClick={onClear}>
+            {clearLabel}
+          </button>
+        </div>
+      </EmptyState>
+    );
+  }
+  if (list.items.length === 0) return <>{empty}</>;
+  return (
+    <>
+      <div className={gridClassName}>
+        {list.items.map(r => (renderCard ? renderCard(r) : <ReleaseCard key={r.id} {...releaseCardProps(r)} />))}
+      </div>
+      <LoadMore state={list} />
+    </>
+  );
+}

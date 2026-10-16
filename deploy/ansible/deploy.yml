@@ -21,6 +21,15 @@
           POSTGRES_USER=avxxx
           POSTGRES_PASSWORD={{ postgres_password | default('change-me') }}
           DATABASE_URL={{ database_url }}
+          BASE_URL={{ base_url | default('') }}
+          VAPID_PUBLIC_KEY={{ vapid_public_key | default('') }}
+          VAPID_PRIVATE_KEY={{ vapid_private_key | default('') }}
+          VAPID_SUBJECT={{ vapid_subject | default('') }}
+          SMTP_HOST={{ smtp_host | default('') }}
+          SMTP_PORT={{ smtp_port | default(587) }}
+          SMTP_USER={{ smtp_user | default('') }}
+          SMTP_PASSWORD={{ smtp_password | default('') }}
+          MAIL_FROM={{ mail_from | default('') }}
     - name: Build and start database
       ansible.builtin.command:
         cmd: docker compose up -d db
@@ -31,7 +40,7 @@
         chdir: "{{ app_dir }}"
     - name: Start application services
       ansible.builtin.command:
-        cmd: docker compose up -d api scheduler scraper audit
+        cmd: docker compose up -d api scheduler scraper audit notifier
         chdir: "{{ app_dir }}"
     - name: Check API health
       ansible.builtin.uri:

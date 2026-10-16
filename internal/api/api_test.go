@@ -37,6 +37,9 @@ var expectedRoutes = []string{
 	"GET /api/me/notifications",
 	"GET /api/me/notifications/unread-count",
 	"POST /api/me/notifications/read",
+	"GET /api/push/vapid-public-key",
+	"POST /api/me/push-subscriptions",
+	"DELETE /api/me/push-subscriptions",
 	"GET /api/items",
 	"GET /api/performers",
 	"GET /api/performers/{slug}",
@@ -74,6 +77,43 @@ var expectedRoutes = []string{
 	"POST /api/admin/audit/issues/{id}/dismiss",
 	"POST /api/admin/audit/run",
 	"GET /api/admin/dashboard",
+	"GET /api/i18n/ui/{lang}",
+	"GET /api/admin/i18n/translations",
+	"GET /api/admin/i18n/stats",
+	"POST /api/admin/i18n/translations/mark-stale",
+	"PUT /api/admin/i18n/translations/{entity_type}/{entity_id}/{field}/{lang}",
+	"POST /api/admin/i18n/translations/{entity_type}/{entity_id}/{field}/{lang}/submit",
+	"POST /api/admin/i18n/translations/{entity_type}/{entity_id}/{field}/{lang}/review",
+	"GET /api/admin/i18n/glossary",
+	"POST /api/admin/i18n/glossary",
+	"PUT /api/admin/i18n/glossary/{id}",
+	"DELETE /api/admin/i18n/glossary/{id}",
+	"GET /api/admin/i18n/ui",
+	"PUT /api/admin/i18n/ui/{lang}/{key}",
+	"GET /api/admin/playback-sources/health",
+	"GET /api/releases/{slug}/danmaku",
+	"POST /api/releases/{slug}/danmaku",
+	"POST /api/danmaku/{id}/report",
+	"GET /api/releases/{slug}/rating",
+	"PUT /api/releases/{slug}/rating",
+	"GET /api/releases/{slug}/reviews",
+	"POST /api/releases/{slug}/reviews",
+	"PATCH /api/reviews/{id}",
+	"DELETE /api/reviews/{id}",
+	"PUT /api/reviews/{id}/like",
+	"DELETE /api/reviews/{id}/like",
+	"POST /api/reviews/{id}/report",
+	"POST /api/reports",
+	"GET /api/admin/moderation/queue",
+	"POST /api/admin/moderation/danmaku/{id}/action",
+	"POST /api/admin/moderation/reviews/{id}/action",
+	"POST /api/admin/moderation/ratings/{id}/action",
+	"POST /api/admin/moderation/reports/{id}/resolve",
+	"POST /api/admin/moderation/rating-floods/remove",
+	"GET /api/admin/moderation/words",
+	"POST /api/admin/moderation/words",
+	"DELETE /api/admin/moderation/words/{word}",
+	"DELETE /api/admin/moderation/mutes/{user_id}",
 }
 
 var (
@@ -88,8 +128,12 @@ func samplePath(p string) string {
 }
 
 func TestRoutesRegistered(t *testing.T) {
-	if len(expectedRoutes) != 64 {
-		t.Fatalf("expected route list has %d entries, want 64", len(expectedRoutes))
+	listed := map[string]bool{}
+	for _, rt := range expectedRoutes {
+		if listed[rt] {
+			t.Errorf("expectedRoutes lists %q twice", rt)
+		}
+		listed[rt] = true
 	}
 	mux := http.NewServeMux()
 	Register(mux, nil, nil)
