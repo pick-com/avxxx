@@ -19,6 +19,24 @@ var expectedRoutes = []string{
 	"POST /api/me/watch-history",
 	"GET /api/me/favorites",
 	"POST /api/me/favorites",
+	"GET /api/me/follows",
+	"PUT /api/me/follows/{performer_slug}",
+	"DELETE /api/me/follows/{performer_slug}",
+	"GET /api/me/following/feed",
+	"GET /api/me/reservations",
+	"PUT /api/me/reservations/{release_slug}",
+	"DELETE /api/me/reservations/{release_slug}",
+	"GET /api/me/watch-later",
+	"PUT /api/me/watch-later/{release_slug}",
+	"DELETE /api/me/watch-later/{release_slug}",
+	"POST /api/me/watch-later/reorder",
+	"GET /api/me/settings",
+	"PATCH /api/me/settings",
+	"DELETE /api/me/watch-history/{release_slug}",
+	"DELETE /api/me/watch-history",
+	"GET /api/me/notifications",
+	"GET /api/me/notifications/unread-count",
+	"POST /api/me/notifications/read",
 	"GET /api/items",
 	"GET /api/performers",
 	"GET /api/performers/{slug}",
@@ -60,8 +78,8 @@ func samplePath(p string) string {
 }
 
 func TestRoutesRegistered(t *testing.T) {
-	if len(expectedRoutes) != 36 {
-		t.Fatalf("expected route list has %d entries, want 36", len(expectedRoutes))
+	if len(expectedRoutes) != 54 {
+		t.Fatalf("expected route list has %d entries, want 54", len(expectedRoutes))
 	}
 	mux := http.NewServeMux()
 	Register(mux, nil, nil)
