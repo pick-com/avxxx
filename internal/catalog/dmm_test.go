@@ -635,8 +635,11 @@ func TestDMMCrawlHonorsRobots(t *testing.T) {
 			c.Phase = PhaseIncremental
 			c.Fetcher.Robots, c.Fetcher.Automatic = NewRobots(api.Client(), "test"), true
 			res, err := c.Run(context.Background())
-			if len(api.robotsQueries) != 1 || api.robotsQueries[0].Get("api_id") != "" {
-				t.Fatalf("robots.txt requests = %v", api.robotsQueries)
+			api.mu.Lock()
+			robotsQueries := append([]url.Values(nil), api.robotsQueries...)
+			api.mu.Unlock()
+			if len(robotsQueries) != 1 || robotsQueries[0].Get("api_id") != "" {
+				t.Fatalf("robots.txt requests = %v", robotsQueries)
 			}
 			if tc.allowed {
 				if err != nil || res.Records != 3 {
