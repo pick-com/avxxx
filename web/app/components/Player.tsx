@@ -445,13 +445,15 @@ export function Player({slug, releaseId, title, resumeAt, startAt, onBack, theat
   // pauses playback, picture-in-picture included; it does not resume on
   // return. Only casting keeps playing: the picture is on the other device.
   const keepPlayingHidden = useRef(false);
-  keepPlayingHidden.current = casting;
+  // `casting` covers a Google Cast session too; a shadowed <video> is the TV
+  // itself (lib/castShadow.ts), so pausing it would pause the receiver.
+  keepPlayingHidden.current = casting || gcast.connected;
   useEffect(() => {
     const onVisibility = () => {
       if (document.visibilityState !== 'hidden') return;
       save(true);
       const video = videoRef.current;
-      if (video && !video.paused && !keepPlayingHidden.current) video.pause();
+      if (video && !video.paused && !keepPlayingHidden.current && !isCastShadowed(video)) video.pause();
     };
     const onPageHide = () => save(true);
     document.addEventListener('visibilitychange', onVisibility);
