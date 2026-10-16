@@ -82,10 +82,18 @@ func (a JavGuruAdapter) Parse(ctx context.Context, doc Document, entity EntityTy
 	return Record{EntityType: entity, SourceKey: key, URL: doc.FinalURL, Fields: f}, nil
 }
 
+// NextPage follows the WordPress archive pagination (/page/N/).
+func (JavGuruAdapter) NextPage(doc Document) string {
+	return nextPageLink(doc, []string{".wp-pagenavi a.nextpostslink"}, []string{"Next", "Next »", "»"})
+}
+
 func guruClassify(raw string) (EntityType, string) {
 	u, _ := url.Parse(raw)
 	parts := strings.Split(strings.Trim(u.Path, "/"), "/")
 	for i, p := range parts {
+		if i+1 < len(parts) && parts[i+1] == "page" {
+			continue // archive pagination, not an entity
+		}
 		if p == "actress" && i+1 < len(parts) && parts[i+1] != "" {
 			return Performer, parts[i+1]
 		}

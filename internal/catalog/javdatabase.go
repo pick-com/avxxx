@@ -84,11 +84,20 @@ func (a JAVDatabaseAdapter) Parse(ctx context.Context, doc Document, entity Enti
 	return Record{EntityType: Release, SourceKey: key, URL: doc.FinalURL, Fields: f}, nil
 }
 
+// NextPage follows the WordPress archive pagination (/page/N/).
+func (JAVDatabaseAdapter) NextPage(doc Document) string {
+	return nextPageLink(doc, []string{".wp-pagenavi a.nextpostslink"}, []string{"Next", "Next »", "»"})
+}
+
 func classify(raw string) (EntityType, string) {
 	u, _ := url.Parse(raw)
 	p := strings.Trim(u.Path, "/")
 	parts := strings.Split(p, "/")
 	for i, x := range parts {
+		// /movies/page/N/ and /idols/page/N/ are archive pagination, not entities.
+		if i+1 < len(parts) && parts[i+1] == "page" {
+			continue
+		}
 		if x == "idols" && i+1 < len(parts) && parts[i+1] != "" {
 			return Performer, parts[i+1]
 		}
