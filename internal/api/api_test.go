@@ -294,6 +294,30 @@ var expectedRoutes = []string{
 	"POST /api/comments/{id}/report",
 	// 观看统计 (social.go, watchstats.go).
 	"GET /api/me/watch-stats",
+	// Admin accounts (admin_auth.go, admin_users.go).
+	"POST /api/admin-auth/login",
+	"POST /api/admin-auth/verify",
+	"POST /api/admin-auth/enroll/info",
+	"POST /api/admin-auth/enroll",
+	"GET /api/admin/session",
+	"POST /api/admin/session/logout",
+	"POST /api/admin/session/recovery-codes",
+	"GET /api/admin/roles",
+	"GET /api/admin/admin-users",
+	"POST /api/admin/admin-users",
+	"POST /api/admin/admin-users/{id}/invite",
+	"POST /api/admin/admin-users/{id}/disable",
+	"POST /api/admin/admin-users/{id}/enable",
+	"PUT /api/admin/admin-users/{id}/roles",
+	"POST /api/admin/admin-users/{id}/reset-2fa",
+	"GET /api/admin/approvals",
+	"POST /api/admin/approvals/{id}/approve",
+	"POST /api/admin/approvals/{id}/reject",
+	"GET /api/admin/audit-log",
+	"GET /api/admin/site-users",
+	"GET /api/admin/site-users/{id}",
+	"POST /api/admin/site-users/{id}/ban",
+	"POST /api/admin/site-users/{id}/unban",
 }
 
 var (

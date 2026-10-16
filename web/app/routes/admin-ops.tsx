@@ -37,7 +37,7 @@ export const meta = () => [{title: 'REEL · 运营排期'}];
 // and 编辑精选 with per-language titles, language / region targeting, a time
 // window and priority), drag reorder, a preview of what the public home and
 // announcement bar serve at any moment, and the 公告条. Every write is a
-// review_events row with the 操作人 (X-Admin-User).
+// review_events row with the signed-in admin as 操作人.
 
 const DAY = 24 * 60 * 60 * 1000;
 const TIMELINE_DAYS = 14;

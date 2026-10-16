@@ -2,8 +2,8 @@ package api
 
 // AdminI18n (PRD 8, tech plan 3.10 / 3.13): the translation workbench,
 // glossary and UI strings, plus the public UI-string bundle. Admin routes
-// sit behind ADMIN_TOKEN; the optional X-Admin-User header is recorded as
-// updated_by.
+// sit behind srv.admin (admin_auth.go); the authenticated admin is recorded
+// as updated_by.
 
 import (
 	"avxxx/internal/i18n"
@@ -60,13 +60,10 @@ func (srv *Server) adminI18nRoutes() []route {
 
 const maxTranslationLen = 20000
 
-// adminUser is the optional X-Admin-User header, recorded as updated_by.
+// adminUser is the authenticated admin (adminActor), recorded as updated_by.
 func adminUser(r *http.Request) string {
-	u := strings.TrimSpace(r.Header.Get("X-Admin-User"))
-	if len(u) > 100 {
-		u = u[:100]
-	}
-	return u
+	a, _ := adminActor(r)
+	return a
 }
 
 // langParam validates an optional language filter (exact supported tag).

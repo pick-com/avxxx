@@ -170,7 +170,7 @@ func TestSearchIntegration(t *testing.T) {
 
 	// ---- synonyms and redirects (admin CRUD, then applied)
 	code1, syn := searchHTTP(t, h, "POST", "/api/admin/search/synonyms", fmt.Sprintf(`{"term":"NF%s","canonical":"night flight %s"}`, letters, letters))
-	if code1 != 201 || syn["created_by"] != "search-editor" || syn["term"] != "nf"+letters {
+	if code1 != 201 || syn["created_by"] != "token:search-editor" || syn["term"] != "nf"+letters {
 		t.Fatalf("create synonym: %d %v", code1, syn)
 	}
 	if c, _ := searchHTTP(t, h, "POST", "/api/admin/search/synonyms", fmt.Sprintf(`{"term":"nf%s","canonical":"x"}`, letters)); c != 409 {
@@ -356,10 +356,10 @@ func TestSearchIntegration(t *testing.T) {
 		t.Errorf("search by new english title: %v", f)
 	}
 	var actor, action string
-	if err := s.QueryRow(ctx, `SELECT actor,action FROM review_events WHERE entity_type='release' AND entity_id=$1 ORDER BY id DESC LIMIT 1`, relB).Scan(&actor, &action); err != nil || actor != "search-editor" || action != "add_english_title" {
+	if err := s.QueryRow(ctx, `SELECT actor,action FROM review_events WHERE entity_type='release' AND entity_id=$1 ORDER BY id DESC LIMIT 1`, relB).Scan(&actor, &action); err != nil || actor != "token:search-editor" || action != "add_english_title" {
 		t.Errorf("review event %q %q %v", actor, action, err)
 	}
-	if err := s.QueryRow(ctx, `SELECT actor FROM review_events WHERE entity_type='performer' AND entity_id=$1 AND action='add_alias' ORDER BY id DESC LIMIT 1`, perf).Scan(&actor); err != nil || actor != "search-editor" {
+	if err := s.QueryRow(ctx, `SELECT actor FROM review_events WHERE entity_type='performer' AND entity_id=$1 AND action='add_alias' ORDER BY id DESC LIMIT 1`, perf).Scan(&actor); err != nil || actor != "token:search-editor" {
 		t.Errorf("alias review event %q %v", actor, err)
 	}
 	_ = context.Background

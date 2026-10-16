@@ -99,7 +99,7 @@ func newStubRecs() *stubRecs {
 }
 
 func recsMux(st *stubRecs) http.Handler {
-	srv := &Server{adminToken: "secret", recs: st, recsAdmin: st, accounts: &stubAccounts{}}
+	srv := &Server{adminToken: "secret", adminAuth: newFakeAdmins(), recs: st, recsAdmin: st, accounts: &stubAccounts{}}
 	mux := http.NewServeMux()
 	for _, rt := range srv.routes() {
 		mux.HandleFunc(rt.pattern, rt.handler)
@@ -153,7 +153,7 @@ func TestRecsStatusCodes(t *testing.T) {
 }
 
 func TestRecsUnavailableWithoutStore(t *testing.T) {
-	srv := &Server{adminToken: "secret"}
+	srv := &Server{adminToken: "secret", adminAuth: newFakeAdmins()}
 	mux := http.NewServeMux()
 	for _, rt := range srv.routes() {
 		mux.HandleFunc(rt.pattern, rt.handler)

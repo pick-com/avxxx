@@ -80,7 +80,7 @@ func seriesServer() (*Server, *fakeSeries, *fakeReports) {
 		})
 	}
 	fr := &fakeReports{}
-	return &Server{seriesSt: fs, evidence: fakeEvidence{}, reports: fr, adminToken: "tok"}, fs, fr
+	return &Server{seriesSt: fs, evidence: fakeEvidence{}, reports: fr, adminToken: "tok", adminAuth: newFakeAdmins()}, fs, fr
 }
 
 func serve(srv *Server, method, target string, admin bool) *httptest.ResponseRecorder {
@@ -202,7 +202,7 @@ func TestCompletenessReportHandler(t *testing.T) {
 		!strings.HasPrefix(rec.Body.String(), strings.Join(completeness.CSVHeader, ",")) {
 		t.Errorf("csv: %d %v %s", rec.Code, rec.Header(), rec.Body)
 	}
-	if rec := serve(&Server{adminToken: "tok"}, "GET", "/api/admin/reports/completeness?entity=release", true); rec.Code != 503 {
+	if rec := serve(&Server{adminToken: "tok", adminAuth: newFakeAdmins()}, "GET", "/api/admin/reports/completeness?entity=release", true); rec.Code != 503 {
 		t.Errorf("no store: %d", rec.Code)
 	}
 }

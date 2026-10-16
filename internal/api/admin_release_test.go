@@ -96,7 +96,7 @@ func (s *stubEditor) ResolveConflict(_ context.Context, _, _ int64, value json.R
 }
 
 func editorMux(st *stubEditor) *http.ServeMux {
-	srv := &Server{adminToken: "secret", editor: st}
+	srv := &Server{adminToken: "secret", adminAuth: newFakeAdmins(), editor: st}
 	mux := http.NewServeMux()
 	for _, rt := range srv.routes() {
 		mux.HandleFunc(rt.pattern, rt.handler)
@@ -163,8 +163,7 @@ func TestAdminReleaseStatusCodes(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			st := &stubEditor{err: tc.err}
 			req := httptest.NewRequest(tc.method, tc.path, strings.NewReader(tc.body))
-			req.Header.Set("Authorization", "Bearer secret")
-			req.Header.Set("X-Admin-User", "alice")
+			asAdmin(req, "alice")
 			rec := httptest.NewRecorder()
 			editorMux(st).ServeHTTP(rec, req)
 			if rec.Code != tc.want {
@@ -178,7 +177,7 @@ func TestAdminReleaseStatusCodes(t *testing.T) {
 				t.Errorf("store call %q, want %q", got, tc.call)
 			}
 			if tc.call != "" && tc.method != "GET" && st.actor != "alice" {
-				t.Errorf("actor %q, want alice (X-Admin-User)", st.actor)
+				t.Errorf("actor %q, want alice (the session admin)", st.actor)
 			}
 		})
 	}
@@ -188,8 +187,7 @@ func TestAdminReleaseHandlersPassInput(t *testing.T) {
 	st := &stubEditor{}
 	mux := editorMux(st)
 	do := func(method, path, body string, hdr map[string]string) *httptest.ResponseRecorder {
-		req := httptest.NewRequest(method, path, strings.NewReader(body))
-		req.Header.Set("Authorization", "Bearer secret")
+		req := asAdmin(httptest.NewRequest(method, path, strings.NewReader(body)), "admin")
 		for k, v := range hdr {
 			req.Header.Set(k, v)
 		}
@@ -224,8 +222,10 @@ func TestAdminReleaseHandlersPassInput(t *testing.T) {
 	if string(st.value) != `"2021-01-01"` {
 		t.Errorf("value = %s", st.value)
 	}
-	if rec := do("PATCH", "/api/admin/releases/1", `{"title":"T"}`, map[string]string{"X-Admin-User": strings.Repeat("x", 200)}); rec.Code != 400 {
-		t.Errorf("long X-Admin-User: %d", rec.Code)
+	// X-Admin-User is no longer an actor: a session request records the
+	// signed-in admin whatever the header says.
+	if rec := do("PATCH", "/api/admin/releases/1", `{"title":"T"}`, map[string]string{"X-Admin-User": strings.Repeat("x", 200)}); rec.Code != 200 || st.actor != "admin" {
+		t.Errorf("X-Admin-User on a session: %d actor %q", rec.Code, st.actor)
 	}
 	// 5xx never leaks store error text.
 	st.err = context.DeadlineExceeded

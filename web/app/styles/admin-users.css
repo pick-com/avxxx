@@ -1,0 +1,208 @@
+/* AdminUsers: sign-in, enrollment, accounts, role matrix, approvals, op log. */
+
+.adm-login {
+  min-height: 100vh;
+  display: grid;
+  place-items: center;
+  padding: 24px 16px;
+  background: var(--bg);
+}
+
+.adm-login-card {
+  width: min(420px, 100%);
+}
+
+.adm-enroll {
+  width: min(520px, 100%);
+}
+
+.adm-login-head {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.adm-login-tools {
+  margin-left: auto;
+}
+
+.adm-login-form {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.adm-login-form h1 {
+  margin: 4px 0 0;
+  font-size: 22px;
+}
+
+.adm-login-form h2 {
+  margin: 8px 0 0;
+  font-size: 15px;
+}
+
+.adm-login-form input {
+  font-size: 15px;
+}
+
+.adm-login-error {
+  margin: 0;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: var(--adm-red-bg);
+  color: var(--adm-red-fg);
+  font-size: 13px;
+}
+
+.adm-login-notice {
+  margin: 0;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: var(--adm-amber-bg);
+  color: var(--adm-amber-fg);
+  font-size: 13px;
+}
+
+.adm-login-links {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.adm-login-hint,
+.adm-login-foot {
+  font-size: 12px;
+  margin: 0;
+}
+
+.adm-totp-key {
+  margin: 0;
+  padding: 10px 12px;
+  border-radius: 8px;
+  border: 1px dashed var(--line);
+  font-size: 17px;
+  letter-spacing: 0.04em;
+  word-break: break-all;
+  user-select: all;
+}
+
+.adm-codes {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px 24px;
+  margin: 0;
+  padding-left: 22px;
+  font-size: 15px;
+}
+
+.adm-glass {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-width: 420px;
+}
+
+.adm-users-tabs {
+  align-self: flex-start;
+}
+
+.adm-card-title {
+  margin: 0;
+  font-size: 16px;
+}
+
+.adm-users-invite {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+  align-items: end;
+}
+
+.adm-users-invite .adm-roles {
+  grid-column: 1 / -1;
+}
+
+.adm-users-invite button {
+  justify-self: start;
+}
+
+.adm-roles {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 14px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  font-size: 13px;
+}
+
+.adm-roles legend {
+  font-size: 12px;
+  color: var(--muted);
+  margin-bottom: 4px;
+}
+
+.adm-link-notice {
+  border-color: var(--adm-amber-fg);
+}
+
+.adm-break {
+  word-break: break-all;
+  font-size: 12px;
+}
+
+.adm-matrix td,
+.adm-matrix th {
+  text-align: center;
+}
+
+.adm-matrix td:first-child,
+.adm-matrix th:first-child {
+  text-align: left;
+}
+
+.adm-access-write {
+  color: var(--adm-green-fg);
+  font-weight: 600;
+}
+
+.adm-access-read {
+  color: var(--adm-blue-fg);
+}
+
+.adm-access-none {
+  color: var(--muted);
+}
+
+.adm-dual-list {
+  margin: 0;
+  padding-left: 20px;
+  font-size: 12px;
+}
+
+.adm-json {
+  margin: 0;
+  max-height: 160px;
+  overflow: auto;
+  font-size: 11px;
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+
+.adm-oplog-filters {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px 12px;
+  align-items: end;
+}
+
+@media (max-width: 900px) {
+  .adm-users-invite,
+  .adm-oplog-filters {
+    grid-template-columns: 1fr;
+  }
+  .adm-codes {
+    grid-template-columns: 1fr;
+  }
+}

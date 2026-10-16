@@ -94,7 +94,7 @@ func (s *stubHome) TopRatedShort(_ context.Context, maxMinutes, limit int) ([]st
 }
 
 func newHomeServer(h *stubHome) (*Server, http.Handler) {
-	srv := &Server{accounts: &stubAccounts{}, home: h, homeCache: newRespCache(), adminToken: "admintok"}
+	srv := &Server{accounts: &stubAccounts{}, home: h, homeCache: newRespCache(), adminToken: "admintok", adminAuth: newFakeAdmins()}
 	mux := http.NewServeMux()
 	for _, rt := range srv.routes() {
 		mux.HandleFunc(rt.pattern, rt.handler)
@@ -155,7 +155,7 @@ func TestPublicHomeSlots(t *testing.T) {
 		t.Errorf("store called %d times, want 1 (cached)", h.liveCalls)
 	}
 	rec = doH(mux, "POST", "/api/admin/home-slots", `{"slot_type":"hero","target_type":"release","release_slug":"abc-011","starts_at":"2026-10-20T00:00:00Z"}`,
-		map[string]string{"Authorization": "Bearer admintok", "X-Admin-User": "ops1"})
+		adminAs("ops1", "operations"))
 	if rec.Code != http.StatusOK || h.actor != "ops1" || h.created.ReleaseSlug != "abc-011" {
 		t.Fatalf("create: %d %s actor %q", rec.Code, rec.Body, h.actor)
 	}
@@ -212,7 +212,7 @@ func TestAnnouncementsAndDismissals(t *testing.T) {
 		t.Errorf("dismissed list: %d %s", rec.Code, rec.Body)
 	}
 
-	adm := map[string]string{"Authorization": "Bearer admintok"}
+	adm := adminAs("ops1", "operations")
 	if rec := doH(mux, "POST", "/api/admin/announcements", `{"texts":{}}`, adm); rec.Code != http.StatusBadRequest {
 		t.Errorf("announcement without body: %d", rec.Code)
 	}
@@ -224,7 +224,7 @@ func TestAnnouncementsAndDismissals(t *testing.T) {
 func TestAdminOpsRoutes(t *testing.T) {
 	h := homeFixture()
 	_, mux := newHomeServer(h)
-	adm := map[string]string{"Authorization": "Bearer admintok", "X-Admin-User": "ops2"}
+	adm := adminAs("ops2", "operations")
 	if rec := doH(mux, "GET", "/api/admin/home-slots", "", nil); rec.Code != http.StatusUnauthorized {
 		t.Errorf("no token: %d", rec.Code)
 	}

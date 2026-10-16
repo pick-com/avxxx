@@ -192,6 +192,11 @@ func (s *Store) LoginSession(ctx context.Context, email, password string, meta S
 			_, _ = s.Exec(ctx, `UPDATE users SET password_hash=$1 WHERE id=$2 AND password_hash=$3`, hash, id, stored)
 		}
 	}
+	if banned, err := userBanned(ctx, s, id); err != nil {
+		return nil, err
+	} else if banned {
+		return nil, ErrAccountBanned // before cancelDeletion: a ban must not undo a deletion request
+	}
 	cancelled, err := s.cancelDeletion(ctx, id)
 	if err != nil {
 		return nil, err
@@ -221,6 +226,13 @@ const (
 )
 
 func (s *Store) createSession(ctx context.Context, id int64, email string, meta SessionMeta) (map[string]any, error) {
+	// Every sign-in path (password, OAuth, login code) ends here, so a ban
+	// (user_bans, migration 042) blocks them all.
+	if banned, err := userBanned(ctx, s, id); err != nil {
+		return nil, err
+	} else if banned {
+		return nil, ErrAccountBanned
+	}
 	b := make([]byte, 32)
 	if _, err := rand.Read(b); err != nil {
 		return nil, err

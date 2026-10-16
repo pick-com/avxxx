@@ -2,9 +2,8 @@ package api
 
 // Admin video editor (AdminVideo / A3, PRD 11): release list and detail,
 // field edits (written as manual overrides), status transitions, playback
-// sources and performer credits. Every route sits behind ADMIN_TOKEN; the
-// X-Admin-User header is recorded as review_events.actor ("admin" when
-// absent). Validation errors are 400, unknown ids 404, stale versions and
+// sources and performer credits. Every route sits behind srv.admin; the
+// authenticated admin is recorded as review_events.actor. Validation errors are 400, unknown ids 404, stale versions and
 // forbidden transitions 409.
 //
 // Out of scope: screenshots and chapters (PRD 5.3) need the transcoding

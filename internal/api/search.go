@@ -10,7 +10,7 @@ package api
 //	GET /api/search/suggest?q=&limit=&lang=   typed suggestions while typing
 //	GET|POST|DELETE /api/me/search-history    signed-in 最近搜索 (bearer token)
 //
-// Admin (AdminSearch, bearer ADMIN_TOKEN, actor from X-Admin-User):
+// Admin (AdminSearch, srv.admin, actor is the authenticated admin):
 //
 //	GET  /api/admin/search/zero-results?days=7&min=20&limit=50
 //	GET  /api/admin/search/stats?days=7

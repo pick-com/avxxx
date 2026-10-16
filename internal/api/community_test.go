@@ -101,8 +101,10 @@ func (s *stubCommunity) CreateReport(_ context.Context, tt string, id, _ int64, 
 
 // stubModeration is an in-memory moderationStore.
 type stubModeration struct {
-	actions []store.ModerationAction
-	err     error
+	actions    []store.ModerationAction
+	err        error
+	floodCalls int
+	floodActor string
 }
 
 func (s *stubModeration) ModerationCounts(context.Context) (store.QueueCounts, error) {
@@ -121,7 +123,9 @@ func (s *stubModeration) ResolveReport(_ context.Context, id int64, _, _, _ stri
 	}
 	return store.Report{ID: id}, nil
 }
-func (s *stubModeration) RemoveRatingFlood(context.Context, int64, int, time.Time, string, string) (int64, error) {
+func (s *stubModeration) RemoveRatingFlood(_ context.Context, _ int64, _ int, _ time.Time, _, actor string) (int64, error) {
+	s.floodCalls++
+	s.floodActor = actor
 	return 20, nil
 }
 func (s *stubModeration) ModerationWords(context.Context) ([]community.Keyword, error) {
@@ -134,7 +138,7 @@ func (s *stubModeration) DeleteModerationWord(context.Context, string, string) e
 func (s *stubModeration) Unmute(context.Context, int64, string, string) error        { return nil }
 
 func newCommunityServer(c *stubCommunity, m *stubModeration, lim community.Limiter) http.Handler {
-	srv := &Server{accounts: &stubAccounts{}, community: c, moderation: m, limiter: lim, adminToken: "admintok"}
+	srv := &Server{accounts: &stubAccounts{}, community: c, moderation: m, limiter: lim, adminToken: "admintok", adminAuth: newFakeAdmins()}
 	mux := http.NewServeMux()
 	for _, rt := range srv.routes() {
 		mux.HandleFunc(rt.pattern, rt.handler)
@@ -399,7 +403,7 @@ func TestCommunityWritesRequireUser(t *testing.T) {
 func TestModerationRoutes(t *testing.T) {
 	m := &stubModeration{}
 	h := newCommunityServer(&stubCommunity{}, m, nil)
-	admin := map[string]string{"Authorization": "Bearer admintok", "X-Admin-User": "alice"}
+	admin := adminAs("alice")
 	for _, tc := range []struct {
 		method, path, body string
 		want               int
@@ -420,8 +424,8 @@ func TestModerationRoutes(t *testing.T) {
 		{"POST", "/api/admin/moderation/reports/1/resolve", `{"status":"dismissed"}`, 200},
 		{"POST", "/api/admin/moderation/reports/9/resolve", `{"status":"resolved"}`, 409},
 		{"POST", "/api/admin/moderation/reports/1/resolve", `{"status":"open"}`, 400},
-		{"POST", "/api/admin/moderation/rating-floods/remove", `{"release_id":1,"score":5,"window_start":"2026-10-01T10:00:00Z"}`, 200},
-		{"POST", "/api/admin/moderation/rating-floods/remove", `{"release_id":1,"score":5}`, 400},
+		// Bulk rating removal needs a second admin: the request is stored (202).
+		{"POST", "/api/admin/moderation/rating-floods/remove", `{"release_id":1,"score":5,"window_start":"2026-10-01T10:00:00Z"}`, 202},
 		{"GET", "/api/admin/moderation/words", "", 200},
 		{"POST", "/api/admin/moderation/words", `{"word":"加微信","category":"ad"}`, 200},
 		{"POST", "/api/admin/moderation/words", `{"word":"!!!","category":"ad"}`, 400},
@@ -443,11 +447,16 @@ func TestModerationRoutes(t *testing.T) {
 	if m.actions[2].TargetType != "review" || m.actions[3].TargetType != "rating" {
 		t.Errorf("target types %+v", m.actions)
 	}
-	// Default actor and token check.
+	// Break-glass: ADMIN_TOKEN acts as "token:<X-Admin-User label>" and
+	// bypasses dual approval.
 	h2 := newCommunityServer(&stubCommunity{}, m, nil)
-	doH(h2, "POST", "/api/admin/moderation/danmaku/7/action", `{"action":"fold"}`, map[string]string{"Authorization": "Bearer admintok"})
-	if m.actions[len(m.actions)-1].Actor != "admin" {
-		t.Error("default actor")
+	doH(h2, "POST", "/api/admin/moderation/danmaku/7/action", `{"action":"fold"}`, map[string]string{"Authorization": "Bearer admintok", "X-Admin-User": "oncall"})
+	if a := m.actions[len(m.actions)-1].Actor; a != "token:oncall" {
+		t.Errorf("break-glass actor %q", a)
+	}
+	if rec := doH(h2, "POST", "/api/admin/moderation/rating-floods/remove", `{"release_id":1,"score":5,"window_start":"2026-10-01T10:00:00Z"}`,
+		map[string]string{"Authorization": "Bearer admintok"}); rec.Code != 200 {
+		t.Errorf("break-glass flood removal: %d", rec.Code)
 	}
 	if rec := doH(h2, "GET", "/api/admin/moderation/queue", "", nil); rec.Code != 401 {
 		t.Errorf("no token: %d", rec.Code)

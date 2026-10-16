@@ -1,7 +1,8 @@
 // Admin client for the compliance back office (PRD 11, 15): legal
 // documents (internal/api/legal.go), feedback (feedback.go) and copyright
 // takedowns (takedowns.go). Every path is under admin/*, so api() sends the
-// admin token and, on writes, X-Admin-User (操作人, review_events.actor).
+// admin session (cookie + X-Admin-CSRF); the signed-in admin is the
+// review_events actor.
 
 import {api} from './api';
 import type {LegalKind} from './compliance';

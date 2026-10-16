@@ -2,7 +2,7 @@ package api
 
 // Entity split (FINAL_DATA_DESIGN 5.5): separate a performer or release that
 // ingest built from two different real entities. All routes sit behind
-// ADMIN_TOKEN; the actor is X-Admin-User ("admin" when absent).
+// srv.admin; the actor is the authenticated admin.
 //
 //	GET  /api/admin/{performers|releases}/{id}/split-preview?source_records=1,2&media_links=javtiful
 //	POST /api/admin/{performers|releases}/{id}/split

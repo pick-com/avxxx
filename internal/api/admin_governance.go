@@ -3,7 +3,7 @@ package api
 // Crawl governance admin routes (FINAL_DATA_DESIGN 2.4, 7, 10.3): license /
 // terms review per source, phased job requests (baseline only on request,
 // page-capped verify), crawl checkpoints, and field priority policies. The
-// actor is X-Admin-User; every change is written to review_events.
+// actor is the authenticated admin (adminActor); every change is written to review_events.
 
 import (
 	"avxxx/internal/catalog"

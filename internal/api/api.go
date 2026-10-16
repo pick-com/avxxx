@@ -9,13 +9,14 @@ import (
 	"avxxx/internal/obs"
 	"avxxx/internal/oidc"
 	"avxxx/internal/store"
-	"crypto/subtle"
 	"encoding/json"
 	"errors"
 	"log/slog"
 	"net/http"
 	"os"
+	"strconv"
 	"strings"
+	"sync"
 
 	"github.com/jackc/pgx/v5"
 )
@@ -104,9 +105,19 @@ type Server struct {
 	// watchStatsCache holds each owner's summaries briefly.
 	watchStats      watchStatsStore
 	watchStatsCache *respCache
-	// adminToken is ADMIN_TOKEN, read once at construction. Empty disables
-	// every admin route (they all return 401).
-	adminToken string
+	// adminToken is ADMIN_TOKEN, the break-glass credential (admin_auth.go),
+	// read once at construction; ADMIN_TOKEN_DISABLED=true turns it off.
+	// Admin accounts sign in with password + TOTP instead: adminAuth backs
+	// sessions, the op log and approval requests, adminAccts the sign-in and
+	// AdminUsers routes (admin_users.go). adminSecureCookie marks the session
+	// cookie Secure (BASE_URL is https).
+	adminToken         string
+	adminTokenDisabled bool
+	adminAuth          adminAuthStore
+	adminAccts         adminAccountStore
+	adminSecureCookie  bool
+	approvalOnce       sync.Once
+	approvalMux        *http.ServeMux
 	// auth backs logout, password reset, OAuth and the /api/me account
 	// routes (auth.go); oidc holds the configured Google / Apple providers
 	// (GOOGLE_* / APPLE_*; empty = buttons hidden, routes 404). oauthHTTPS:
@@ -149,8 +160,12 @@ func Register(mux *http.ServeMux, s *store.Store, mediaHandler *media.Handler) {
 		}
 		srv.oauthHTTPS = strings.HasPrefix(strings.TrimSpace(os.Getenv("BASE_URL")), "https://")
 	}
+	srv.adminTokenDisabled, _ = strconv.ParseBool(strings.TrimSpace(os.Getenv("ADMIN_TOKEN_DISABLED")))
+	srv.adminSecureCookie = strings.HasPrefix(strings.TrimSpace(os.Getenv("BASE_URL")), "https://")
 	if s != nil {
 		srv.auth = s
+		srv.adminAuth = s
+		srv.adminAccts = s
 		srv.push = s
 		srv.accounts = s
 		srv.identity = s
@@ -209,6 +224,8 @@ func (srv *Server) routes() []route {
 	rs = append(rs, srv.mediaRoutes()...)
 	rs = append(rs, srv.playbackRoutes()...)
 	rs = append(rs, srv.adminRoutes()...)
+	rs = append(rs, srv.adminAuthRoutes()...)
+	rs = append(rs, srv.adminUserRoutes()...)
 	rs = append(rs, srv.adminGovernanceRoutes()...)
 	rs = append(rs, srv.adminReleaseRoutes()...)
 	rs = append(rs, srv.eventRoutes()...)
@@ -254,18 +271,6 @@ func reply(w http.ResponseWriter, v any, e error) {
 		return
 	}
 	json.NewEncoder(w).Encode(v)
-}
-
-// admin guards h with the ADMIN_TOKEN bearer token, compared in constant time.
-func (srv *Server) admin(h http.HandlerFunc) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		got := bearerToken(r)
-		if srv.adminToken == "" || got == "" || subtle.ConstantTimeCompare([]byte(got), []byte(srv.adminToken)) != 1 {
-			http.Error(w, "unauthorized", http.StatusUnauthorized)
-			return
-		}
-		h(w, r)
-	}
 }
 
 // bearerToken returns the token from an "Authorization: Bearer <token>"

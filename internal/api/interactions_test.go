@@ -72,7 +72,7 @@ func (s *stubInteractions) SetCommentLike(_ context.Context, _, _ int64, like bo
 
 func newInteractionServer(i *stubInteractions, c *stubCommunity, commentsOff bool) http.Handler {
 	srv := &Server{accounts: &stubAccounts{}, community: c, interactions: i, moderation: &stubModeration{},
-		limiter: community.NewMemoryLimiter(), adminToken: "admintok", commentsOff: commentsOff}
+		limiter: community.NewMemoryLimiter(), adminToken: "admintok", adminAuth: newFakeAdmins(), commentsOff: commentsOff}
 	mux := http.NewServeMux()
 	for _, rt := range srv.routes() {
 		mux.HandleFunc(rt.pattern, rt.handler)
@@ -264,12 +264,12 @@ func TestCommentsDisabled(t *testing.T) {
 
 func TestCommentModerationRoute(t *testing.T) {
 	m := &stubModeration{}
-	srv := &Server{accounts: &stubAccounts{}, moderation: m, adminToken: "admintok"}
+	srv := &Server{accounts: &stubAccounts{}, moderation: m, adminToken: "admintok", adminAuth: newFakeAdmins()}
 	mux := http.NewServeMux()
 	for _, rt := range srv.routes() {
 		mux.HandleFunc(rt.pattern, rt.handler)
 	}
-	admin := map[string]string{"Authorization": "Bearer admintok", "X-Admin-User": "mod"}
+	admin := adminAs("mod", "moderator")
 	rec := doH(mux, "POST", "/api/admin/moderation/comments/7/action", `{"action":"delete","reason":"spam"}`, admin)
 	if rec.Code != 200 || len(m.actions) != 1 || m.actions[0].TargetType != "comment" || m.actions[0].ID != 7 || m.actions[0].Actor != "mod" {
 		t.Fatalf("comment action: %d %+v", rec.Code, m.actions)

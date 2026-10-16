@@ -148,7 +148,7 @@ PRD 把 REEL 定位为面向大众的视频站：第 15 节「不面向 13 岁�
 | `AdminAudit` | 11 | 入库检查 + 夜间 8 条规则，按播放量排序，导出 CSV | 3.11 A5 | Alpha | 已覆盖；已实现 A 片源健康、C 元数据缺失、E 繁简与标题、H 收录检查（R-SEO，读 `seo.check` 报告）、G 统计重建（R-STATS：`reviews.likes`、`danmaku_curves.valid_count`、保留期内的 `search_query_daily` 按源重算并修复；热榜 plays 与 `release_curves` 只报告，年榜和保留期外的日报因原始事件 90 天清除只做单调 / 一致性检查）；B 水印、D 字幕、F 截屏缺数据，仍为桩 |
 | `AdminSearch` | 4.5、11 | 无结果词分类处理（补片、同义词、补英文标题、建预约页、加别名、跳帮助页）、修饰词、外部热点 | 3.4；3.13 `search_synonyms`、`search_redirects` | V1 | 已补充 |
 | `AdminOps` | 11 | 首页按天排期 + 自动补位、公告条（类型、语言 / 地区、定时）、举报（含时限）、版权投诉流程、弹幕与短评审核、刷分识别 | 3.8、3.11 | V1 | 已覆盖 |
-| `AdminUsers` | 11 | 用户检索与处罚、7 种角色矩阵、操作日志（含 IP）、双人审批、两步验证、登录失败锁定 | 3.6；角色数改为 7 | V1 | 已补充 |
+| `AdminUsers` | 11 | 用户检索与处罚、7 种角色矩阵、操作日志（含 IP）、双人审批、两步验证、登录失败锁定 | 3.6；角色数改为 7 | V1 | 已实现：`admin_users`（migration 042）、`internal/adminauth` 角色矩阵、`/api/admin` 路由权限表、双人审批、`admin_audit_log`、`/admin/users` `/admin/approvals` `/admin/oplog`；前台用户封禁 `user_bans` |
 | `AdminActors` | 6、17 | 信息完整度、即将上线作品、相似权重（预览后次日生效）、更正与隐藏申请（批准后重算） | 3.13 `release_performers` 即将上线、`similarity_weights` | Alpha | 已补充 |
 | `AdminI18n` | 8 | 翻译工作台、术语表、界面文字、状态计数 | 3.10；3.13 `glossary_terms`、`ui_strings` | Beta | 已补充 |
 

@@ -9,7 +9,7 @@ package api
 //	GET    /api/me/announcement-dismissals          ids the signed-in user dismissed
 //	PUT    /api/me/announcement-dismissals/{id}     dismiss one (signed in)
 //
-// AdminOps (ADMIN_TOKEN; X-Admin-User is the review_events actor):
+// AdminOps (srv.admin; the authenticated admin is the review_events actor):
 //
 //	GET    /api/admin/home-slots?from=&to=&slot_type=
 //	POST   /api/admin/home-slots

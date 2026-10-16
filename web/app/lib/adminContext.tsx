@@ -1,17 +1,22 @@
 import {createContext, useCallback, useContext, useEffect, useState} from 'react';
 import {isAbort} from './api';
 import {adminErrorText} from './adminApi';
+import type {AdminMe} from './adminUsersApi';
 
 export type AdminSession = {
-  /** True once an admin token is stored (it may still be wrong: pages show the 401). */
+  /** True once signed in (admin session or break-glass token); pages load only then. */
   hasToken: boolean;
-  /** Bumped whenever the token changes; pages reload on it. */
+  /** Bumped whenever the sign-in changes; pages reload on it. */
   epoch: number;
   /** Re-read badge counts in the sidebar after a page changed something. */
   refreshBadges: () => void;
+  /** GET admin/session: who is signed in and their permissions. */
+  me: AdminMe | null;
+  /** True when the admin holds "group:read" / "group:write" (break-glass holds all). */
+  can: (perm: string) => boolean;
 };
 
-export const AdminContext = createContext<AdminSession>({hasToken: false, epoch: 0, refreshBadges: () => {}});
+export const AdminContext = createContext<AdminSession>({hasToken: false, epoch: 0, refreshBadges: () => {}, me: null, can: () => false});
 export const useAdmin = () => useContext(AdminContext);
 
 /**

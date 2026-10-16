@@ -89,7 +89,7 @@ func (s *stubPerformers) SimilaritySeeds(context.Context, []int64, int) ([]store
 }
 
 func performerMux(st *stubPerformers, lim community.Limiter) *http.ServeMux {
-	srv := &Server{adminToken: "secret", performerEd: st, limiter: lim}
+	srv := &Server{adminToken: "secret", adminAuth: newFakeAdmins(), performerEd: st, limiter: lim}
 	mux := http.NewServeMux()
 	for _, rt := range srv.routes() {
 		mux.HandleFunc(rt.pattern, rt.handler)
@@ -146,8 +146,7 @@ func TestAdminPerformerStatusCodes(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			st := &stubPerformers{err: tc.err}
 			req := httptest.NewRequest(tc.method, tc.path, strings.NewReader(tc.body))
-			req.Header.Set("Authorization", "Bearer secret")
-			req.Header.Set("X-Admin-User", "alice")
+			asAdmin(req, "alice")
 			rec := httptest.NewRecorder()
 			performerMux(st, nil).ServeHTTP(rec, req)
 			if rec.Code != tc.want {
@@ -170,8 +169,7 @@ func TestAdminPerformerStatusCodes(t *testing.T) {
 func TestAdminPerformerHandlersPassInput(t *testing.T) {
 	st := &stubPerformers{}
 	do := func(method, path, body string) *httptest.ResponseRecorder {
-		req := httptest.NewRequest(method, path, strings.NewReader(body))
-		req.Header.Set("Authorization", "Bearer secret")
+		req := asAdmin(httptest.NewRequest(method, path, strings.NewReader(body)), "admin")
 		rec := httptest.NewRecorder()
 		performerMux(st, nil).ServeHTTP(rec, req)
 		return rec
@@ -267,7 +265,7 @@ func TestPerformerRequestLimitBehindProxy(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	srv := &Server{adminToken: "secret", performerEd: &stubPerformers{}, limiter: community.NewMemoryLimiter(), clientIP: ips}
+	srv := &Server{adminToken: "secret", adminAuth: newFakeAdmins(), performerEd: &stubPerformers{}, limiter: community.NewMemoryLimiter(), clientIP: ips}
 	mux := http.NewServeMux()
 	for _, rt := range srv.routes() {
 		mux.HandleFunc(rt.pattern, rt.handler)

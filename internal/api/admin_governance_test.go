@@ -54,16 +54,15 @@ func (f *fakeGovernance) EffectiveFieldOrder(context.Context, string, string) ([
 
 func doGovernance(t *testing.T, g governanceStore, method, target, body string, auth bool) (*httptest.ResponseRecorder, map[string]any) {
 	t.Helper()
-	srv := &Server{adminToken: "tok", governance: g}
+	srv := &Server{adminToken: "tok", adminAuth: newFakeAdmins(), governance: g}
 	mux := http.NewServeMux()
 	for _, rt := range srv.adminGovernanceRoutes() {
 		mux.HandleFunc(rt.pattern, rt.handler)
 	}
 	req := httptest.NewRequest(method, target, strings.NewReader(body))
 	if auth {
-		req.Header.Set("Authorization", "Bearer tok")
+		asAdmin(req, "alice")
 	}
-	req.Header.Set("X-Admin-User", "alice")
 	rec := httptest.NewRecorder()
 	mux.ServeHTTP(rec, req)
 	var out map[string]any

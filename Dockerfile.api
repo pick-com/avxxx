@@ -4,7 +4,7 @@ WORKDIR /src
 COPY go.mod go.sum ./
 RUN go mod download
 COPY . .
-RUN CGO_ENABLED=0 go build -o /out/api ./cmd/api && CGO_ENABLED=0 go build -o /out/scheduler ./cmd/scheduler && CGO_ENABLED=0 go build -o /out/scraper ./cmd/scraper && CGO_ENABLED=0 go build -o /out/audit ./cmd/audit && CGO_ENABLED=0 go build -o /out/notifier ./cmd/notifier
+RUN CGO_ENABLED=0 go build -o /out/api ./cmd/api && CGO_ENABLED=0 go build -o /out/scheduler ./cmd/scheduler && CGO_ENABLED=0 go build -o /out/scraper ./cmd/scraper && CGO_ENABLED=0 go build -o /out/audit ./cmd/audit && CGO_ENABLED=0 go build -o /out/notifier ./cmd/notifier && CGO_ENABLED=0 go build -o /out/admin ./cmd/admin
 
 FROM debian:bookworm-slim
 # The slim image has no CA bundle or zoneinfo: without them every outbound HTTPS
@@ -18,4 +18,5 @@ COPY --from=build /out/scheduler /usr/local/bin/scheduler
 COPY --from=build /out/scraper /usr/local/bin/scraper
 COPY --from=build /out/audit /usr/local/bin/audit
 COPY --from=build /out/notifier /usr/local/bin/notifier
+COPY --from=build /out/admin /usr/local/bin/admin
 USER app

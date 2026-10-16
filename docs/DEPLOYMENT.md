@@ -126,7 +126,7 @@ reel.example {
 新库（或从备份恢复的库）里，`license_status` 为 `review_required` / `manual_only`、或缺少 `terms_reviewed_at` / `terms_url` 的目录来源**不会被自动抓取**，只能手动跑 verify 任务（`catalog.Gate`，migration 024）；DMM（025）与 ThePornDB（032）来源默认停用且未审核。按来源逐一完成：
 
 1. **配置联系方式**：`.env` 有 `CATALOG_CONTACT`（URL 或邮箱，写进 User-Agent）。没有它，所有目录任务以 `config_error` 失败（RSS 照常）。
-2. **列出来源与门禁状态**：`curl -s -H "Authorization: Bearer $ADMIN_TOKEN" 127.0.0.1:8080/api/admin/sources | jq '(.items // .)[] | {id,name,adapter,source_kind,license_status,terms_url,terms_reviewed_at,automatic_allowed,gate_reason}'`（或后台「来源治理」页）。
+2. **列出来源与门禁状态**：`curl -s -H "Authorization: Bearer $ADMIN_TOKEN" -H "X-Admin-User: $USER" 127.0.0.1:8080/api/admin/sources | jq '(.items // .)[] | {id,name,adapter,source_kind,license_status,terms_url,terms_reviewed_at,automatic_allowed,gate_reason}'`（或后台「来源治理」页）。
 3. **阅读条款**：打开 `terms_url`（没有就先找到站点条款 / API 文档），确认允许自动化抓取元数据、频率限制和署名要求；检查 `robots.txt`（爬虫令牌 `avxxx-catalog`）。被禁止的来源设为 `denied`。
 4. **核对解析**：对允许的来源先跑一次 verify（不写目录）：`POST /api/admin/sources/{id}/jobs`（`{"phase":"verify"}`，最多 3 页），在后台查看 `result_counts.verify` 的字段覆盖率；凭据类来源先 dry-run：`docker compose run --rm scraper /usr/local/bin/scraper -dry-run -adapter dmm`（`theporndb` 同理）。
 5. **记录审核**：`PUT /api/admin/sources/{id}/license`，`{"license_status":"terms_confirmed","terms_url":"https://…","reviewed":true,"note":"条款要点、限速、署名"}`（官方 API 用 `official_api`）。每次审核写入 `review_events`。
@@ -136,6 +136,31 @@ reel.example {
 
 从备份恢复后，来源的审核状态随数据一起恢复；但如果恢复的是很旧的备份，重新确认第 3 步的条款没有变化再恢复自动抓取。
 
+### 2.7 后台账号：首个管理员、紧急令牌与停用
+
+后台用个人管理员账号登录（`/admin/login`：密码 + 身份验证器 6 位码），账号表 `admin_users` 与前台用户完全分开（migration 042）。7 种角色与权限矩阵见后台「用户与权限 → 角色矩阵」或 `internal/adminauth/roles.go`；每个 `/api/admin` 路由的权限在 `internal/api/admin_perms.go`，没有登记的新路由只有超级管理员能用（`go test ./internal/api -run TestAdminRoutePermissionsCoverEveryRoute` 会列出它们）。
+
+**会话与安全策略**：会话放在 HttpOnly、`SameSite=Strict`、`Path=/api/admin` 的 cookie 里（`BASE_URL` 为 https 时带 `Secure`），30 分钟无操作或登录 12 小时后失效；每个请求还要带 `X-Admin-CSRF: 1` 头。密码 argon2id、至少 12 个字符；同一账号连续失败 5 次（密码或验证码）锁定 1 分钟，此后每次失败翻倍，最长 1 小时；登录接口另按来源 IP 限 15 分钟 20 次。TOTP 密钥用 `ADMIN_TOTP_KEY`（AES-256-GCM）加密保存，同一步长的验证码不能重复使用；10 个恢复码只存哈希，每个用一次。
+
+1. **设置密钥**：vault 加 `admin_totp_key`（`openssl rand -hex 32`），重新执行 deploy.yml，`.env` 里出现 `ADMIN_TOTP_KEY`。api 和 `admin` 命令必须用同一个值；更换它会让已有的 TOTP 密钥无法解密，需要给每个管理员重置两步验证。未设置时密钥以明文存储，设置后会在下次登录时自动加密。
+2. **创建第一个超级管理员**（在主机上，交互输入密码，不回显、不进日志）：
+   ```bash
+   cd /opt/avxxx
+   docker compose run --rm -it api /usr/local/bin/admin create -username nc -email nc@example.com -name 倪
+   ```
+   命令打印 `otpauth://` 链接、手动输入用的密钥和 10 个恢复码（只显示这一次）。在验证器 App 里添加后，到 `https://<域名>/admin/login` 用用户名或邮箱、密码和 6 位码登录，第一次成功登录即完成绑定。恢复码离线保存。脚本化时可用 `-password-stdin` 从标准输入读一行密码。
+3. **其余管理员**：超级管理员在「用户与权限 → 后台账号」邀请（用户名、邮箱、角色），得到一个 72 小时有效的启用链接 `/admin/enroll#…`，通过可信渠道单独发给本人；对方在该页设置密码、绑定验证器并保存恢复码。
+4. **双人审批**：修改角色、重新启用已停用的账号、重置两步验证和「举报与审核」里批量删除刷分评分，发起后进入「待审批」（`/admin/approvals`），必须由另一位有相同权限的管理员批准后才执行（发起人不能批准自己的请求，72 小时未处理自动过期）。至少保留两位超级管理员，否则角色变更只能用紧急令牌批准。停用账号立即生效（同时注销其会话），不需要审批；系统不允许停用或降级最后一位在用的超级管理员。
+5. **手机丢失**：用恢复码登录后在「用户与权限 → 我的账号」重新生成恢复码；没有恢复码时，请另一位超级管理员在「后台账号」里重置两步验证（双人审批），批准后得到新的启用链接。
+6. **账号被锁**：等锁定时间过去，或在主机上 `docker compose run --rm api /usr/local/bin/admin unlock -username nc`；`admin list` 查看所有账号、角色和锁定状态。
+
+**紧急令牌（break-glass）**：`ADMIN_TOKEN` 仍可作为 `Authorization: Bearer` 使用，权限等同超级管理员、不走双人审批，用于账号体系不可用时和运维脚本（`npm run seo:check` 的上报）。每次使用（含只读请求）都写入操作日志（`admin_audit_log`，身份「紧急令牌」，记录路由、对象和来源 IP 的密钥哈希），API 日志也有一条 `admin break-glass token used`（含 `ip_hash`，不含令牌）。写操作的操作人记为 `token:<标签>`，标签取 `X-Admin-User` 头（只用可打印 ASCII，最多 64 字符，缺省 `unlabelled`）；该头不再作为个人账号的操作人。后台登录页下方「紧急令牌」链接可在浏览器里临时使用它（只存在当前标签页）。
+
+- **停用**：建立至少两位超级管理员后，在 vault 设 `admin_token_disabled: true` 并重新部署（`.env` 中 `ADMIN_TOKEN_DISABLED=true`），令牌立即全部 401（尝试会记一条警告日志）。注意每日 SEO 检查也用该令牌上报收录健康分；停用后它的上报会被拒绝（页面检查仍会运行），需要时临时打开或暂停 `seo_check_enabled`。
+- **轮换**：改 vault 的 `admin_token` 后重新部署；用 `GET /api/admin/audit-log?auth=token` 或后台「操作日志」按身份「紧急令牌」检查最近的使用记录。
+
+**操作日志**：后台「操作日志」（`/admin/oplog`，仅超级管理员）可按关键词、操作人、身份、对象和时间搜索；内容包括所有写操作、所有紧急令牌请求、读取前台用户和版权投诉等个人数据的请求、登录成功与失败。字段级的修改前后值仍在 `review_events`。
+
 ## 3. 密钥与配置清单
 
 全部放在 Ansible vault（`secrets.vault.yml`），deploy.yml 渲染到主机 `/opt/avxxx/.env`（0600，属部署用户）。仓库、inventory、文档里都不出现真实值。生成随机值：`openssl rand -hex 32`（URL 安全，可直接放进连接串）。
@@ -143,7 +168,9 @@ reel.example {
 | vault 变量 | `.env` 变量 | 必需 | 用途 / 说明 |
 | --- | --- | --- | --- |
 | `postgres_password` | `POSTGRES_PASSWORD`、`DATABASE_URL` | 是 | 数据库密码。只在 `pgdata` 卷**首次初始化**时生效；`database_url` 默认由它派生（vars.yml），已初始化的库改密码需 `ALTER USER` 后再改 vault |
-| `admin_token` | `ADMIN_TOKEN` | 是 | `/api/admin/*` 的 Bearer 令牌；为空时后台全部 401。SEO 检查 cron 也用它上报 |
+| `admin_token` | `ADMIN_TOKEN` | 建议 | 紧急令牌（break-glass，2.7）：`/api/admin/*` 的 Bearer，等同超级管理员，每次使用记入操作日志。SEO 检查 cron 用它上报；为空时只能用个人账号登录 |
+| `admin_token_disabled` | `ADMIN_TOKEN_DISABLED` | 否 | `true` 时紧急令牌全部 401（默认 false）；有两位以上超级管理员后建议开启 |
+| `admin_totp_key` | `ADMIN_TOTP_KEY` | 是 | 加密管理员 TOTP 密钥的键（AES-256-GCM）；api 与 `admin` 命令用同一值。更换后需重置所有人的两步验证 |
 | `public_base_url` / `base_url` | `PUBLIC_BASE_URL` / `BASE_URL` | 是 | 对外 origin（`https://reel.example`）；SSR canonical/站点地图、通知里的链接 |
 | `catalog_contact` | `CATALOG_CONTACT` | 抓取需要 | 爬虫 User-Agent 联系方式；空则目录任务 `config_error` |
 | `log_hash_key` | `LOG_HASH_KEY` | 建议 | 日志中用户 id 的 HMAC 键；空则每次重启随机（哈希不可跨重启关联） |
@@ -157,7 +184,7 @@ reel.example {
 
 非密钥的部署开关（`-e` 传入或写在 vault 里）：`monitoring_enabled`、`backup_cron_enabled`、`backup_keep_days`（默认 14）、`backup_cron_hour` / `backup_cron_minute`、`seo_check_enabled`（默认 true）、`git_branch`、`trusted_proxies`（`TRUSTED_PROXIES`，默认空；见 2.5）。
 
-轮换：改 vault → 重新执行 deploy.yml（重新渲染 `.env`，`docker compose up -d` 只重建配置变化的服务）。`ADMIN_TOKEN` 轮换后同步更新使用它的人和脚本；`LOG_HASH_KEY` 轮换会断开新旧日志的用户哈希关联。
+轮换：改 vault → 重新执行 deploy.yml（重新渲染 `.env`，`docker compose up -d` 只重建配置变化的服务）。`ADMIN_TOKEN` 轮换后同步更新使用它的脚本（2.7）；`LOG_HASH_KEY` 轮换会断开新旧日志的用户哈希关联。
 
 ## 4. 发布与回滚
 

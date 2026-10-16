@@ -61,7 +61,18 @@ func errorStatus(e error) (int, string) {
 	var ve *store.ValidationError
 	var ae *store.AgeGateError
 	var gr *store.GateRefusal
+	var le *store.AdminLockedError
 	switch {
+	case errors.As(e, &le):
+		return http.StatusTooManyRequests, le.Error()
+	case errors.Is(e, store.ErrAccountBanned):
+		return http.StatusForbidden, store.ErrAccountBanned.Error()
+	case errors.Is(e, store.ErrAdminCredentials):
+		return http.StatusUnauthorized, store.ErrAdminCredentials.Error()
+	case errors.Is(e, store.ErrAdminChallenge):
+		return http.StatusUnauthorized, store.ErrAdminChallenge.Error()
+	case errors.Is(e, store.ErrAdminInvite):
+		return http.StatusNotFound, store.ErrAdminInvite.Error()
 	case errors.As(e, &gr):
 		return http.StatusConflict, gr.Error()
 	case errors.As(e, &he):

@@ -10,12 +10,12 @@ import {
   adminNotDuplicate,
   adminUndoMerge,
   isMissingEndpoint,
-  tokens,
   type EntityType,
   type GenerateStats,
   type IdentityCandidate,
   type MergeResult,
 } from '../lib/api';
+import {useAdmin} from '../lib/adminContext';
 
 export const meta = () => [{title: 'REEL · 重复与归并'}];
 
@@ -30,7 +30,6 @@ export const meta = () => [{title: 'REEL · 重复与归并'}];
 // TODO(PRD 11): 合并为新片源 vs 合并为其他版本 for videos (the backend has one merge).
 
 const RECENT_KEY = 'admin_recent_merges';
-const ACTOR_KEY = 'admin_actor';
 const RECENT_MAX = 20;
 
 type RecentMerge = MergeResult & {at: string};
@@ -161,13 +160,14 @@ export default function AdminDedupe() {
   const [message, setMessage] = useState<ReactNode>(null);
   const [stats, setStats] = useState<Record<string, GenerateStats> | null>(null);
   const [recent, setRecent] = useState<RecentMerge[]>([]);
-  const [actor, setActor] = useState('');
+  const {hasToken, epoch, me} = useAdmin();
+  // The actor is the signed-in admin (the API ignores any actor in the body).
+  const actor = me?.actor ?? '';
   const [reason, setReason] = useState('');
   const [undoId, setUndoId] = useState('');
 
   useEffect(() => {
     setRecent(readJSON<RecentMerge[]>(RECENT_KEY, []));
-    setActor(readJSON<string>(ACTOR_KEY, ''));
   }, []);
 
   const load = async (type: EntityType = kind) => {
@@ -188,12 +188,11 @@ export default function AdminDedupe() {
   };
 
   useEffect(() => {
-    if (tokens.admin()) void load(kind);
+    if (hasToken) void load(kind);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [kind]);
+  }, [kind, hasToken, epoch]);
 
-  const body = () => ({actor: actor.trim() || undefined, reason: reason.trim() || undefined});
-  const rememberActor = () => writeJSON(ACTOR_KEY, actor.trim());
+  const body = () => ({reason: reason.trim() || undefined});
 
   const dropCandidate = (id: number) => {
     const index = candidates.findIndex(c => c.id === id);
@@ -226,7 +225,6 @@ export default function AdminDedupe() {
     setBusy(true);
     setError('');
     setMessage(null);
-    rememberActor();
     try {
       const result = await adminMergeCandidate(candidate.id, targetId, body());
       pushRecent(result);
@@ -248,7 +246,6 @@ export default function AdminDedupe() {
     setBusy(true);
     setError('');
     setMessage(null);
-    rememberActor();
     try {
       const result = await adminNotDuplicate(candidate.id, body());
       dropCandidate(candidate.id);
@@ -269,7 +266,6 @@ export default function AdminDedupe() {
     setBusy(true);
     setError('');
     setMessage(null);
-    rememberActor();
     try {
       const result = await adminUndoMerge(eventId, body());
       dropRecent(eventId);
@@ -292,9 +288,8 @@ export default function AdminDedupe() {
     setBusy(true);
     setError('');
     setMessage(null);
-    rememberActor();
     try {
-      const result = await adminGenerateCandidates(kind, {actor: actor.trim() || undefined});
+      const result = await adminGenerateCandidates(kind, {});
       setStats(result ?? {});
       await load(kind);
     } catch (cause) {
@@ -320,7 +315,7 @@ export default function AdminDedupe() {
           <button type="button" className="btn btn-secondary btn-sm" disabled={busy} onClick={() => void load(kind)}>
             {busy ? '加载中…' : '刷新候选'}
           </button>
-          <span className="muted">操作人：{actor || 'admin'}（在左侧栏设置）</span>
+          <span className="muted">操作人：{actor}</span>
         </div>
 
         {error && <ErrorBanner error={error} onRetry={() => void load(kind)} />}

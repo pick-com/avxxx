@@ -7,7 +7,7 @@
 //   reports.go           completeness report (JSON + CSV)
 //   sitemap.go           latest SEO check run (收录健康分)
 
-import {ApiError, api, isMissingEndpoint, tokens} from './api';
+import {ApiError, adminRequestHeaders, api, isMissingEndpoint} from './api';
 import type {IngestSource} from './adminApi';
 
 const enc = encodeURIComponent;
@@ -329,9 +329,7 @@ export const getCompleteness = (q: CompletenessQuery, signal?: AbortSignal) =>
 
 /** Fetches the CSV export with the admin token and hands it to the browser as a download. */
 export async function downloadCompletenessCSV(q: CompletenessQuery): Promise<void> {
-  const headers = new Headers({Accept: 'text/csv'});
-  const token = tokens.admin();
-  if (token) headers.set('Authorization', `Bearer ${token}`);
+  const headers = adminRequestHeaders(new Headers({Accept: 'text/csv'}));
   const res = await fetch(`/api/admin/reports/completeness${qs({...q, format: 'csv'})}`, {headers});
   if (!res.ok) {
     const text = (await res.text()).trim().slice(0, 300);
@@ -342,7 +340,7 @@ export async function downloadCompletenessCSV(q: CompletenessQuery): Promise<voi
     } catch {
       /* plain text */
     }
-    throw new ApiError(res.status === 401 ? '管理员令牌无效或未设置' : `导出失败（${res.status}）`, res.status, detail);
+    throw new ApiError(res.status === 401 ? '登录已过期，请重新登录后台' : `导出失败（${res.status}）`, res.status, detail);
   }
   const blob = await res.blob();
   const url = URL.createObjectURL(blob);

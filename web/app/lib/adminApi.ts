@@ -1,6 +1,6 @@
 // Typed client for the admin back office (PRD 11). Every path is under
-// admin/*, so api() sends only the admin token, plus X-Admin-User (操作人)
-// on writes. Shapes mirror internal/api + internal/store on the backend:
+// admin/*, so api() sends the admin session (cookie + X-Admin-CSRF; the
+// signed-in admin is the actor). Shapes mirror internal/api + internal/store on the backend:
 //   admin_audit.go   dashboard, audit issues, audit run, playback source health
 //   admin.go         ingest sources, jobs, crawl policies
 //   admin_release.go release editor (PR #61; may 404 on older backends)
@@ -36,7 +36,8 @@ const itemsOf = <T,>(d: ItemsBody<T> | null) => d?.items ?? [];
 /** Human text for an admin failure: the raw server message when there is one. */
 export function adminErrorText(cause: unknown): string {
   if (cause instanceof ApiError) {
-    if (cause.status === 401) return '管理员令牌无效或未设置';
+    if (cause.status === 401) return '登录已过期，请重新登录后台';
+    if (cause.status === 403) return '当前角色没有此操作的权限';
     if (isMissingEndpoint(cause) && !cause.detail) return '后端未部署该接口';
     return cause.detail && cause.detail !== cause.message ? `${cause.message}：${cause.detail}` : cause.message;
   }
@@ -479,8 +480,9 @@ export const moderate = (target: ModerationTarget, id: number, body: {action: Mo
   );
 export const resolveReport = (id: number, status: 'resolved' | 'dismissed', resolution: string) =>
   api<Report>(`admin/moderation/reports/${id}/resolve`, {method: 'POST', body: {status, resolution}});
+/** Bulk removal needs a second admin: a signed-in admin gets {approval_required} (202) and the request waits in /admin/approvals. */
 export const removeRatingFlood = (f: {release_id: number; score: number; window_start: string; reason?: string}) =>
-  api<{removed: number}>('admin/moderation/rating-floods/remove', {method: 'POST', body: f});
+  api<{removed: number} | {approval_required: true; approval: {id: number}}>('admin/moderation/rating-floods/remove', {method: 'POST', body: f});
 export const getModerationWords = () => api<ItemsBody<Keyword>>('admin/moderation/words').then(itemsOf);
 export const addModerationWord = (word: string, category: string) =>
   api<Keyword>('admin/moderation/words', {method: 'POST', body: {word, category}});

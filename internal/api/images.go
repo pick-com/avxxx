@@ -10,7 +10,7 @@ package api
 // ({url,width,height,srcset}) when a visible image is stored; the fields
 // are omitted otherwise, so older clients are unaffected.
 //
-// Admin (X-Admin-User is the actor; changes write review_events):
+// Admin (the authenticated admin is the actor; changes write review_events):
 //
 //	GET  /api/admin/media?entity_type=release&entity_id=42
 //	POST /api/admin/media/{id}/suppress {"reason": "..."}

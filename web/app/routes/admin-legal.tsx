@@ -16,7 +16,7 @@ export const meta = () => [{title: 'REEL · 法律文本'}];
 // version. A version number belongs to the document kind: a translation is
 // a draft with the same version in another language and inherits that
 // version's effective date. Every write is a review_events row with the
-// 操作人 (X-Admin-User). Body text is Markdown: `## 标题 {#anchor}`, blank
+// signed-in admin as 操作人. Body text is Markdown: `## 标题 {#anchor}`, blank
 // lines between paragraphs, `- ` lists, **bold**, [text](https://…).
 
 const KIND_LABELS: Record<string, string> = {

@@ -122,9 +122,9 @@ type identityStore interface {
 	ResolveMergedSlug(ctx context.Context, entityType, slug string) (string, bool, error)
 }
 
-// reviewInput is the optional JSON body of identity decisions. Admin auth is
-// a shared token, so actor is a self-declared label recorded in
-// review_events.actor ("admin" when omitted).
+// reviewInput is the optional JSON body of identity decisions. The actor is
+// always the authenticated admin (adminActor); an "actor" field in the body
+// is accepted for older clients and ignored.
 type reviewInput struct {
 	TargetID   int64  `json:"target_id"`
 	EntityType string `json:"entity_type"`
@@ -139,12 +139,13 @@ func decodeReview(w http.ResponseWriter, r *http.Request) (reviewInput, error) {
 	if err := json.NewDecoder(r.Body).Decode(&in); err != nil && !errors.Is(err, io.EOF) {
 		return in, badRequest("invalid JSON body", err)
 	}
-	in.Actor = strings.TrimSpace(in.Actor)
-	if in.Actor == "" {
-		in.Actor = "admin"
+	actor, err := adminActor(r)
+	if err != nil {
+		return in, err
 	}
-	if len(in.Actor) > 100 || len(in.Reason) > 2000 {
-		return in, badRequest("actor or reason too long", nil)
+	in.Actor = actor
+	if len(in.Reason) > 2000 {
+		return in, badRequest("reason too long", nil)
 	}
 	return in, nil
 }
@@ -244,7 +245,7 @@ func (srv *Server) conflicts(w http.ResponseWriter, r *http.Request) {
 // resolveConflict settles a pending field conflict. Body:
 // {"value": <json>, "source_record_id": n, "note": "..."}; value may be
 // omitted when source_record_id is given (adopt that source's value). The
-// actor is X-Admin-User. 400 for an unreviewable field or a bad value, 404
+// actor is the authenticated admin. 400 for an unreviewable field or a bad value, 404
 // for an unknown conflict, 409 when it is no longer pending.
 func (srv *Server) resolveConflict(w http.ResponseWriter, r *http.Request) {
 	id, err := pathID(r)

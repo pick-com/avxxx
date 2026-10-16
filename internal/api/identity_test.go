@@ -59,7 +59,7 @@ func (s *stubIdentity) ResolveMergedSlug(_ context.Context, typ, slug string) (s
 }
 
 func identityServer(st *stubIdentity) http.Handler {
-	srv := &Server{identity: st, adminToken: "secret"}
+	srv := &Server{identity: st, adminToken: "secret", adminAuth: newFakeAdmins()}
 	mux := http.NewServeMux()
 	for _, rt := range srv.routes() {
 		mux.HandleFunc(rt.pattern, rt.handler)
@@ -82,14 +82,14 @@ func TestIdentityHandlers(t *testing.T) {
 		{"generate performer", "/api/admin/identity-candidates/generate", `{"entity_type":"performer"}`, nil, 200, "Generate", "", 0},
 		{"generate bad type", "/api/admin/identity-candidates/generate", `{"entity_type":"studio"}`, nil, 400, "", "", 0},
 		{"merge default", "/api/admin/identity-candidates/5/merge", "", nil, 200, "Merge", "admin", 0},
-		{"merge target", "/api/admin/identity-candidates/5/merge", `{"target_id":3,"actor":"kim","reason":"same code"}`, nil, 200, "Merge", "kim", 3},
+		{"merge target", "/api/admin/identity-candidates/5/merge", `{"target_id":3,"actor":"kim","reason":"same code"}`, nil, 200, "Merge", "admin", 3},
 		{"merge bad id", "/api/admin/identity-candidates/x/merge", "", nil, 400, "", "", 0},
 		{"merge bad json", "/api/admin/identity-candidates/5/merge", `{`, nil, 400, "", "", 0},
 		{"merge missing", "/api/admin/identity-candidates/5/merge", "", pgx.ErrNoRows, 404, "Merge", "admin", 0},
 		{"merge decided", "/api/admin/identity-candidates/5/merge", "", &store.ConflictError{Msg: "candidate 5 is already merged"}, 409, "Merge", "admin", 0},
 		{"merge wrong target", "/api/admin/identity-candidates/5/merge", `{"target_id":99}`, store.ErrInvalidMergeTarget, 400, "Merge", "admin", 99},
 		{"merge db failure", "/api/admin/identity-candidates/5/merge", "", errors.New("boom"), 500, "Merge", "admin", 0},
-		{"not duplicate", "/api/admin/identity-candidates/5/not-duplicate", `{"actor":" ana "}`, nil, 200, "NotDuplicate", "ana", 0},
+		{"not duplicate", "/api/admin/identity-candidates/5/not-duplicate", `{"actor":" ana "}`, nil, 200, "NotDuplicate", "admin", 0},
 		{"not duplicate decided", "/api/admin/identity-candidates/5/not-duplicate", "", &store.ConflictError{Msg: "x"}, 409, "NotDuplicate", "admin", 0},
 		{"undo", "/api/admin/merges/9/undo", "", nil, 200, "Undo", "admin", 0},
 		{"undo twice", "/api/admin/merges/9/undo", "", &store.ConflictError{Msg: "merge 9 was already undone"}, 409, "Undo", "admin", 0},
@@ -99,8 +99,7 @@ func TestIdentityHandlers(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			st := &stubIdentity{err: tt.err}
-			req := httptest.NewRequest("POST", tt.path, strings.NewReader(tt.body))
-			req.Header.Set("Authorization", "Bearer secret")
+			req := asAdmin(httptest.NewRequest("POST", tt.path, strings.NewReader(tt.body)), "admin")
 			rec := httptest.NewRecorder()
 			identityServer(st).ServeHTTP(rec, req)
 			if rec.Code != tt.want {
