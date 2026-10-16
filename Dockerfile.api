@@ -7,6 +7,11 @@ COPY . .
 RUN CGO_ENABLED=0 go build -o /out/api ./cmd/api && CGO_ENABLED=0 go build -o /out/scheduler ./cmd/scheduler && CGO_ENABLED=0 go build -o /out/scraper ./cmd/scraper && CGO_ENABLED=0 go build -o /out/audit ./cmd/audit && CGO_ENABLED=0 go build -o /out/notifier ./cmd/notifier
 
 FROM debian:bookworm-slim
+# The slim image has no CA bundle or zoneinfo: without them every outbound HTTPS
+# call (catalog crawl, media resolve, Web Push, SMTP STARTTLS) fails with
+# "x509: certificate signed by unknown authority", and TZ names don't load.
+COPY --from=build /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/ca-certificates.crt
+COPY --from=build /usr/share/zoneinfo /usr/share/zoneinfo
 RUN useradd --system --create-home app
 COPY --from=build /out/api /usr/local/bin/api
 COPY --from=build /out/scheduler /usr/local/bin/scheduler
