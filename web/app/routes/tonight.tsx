@@ -74,7 +74,7 @@ export default function TonightPage() {
   const navigate = useNavigate();
   const location = useLocation();
   const {status} = useAuth();
-  const {setLater, later} = useSocial();
+  const {setLater, later, refreshLater} = useSocial();
   const mobile = useMediaQuery('(max-width: 767px)');
   const [filters, setFilters] = useState<Filters>({duration: 'any', mood: 'any', who: 'self'});
   // Ids swapped away or marked watched in this session (sent as exclude).
@@ -163,7 +163,8 @@ export default function TonightPage() {
     try {
       const seconds = (pick.runtime_minutes ?? 0) * 60;
       // A finished row: progress = duration (an unknown runtime still records the watch).
-      await saveWatchProgress(pick.slug, seconds || 1, seconds || 1);
+      const saved = await saveWatchProgress(pick.slug, seconds || 1, seconds || 1);
+      if (saved?.later_removed) refreshLater();
       flash(t('tonight.watchedSaved'));
       advance(pick, false);
     } catch (cause) {
