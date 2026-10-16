@@ -955,3 +955,51 @@ button.ep-item:hover {
   line-height: 20px;
   text-align: center;
 }
+
+/* A-B loop (lib/playerLoop.ts): the looped span and its A / B flags. */
+.pc-ab-range {
+  position: absolute;
+  top: -2px;
+  bottom: -2px;
+  border-radius: 2px;
+  background: rgba(242, 169, 59, 0.28);
+  box-shadow: inset 0 0 0 1px rgba(242, 169, 59, 0.6);
+  pointer-events: none;
+}
+
+.pc-ab-mark {
+  position: absolute;
+  bottom: calc(100% + 6px);
+  transform: translateX(-50%);
+  min-width: 16px;
+  padding: 0 3px;
+  border-radius: 3px;
+  background: #f2a93b;
+  color: #111;
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 14px;
+  text-align: center;
+  pointer-events: none;
+}
+
+.pc-ab-mark::after {
+  content: '';
+  position: absolute;
+  left: 50%;
+  top: 100%;
+  width: 1px;
+  height: 6px;
+  background: #f2a93b;
+}
+
+/* 播放 tab of the settings sheet (PlayerPlaybackPanel). */
+.pp-panel {
+  padding: 4px 4px 12px;
+}
+
+.pp-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
