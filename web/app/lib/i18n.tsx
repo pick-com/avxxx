@@ -3,6 +3,7 @@ import {useLocation, useNavigate} from 'react-router';
 import {setUiLang as setAnalyticsLang} from './analytics';
 import {setContentLang as setApiContentLang, type LangCode} from './api';
 import {setFormatLocale} from './format';
+import {withBundled} from './locales';
 import {DEFAULT_LANG, isLang, isPrefixable, localizePath, normalizeLang, splitLangPath, stripLang, writeLangCookie} from './langs';
 import {zhCN, type MessageKey} from './messages.zh-CN';
 import {isServer, renderScope} from './scope';
@@ -34,7 +35,9 @@ import {useSettings} from './settings';
 // picked a content language different from their UI language in settings.
 //
 // UI strings: the bundled zh-CN dictionary (messages.zh-CN.ts) is the source
-// and the fallback for every key. Other languages load GET /api/i18n/ui/{lang}
+// and the fallback for every key. Other languages start from their bundled
+// translations (app/locales/{lang}.json, lib/locales.ts; zh-TW has none yet)
+// overlaid with reviewed strings from GET /api/i18n/ui/{lang}
 // (a flat key → string map of reviewed strings): on the server through a
 // short in-memory cache (lib/api.server.ts), in the browser through
 // localStorage with its ETag, revalidated with If-None-Match. A 404 or a
@@ -143,11 +146,11 @@ export async function loadUiDict(lang: LangCode): Promise<Messages> {
   const cached = readDict(lang);
   if (cached) {
     void fetchDict(lang, cached).then(fresh => fresh && writeDict(lang, fresh));
-    return cached.strings;
+    return withBundled(lang, cached.strings);
   }
   const fresh = await fetchDict(lang, null);
   if (fresh) writeDict(lang, fresh);
-  return fresh?.strings ?? {};
+  return withBundled(lang, fresh?.strings ?? {});
 }
 
 /** Keeps the server-rendered dictionary for the next client-side visit. */

@@ -11,6 +11,7 @@
 import {ApiError, localizeBody, type LangCode} from './api';
 import {cleanStrings, type Messages} from './i18n';
 import {DEFAULT_LANG} from './langs';
+import {withBundled} from './locales';
 
 const apiBase = () => (process.env.API_INTERNAL_URL || 'http://127.0.0.1:8080').replace(/\/+$/, '');
 const timeoutMs = () => {
@@ -58,9 +59,21 @@ export const isGone = (e: unknown) => e instanceof ApiError && (e.status === 404
 
 const DICT_TTL_MS = 5 * 60 * 1000;
 const dicts = new Map<LangCode, {at: number; strings: Messages; pending?: Promise<Messages>}>();
+const merged = new WeakMap<Messages, Messages>();
 
+/** The page dictionary: bundled translations (lib/locales.ts) under the reviewed API strings. */
 export async function serverUiDict(lang: LangCode): Promise<Messages> {
   if (lang === DEFAULT_LANG) return {};
+  const reviewed = await reviewedUiDict(lang);
+  let dict = merged.get(reviewed);
+  if (!dict) {
+    dict = await withBundled(lang, reviewed);
+    merged.set(reviewed, dict);
+  }
+  return dict;
+}
+
+async function reviewedUiDict(lang: LangCode): Promise<Messages> {
   const hit = dicts.get(lang);
   const now = Date.now();
   if (hit && now - hit.at < DICT_TTL_MS) return hit.strings;

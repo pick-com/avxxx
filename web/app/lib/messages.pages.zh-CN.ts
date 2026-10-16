@@ -290,7 +290,7 @@ export const pagesZhCN = {
   'welcome.skip': '跳过',
   'welcome.finish': '完成，开始看',
   'welcome.next': '下一步',
-  'welcome.uiLang': '界面语言（目前只有简体中文，其他语言陆续上线）',
+  'welcome.uiLang': '界面语言',
   'welcome.contentLang': '内容语言（标题、简介、演员名、标签）',
   'welcome.noTags': '暂时没有可选的类型，可以直接下一步。',
   'welcome.tagsGroup': '类型',

@@ -15,7 +15,6 @@ export const playerZhCN = {
   'pc.unmute': '取消静音 (M)',
   'pc.showRemaining': '显示剩余时间',
   'pc.showElapsed': '显示已播放时间',
-  'pc.remaining': '剩余 {time}',
   'pc.settings': '设置',
   'pc.captionsOn': '打开字幕 (C)',
   'pc.captionsOff': '关闭字幕 (C)',
@@ -41,7 +40,6 @@ export const playerZhCN = {
   'pc.rateTo': '倍速 {rate}',
   'pc.toStart': '回到开头',
   'pc.toEnd': '跳到结尾',
-  'pc.volumeTo': '音量 {n}%',
   'pc.keysHint': '空格 播放/暂停 · ← → 5 秒 · J L 10 秒 · 0–9 跳转 · , . 逐帧 · < > 倍速 · F 全屏 · M 静音 · C 字幕',
 
   // mini player (MobileHome M1)

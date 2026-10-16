@@ -9,7 +9,6 @@ export const recsZhCN = {
   // Home (NavHome / MobileHome)
   'home.forYou': '为你推荐',
   'home.forYouSub': '根据你的观看记录',
-  'home.forYouVisitorSub': '大家都在看',
   'home.followedNew': '你关注的演员有新作',
   'home.followedNewSub': '{names} 等',
   'home.weekTrending': '本周热门',
@@ -41,7 +40,6 @@ export const recsZhCN = {
   'trending.year': '年度',
   'trending.periods': '榜单周期',
   'trending.updated': '每小时更新 · 按播放量、完播率、增长速度综合计算',
-  'trending.updatedAt': '更新于 {time}',
   'trending.new': '新上榜',
   'trending.movementUp': '上升 {n} 名',
   'trending.movementDown': '下降 {n} 名',
@@ -54,14 +52,12 @@ export const recsZhCN = {
   'trending.more': '加载更多',
   'trending.actors': '演员热度榜',
   'trending.actorsAll': '全部',
-  'trending.heat': '热度 {n}',
 
   // Release page 接下来播放
   'related.tabs': '推荐分类',
   'related.all': '相关推荐',
   'related.performer': '同演员',
   'related.series': '同系列',
-  'related.queueEnd': '稍后观看列表播完后',
 
   // Performer page / actor library
   'performer.similar': '相似演员',
@@ -108,7 +104,6 @@ export const recsZhCN = {
   'tonight.empty': '没有符合条件的作品',
   'tonight.emptyBody': '换个时长试试，或者清空已换掉的。',
   'tonight.reset': '重新开始',
-  'tonight.loginNeeded': '登录后才能加入稍后观看或记为看过',
   'tonight.failed': '操作失败，请重试',
   'tonight.rating': '{n} 分',
 
