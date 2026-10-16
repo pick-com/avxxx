@@ -88,6 +88,10 @@ func (s *Service) Resolve(ctx context.Context, source, id string) (*ResolveResul
 			return nil, errors.New("resolver returned an invalid stream URL")
 		}
 	}
+	// Signed URLs that carry their expiry cap how long the result is cached.
+	now := time.Now()
+	fillStreamExpiry(result.Streams, now)
+	fillStreamExpiry(result.Subtitles, now)
 	return result, nil
 }
 
