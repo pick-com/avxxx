@@ -1,6 +1,7 @@
 import {useCallback, useEffect, useId, useMemo, useRef, useState, type ReactNode} from 'react';
 import type HlsType from 'hls.js';
-import {ApiError, getPlayConfig, getPlayback, resolvePlayback, saveWatchProgress} from '../lib/api';
+import {ApiError, getPlayConfig, getPlayback, resolvePlayback, saveWatchProgress, type Stream} from '../lib/api';
+import {pickRefreshedStream, shouldRefreshStream, type StreamFailure} from '../lib/streamRefresh';
 import {currentPage, entryFrom, track} from '../lib/analytics';
 import {useAuth} from '../lib/auth';
 import {useSocial} from '../lib/social';
@@ -56,7 +57,9 @@ type LockableOrientation = ScreenOrientation & {lock?: (orientation: string) => 
  * starts alternate versions (其他版本) from 0 (PRD 5.2). A fatal error moves
  * to the next source and says so (States 04). When play-config is missing
  * (404 before the backend lands) or has nothing playable, the player falls
- * back silently to GET playback?source=javtiful + POST resolve_path.
+ * back silently to GET playback?source=javtiful + POST resolve_path. A
+ * resolved stream that fails (expired cached token) is re-resolved once with
+ * ?refresh=1 and retried from the same position (lib/streamRefresh.ts).
  *
  * HLS: hls.js is loaded (as a separate chunk) only for an HLS stream in a
  * browser without native HLS; Safari plays HLS natively. Quality levels and
@@ -464,6 +467,7 @@ export function Player({slug, releaseId, title, resumeAt, startAt, onBack, theat
     try {
       const result = await resolvePlayback(info.data.resolve_path);
       if (result.length === 0) throw new Error(t('player.noStream'));
+      resolvedStreams.current = result;
       pendingSeek.current = resumeFrom;
       resumeToastArmed.current = resumeFrom > 0;
       setEntries(entriesFromStreams(result, info.data.source === 'javtiful' ? 'Javtiful' : info.data.source));
@@ -543,7 +547,49 @@ export function Player({slug, releaseId, title, resumeAt, startAt, onBack, theat
     [stream],
   );
 
-  const onVideoError = () => {
+  // Refresh-on-failure (legacy path, lib/streamRefresh.ts): a resolved URL
+  // may come from the server's resolve cache with an expired token. Ask for
+  // a fresh resolve once per URL and retry from the same position before
+  // failing over. Play-config sources keep the automatic source switch.
+  const resolvedStreams = useRef<Stream[]>([]);
+  const refreshTried = useRef(new Set<string>());
+  const refreshing = useRef(false);
+  useEffect(() => {
+    resolvedStreams.current = [];
+    refreshTried.current = new Set();
+    refreshing.current = false;
+  }, [slug]);
+  const refreshStream = async (failedEntry: PlayEntry, resolvePath: string, provider: string) => {
+    const tried = refreshTried.current;
+    tried.add(failedEntry.url);
+    refreshing.current = true;
+    const at = videoRef.current?.currentTime || sharedPos.current || pendingSeek.current;
+    const failed = resolvedStreams.current.find(s => s.url === failedEntry.url) ?? {};
+    let result: Stream[] = [];
+    let next: number | null = null;
+    try {
+      result = await resolvePlayback(resolvePath, undefined, true);
+      next = pickRefreshedStream(result, failed, tried);
+    } catch {
+      next = null;
+    }
+    // The page moved on (another release) while the refresh was in flight.
+    if (tried !== refreshTried.current) return;
+    refreshing.current = false;
+    if (next === null) {
+      failOverRef.current();
+      return;
+    }
+    result.forEach(s => tried.add(s.url));
+    resolvedStreams.current = result;
+    pendingSeek.current = at;
+    resumeToastArmed.current = false;
+    setEntries(entriesFromStreams(result, provider));
+    setCurrent(next);
+  };
+
+  const onVideoError = (failure: StreamFailure = {kind: 'media'}) => {
+    if (refreshing.current) return;
     const failed = videoRef.current;
     if (typeof navigator !== 'undefined' && !navigator.onLine && failed && stream && !isHlsEntry(stream)) {
       if (offlineRetry.current) return;
@@ -560,6 +606,16 @@ export function Player({slug, releaseId, title, resumeAt, startAt, onBack, theat
       window.addEventListener('online', retry, {once: true});
       return;
     }
+    if (mode === 'legacy' && stream && info.data && shouldRefreshStream({legacy: true, url: stream.url, tried: refreshTried.current, failure})) {
+      void refreshStream(stream, info.data.resolve_path, info.data.source === 'javtiful' ? 'Javtiful' : info.data.source);
+      return;
+    }
+    failOver();
+  };
+  const onVideoErrorRef = useRef(onVideoError);
+  onVideoErrorRef.current = onVideoError;
+
+  const failOver = () => {
     // States 04: on failure move to the next playable source and say so.
     // External links need the user, so the automatic chain skips them.
     const from = entries[current];
@@ -576,8 +632,8 @@ export function Player({slug, releaseId, title, resumeAt, startAt, onBack, theat
     setFailure(mode === 'config' ? t('player.allSourcesFailed') : t('player.allLinesFailed'));
     setPhase('failed');
   };
-  const onVideoErrorRef = useRef(onVideoError);
-  onVideoErrorRef.current = onVideoError;
+  const failOverRef = useRef(failOver);
+  failOverRef.current = failOver;
 
   // Attach the stream: native src, or hls.js when HLS is not native.
   useEffect(() => {
@@ -600,7 +656,7 @@ export function Player({slug, releaseId, title, resumeAt, startAt, onBack, theat
       .then(({default: Hls}) => {
         if (cancelled) return;
         if (!Hls.isSupported()) {
-          onVideoErrorRef.current();
+          onVideoErrorRef.current({kind: 'other'});
           return;
         }
         const instance = new Hls({capLevelToPlayerSize: true});
@@ -653,13 +709,19 @@ export function Player({slug, releaseId, title, resumeAt, startAt, onBack, theat
             instance.recoverMediaError();
             return;
           }
-          onVideoErrorRef.current();
+          onVideoErrorRef.current(
+            data.type === Hls.ErrorTypes.MEDIA_ERROR
+              ? {kind: 'hls-media'}
+              : data.type === Hls.ErrorTypes.NETWORK_ERROR
+                ? {kind: 'hls-network', status: data.response?.code}
+                : {kind: 'other'},
+          );
         });
         instance.loadSource(stream.url);
         instance.attachMedia(video);
       })
       .catch(() => {
-        if (!cancelled) onVideoErrorRef.current();
+        if (!cancelled) onVideoErrorRef.current({kind: 'other'});
       });
     return () => {
       cancelled = true;
@@ -1119,7 +1181,7 @@ export function Player({slug, releaseId, title, resumeAt, startAt, onBack, theat
                 save(true);
                 onEnded?.();
               }}
-              onError={onVideoError}
+              onError={() => onVideoError()}
               onDoubleClick={event => {
                 // Desktop double click: our shell fullscreen, so the bar stays.
                 if (coarse || mini) return;

@@ -551,12 +551,18 @@ export const clearSearchHistory = () => api<{deleted: number}>('me/search-histor
 export const getPlayback = (slug: string, signal?: AbortSignal) =>
   api<Playback>(`releases/${enc(slug)}/playback?source=javtiful`, {signal});
 
-export function resolvePlayback(resolvePath: string, signal?: AbortSignal) {
+/**
+ * POST resolve_path. `refresh`: a cached stream URL failed to play, so the
+ * server drops its cached result and reads the provider page again
+ * (rate-limited server side; it may answer with the cached result).
+ */
+export function resolvePlayback(resolvePath: string, signal?: AbortSignal, refresh = false) {
   // Only follow resolve paths the API hands out; never POST to arbitrary URLs.
   if (!/^\/api\/resolve\/[a-z0-9_-]+\//i.test(resolvePath)) {
     return Promise.reject(new ApiError(t('api.badPlayUrl'), 400));
   }
-  return api<{streams: Stream[] | null}>(resolvePath, {method: 'POST', signal}).then(data => data.streams ?? []);
+  const path = refresh ? `${resolvePath}${resolvePath.includes('?') ? '&' : '?'}refresh=1` : resolvePath;
+  return api<{streams: Stream[] | null}>(path, {method: 'POST', signal}).then(data => data.streams ?? []);
 }
 
 export type SourceKind = 'official_embed' | 'official_preview' | 'external_link' | 'hls_owned';
