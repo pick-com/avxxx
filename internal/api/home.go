@@ -317,7 +317,13 @@ func (srv *Server) homeSlotViews(ctx context.Context, slots []store.HomeSlot, la
 		if v.Title == "" {
 			v.Title = fallback
 		}
-		v.Subtitle, _ = homeops.Pick(h.Texts, lang, homeops.Subtitle)
+		// The subtitle follows the title's language so one slot never mixes
+		// languages; without a title override it is picked on its own.
+		if v.TitleLang != "" {
+			v.Subtitle = h.Texts[v.TitleLang].Subtitle
+		} else {
+			v.Subtitle, _ = homeops.Pick(h.Texts, lang, homeops.Subtitle)
+		}
 		out = append(out, v)
 	}
 	return out, nil
@@ -346,8 +352,9 @@ func announcementViews(as []store.Announcement, lang string) []announcementView 
 		v := announcementView{ID: a.ID, Severity: a.Severity, LinkURL: a.LinkURL, External: strings.HasPrefix(a.LinkURL, "https://"),
 			Dismissible: a.Dismissible, StartsAt: a.StartsAt, EndsAt: a.EndsAt, Version: a.UpdatedAt.Unix()}
 		v.Body, v.BodyLang = homeops.Pick(a.Texts, lang, homeops.Body)
-		if v.LinkURL != "" {
-			v.LinkLabel, _ = homeops.Pick(a.Texts, lang, homeops.LinkLabel)
+		if v.LinkURL != "" && v.BodyLang != "" {
+			// Same language as the body; empty means the UI's default label.
+			v.LinkLabel = a.Texts[v.BodyLang].LinkLabel
 		}
 		if v.Body != "" {
 			out = append(out, v)

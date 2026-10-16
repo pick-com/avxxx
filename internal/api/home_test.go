@@ -188,6 +188,14 @@ func TestAnnouncementsAndDismissals(t *testing.T) {
 	if h.lastRegion != "" {
 		t.Errorf("no region header: got %q", h.lastRegion)
 	}
+	// zh-TW falls back to the zh-CN body; the link label never mixes in English.
+	rec = doH(mux, "GET", "/api/announcements?lang=zh-TW", "", nil)
+	var tw struct {
+		Items []announcementView `json:"items"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &tw); err != nil || len(tw.Items) != 1 || tw.Items[0].Body != "维护中" || tw.Items[0].LinkLabel != "" {
+		t.Errorf("zh-TW items %+v (%v)", tw.Items, err)
+	}
 
 	if rec := doH(mux, "PUT", "/api/me/announcement-dismissals/7", "", nil); rec.Code != http.StatusUnauthorized {
 		t.Errorf("anonymous dismiss: %d", rec.Code)
