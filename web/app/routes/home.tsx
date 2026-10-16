@@ -14,7 +14,7 @@ import {useAuth} from '../lib/auth';
 import {t, useI18n, useT} from '../lib/i18n';
 import {formatDate, formatRuntime} from '../lib/format';
 import {useAsync} from '../lib/useAsync';
-import {getPerformerHeat, getRecs, getTrending, performerName, reasonText, recTitle, useRecsAvailable, type RecItem} from '../lib/recs';
+import {getPerformerHeat, getRecs, getTrending, performerName, reasonPerformer, reasonText, recTitle, useRecsAvailable, type RecItem} from '../lib/recs';
 import {HomeHero} from '../components/HomeHero';
 import {getHomeSlots, getTopRatedShort, releaseTitle, type HomeSlot, type HomeSlots, type TopRatedShort} from '../lib/home';
 
@@ -124,7 +124,7 @@ export default function Home() {
   const isFollowed = (it: RecItem) => it.reason.code === 'followed_new';
   const forYou = recItems.filter(it => !isFollowed(it)).slice(0, 10);
   const followed = recItems.filter(isFollowed).slice(0, 10);
-  const followedNames = Array.from(new Set(followed.map(it => performerName(it.performer)).filter(Boolean))).slice(0, 2);
+  const followedNames = Array.from(new Set(followed.map(it => reasonPerformer(it.reason, it)).filter(Boolean))).slice(0, 2);
   const weekTop = (trending.data?.items ?? []).flatMap(row => (row.release ? [{row, it: row.release}] : []));
   const hotActors = heat.data?.items ?? [];
   // 热门演员 replaces the sort=works shelf once the heat board answers with rows.

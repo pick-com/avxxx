@@ -90,6 +90,10 @@ type Info struct {
 type Reason struct {
 	Code string `json:"code"`
 	Text string `json:"text"`
+	// Name is the performer the reason refers to (same_performer,
+	// followed_new). It is not always the item's primary performer, so
+	// clients that localize the text or list followed names must use it.
+	Name string `json:"name,omitempty"`
 }
 
 // Rec is one ranked recommendation.
@@ -252,45 +256,45 @@ func ReasonFor(c Candidate, info Info) Reason {
 	switch c.Channel {
 	case ReasonCoWatch:
 		if c.SeedTitle != "" {
-			return Reason{"because_watched", "因为你看过《" + c.SeedTitle + "》"}
+			return Reason{Code: "because_watched", Text: "因为你看过《" + c.SeedTitle + "》"}
 		}
-		return Reason{"cowatch", "看过此视频的人也看了"}
+		return Reason{Code: "cowatch", Text: "看过此视频的人也看了"}
 	case ReasonSeries:
 		if info.Series != "" {
-			return Reason{"same_series", "同系列 · " + info.Series}
+			return Reason{Code: "same_series", Text: "同系列 · " + info.Series}
 		}
-		return Reason{"same_series", "同系列"}
+		return Reason{Code: "same_series", Text: "同系列"}
 	case ReasonMaker:
 		if info.Maker != "" {
-			return Reason{"same_maker", "同厂商 · " + info.Maker}
+			return Reason{Code: "same_maker", Text: "同厂商 · " + info.Maker}
 		}
-		return Reason{"same_maker", "同厂商"}
+		return Reason{Code: "same_maker", Text: "同厂商"}
 	case ReasonTags:
 		if t := firstNonEmpty(c.Label, info.SharedTag); t != "" {
-			return Reason{"similar_tags", "相似标签 · " + t}
+			return Reason{Code: "similar_tags", Text: "相似标签 · " + t}
 		}
-		return Reason{"similar_tags", "内容相似"}
+		return Reason{Code: "similar_tags", Text: "内容相似"}
 	case ChanSamePerformer:
 		name := firstNonEmpty(c.PerformerName, info.PerformerName)
 		if c.SeedTitle != "" {
-			return Reason{"same_performer", "因为你看过 " + name + " 的作品"}
+			return Reason{Code: "same_performer", Text: "因为你看过 " + name + " 的作品", Name: name}
 		}
-		return Reason{"same_performer", "同演员 · " + name}
+		return Reason{Code: "same_performer", Text: "同演员 · " + name, Name: name}
 	case ChanFollowedNew:
-		return Reason{"followed_new", "你关注的 " + c.PerformerName + " 有新作"}
+		return Reason{Code: "followed_new", Text: "你关注的 " + c.PerformerName + " 有新作", Name: c.PerformerName}
 	case ChanInterests:
 		if c.Label != "" {
-			return Reason{"interests", "你选的兴趣 · " + c.Label}
+			return Reason{Code: "interests", Text: "你选的兴趣 · " + c.Label}
 		}
-		return Reason{"interests", "符合你选的兴趣"}
+		return Reason{Code: "interests", Text: "符合你选的兴趣"}
 	case ChanTrending:
 		text := PeriodLabel(c.Label)
 		if c.BoardRank > 0 {
 			text += " · 第 " + strconv.Itoa(c.BoardRank) + " 名"
 		}
-		return Reason{"trending", text}
+		return Reason{Code: "trending", Text: text}
 	}
-	return Reason{"new", "新上线"}
+	return Reason{Code: "new", Text: "新上线"}
 }
 
 func firstNonEmpty(xs ...string) string {

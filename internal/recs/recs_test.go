@@ -470,6 +470,14 @@ func TestReasons(t *testing.T) {
 			t.Errorf("ReasonFor(%+v) = %+v, want %s %q", c.cand, r, c.code, c.text)
 		}
 	}
+	// The followed performer is often not the release's primary performer:
+	// the reason names who it is about (home 你关注的演员有新作, en/ja text).
+	if r := ReasonFor(Candidate{Channel: ChanFollowedNew, PerformerName: "林遥"}, Info{PerformerName: "主演A"}); r.Name != "林遥" {
+		t.Errorf("followed_new name = %q, want the followed performer", r.Name)
+	}
+	if r := ReasonFor(Candidate{Channel: ChanSamePerformer}, Info{PerformerName: "主演A"}); r.Name != "主演A" {
+		t.Errorf("same_performer name = %q", r.Name)
+	}
 	if r := ReasonFor(Candidate{Channel: ReasonTags}, Info{}); r.Text != "内容相似" {
 		t.Errorf("tags without shared tag: %q", r.Text)
 	}
