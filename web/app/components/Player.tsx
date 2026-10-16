@@ -97,7 +97,7 @@ type LockableOrientation = ScreenOrientation & {lock?: (orientation: string) => 
  */
 export type PlayerProps = Parameters<typeof Player>[0];
 
-export function Player({slug, releaseId, title, resumeAt, startAt, onBack, theater = false, onToggleTheater, onEnded, autoStart = false, overlay, entryReason, related = [], onReplay, mini = false, episodes, poster}: {
+export function Player({slug, releaseId, title, resumeAt, startAt, onBack, theater = false, onToggleTheater, onEnded, autoStart = false, overlay, entryReason, related = [], onReplay, mini = false, episodes, poster, resumePending = false}: {
   slug: string;
   /** releases.id for analytics (play_request / progress); no tracking without it. */
   releaseId?: number;
@@ -126,6 +126,8 @@ export function Player({slug, releaseId, title, resumeAt, startAt, onBack, theat
   episodes?: PlayerEpisodes;
   /** The release's stored cover: shown behind the start / status states. */
   poster?: string;
+  /** The saved position (watch history) is still loading: autoStart waits so playback resumes there. */
+  resumePending?: boolean;
 }) {
   const t = useT();
   const {status} = useAuth();
@@ -411,7 +413,7 @@ export function Player({slug, releaseId, title, resumeAt, startAt, onBack, theat
   // Autoplay next (PRD 5.4): start once the sources are known.
   const autoStarted = useRef('');
   useEffect(() => {
-    if (!autoStart || phase !== 'idle' || autoStarted.current === slug) return;
+    if (!autoStart || phase !== 'idle' || autoStarted.current === slug || resumePending) return;
     if (mode === 'config' || (mode === 'legacy' && info.data)) {
       autoStarted.current = slug;
       void start();
