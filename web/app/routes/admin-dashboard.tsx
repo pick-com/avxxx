@@ -24,6 +24,7 @@ export const meta = () => [{title: 'REEL · 后台总览'}];
 
 const BAND_TONE: Record<string, string> = {severe: 'red', degraded: 'amber', healthy: '', excellent: 'green', insufficient_data: 'blue'};
 const RESULT_LABELS: Record<string, string> = {ok: '正常', issues: '有待处理', failed: '失败', not_applicable: '未启用'};
+const pct = (v: unknown) => (typeof v === 'number' ? `${Math.round(v * 1000) / 10}%` : '—');
 const JOB_LABELS: Record<string, string> = {crawl: '抓取', audit: '数据审计', source_health: '片源健康', notify: '通知'};
 
 function Bars({rows, max}: {rows: {label: string; n: number; tone?: string; to?: string}[]; max?: number}) {
@@ -72,6 +73,9 @@ export default function AdminDashboard() {
   const counts = mod.data?.counts;
   const modTotal = counts ? counts.reports + counts.danmaku + counts.reviews + counts.rating_floods : null;
   const ageOpen = d?.issues.by_rule['R-AGE'] ?? 0;
+  // 收录健康分 (PRD 11 / 13): the latest `npm run seo:check` run (nightly_runs job seo.check).
+  const seoRun = d?.nightly_runs.find(r => r.job === 'seo.check');
+  const seo = seoRun?.detail as {score?: number; band?: string; ssr_pass_rate?: number; sitemap_coverage?: number} | undefined;
 
   return (
     <>
@@ -120,11 +124,23 @@ export default function AdminDashboard() {
               : ''}
           </span>
         </div>
-        <div className="adm-kpi">
+        <div className="adm-kpi" title="PRD 13：服务端渲染通过率 × 0.6 + 站点地图覆盖率 × 0.4（npm run seo:check，任务 seo.check）">
           <span className="adm-kpi-label">收录健康分</span>
-          <span className={`adm-kpi-value ${BAND_TONE[d?.catalog_health.band ?? ''] ?? ''}`}>{d?.catalog_health.score ?? '—'}</span>
+          {seo ? (
+            <>
+              <span className={`adm-kpi-value ${BAND_TONE[String(seo.band ?? '')] ?? ''}`}>{seo.score ?? '—'}</span>
+              <span className="adm-kpi-sub">
+                {`SSR 通过 ${pct(seo.ssr_pass_rate)} · 地图覆盖 ${pct(seo.sitemap_coverage)} · ${fmtTime(seoRun!.started_at)}`}
+              </span>
+            </>
+          ) : (
+            <>
+              <span className="adm-kpi-value">—</span>
+              <span className="adm-kpi-sub">尚未运行 SEO 检查（npm run seo:check）</span>
+            </>
+          )}
           <span className="adm-kpi-sub">
-            {d ? `已上线 ${fmtNum(d.catalog_health.published)} · 有问题 ${fmtNum(d.catalog_health.with_open_issues)}` : ''}
+            {d ? `数据完整 ${d.catalog_health.score ?? '—'} · 已上线 ${fmtNum(d.catalog_health.published)} · 有问题 ${fmtNum(d.catalog_health.with_open_issues)}` : ''}
           </span>
         </div>
         <Link to="/admin/videos" className="adm-kpi">

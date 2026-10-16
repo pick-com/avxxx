@@ -1,5 +1,5 @@
 import type {ReactNode} from 'react';
-import {Link} from 'react-router';
+import {Link} from '../lib/nav';
 import {swatch} from '../lib/format';
 import {Icon} from './Icon';
 import {LaterButton} from './SocialButtons';

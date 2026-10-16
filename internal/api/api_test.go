@@ -184,6 +184,13 @@ var expectedRoutes = []string{
 	"GET /api/admin/releases/{id}/split-preview",
 	"POST /api/admin/releases/{id}/split",
 	"POST /api/admin/splits/{event_id}/undo",
+	// Sitemap sources and the SEO check report (sitemap.go).
+	"GET /api/sitemap/releases",
+	"GET /api/sitemap/performers",
+	"GET /api/sitemap/tags",
+	"GET /api/sitemap/counts",
+	"POST /api/admin/seo/report",
+	"GET /api/admin/seo/report",
 }
 
 var (

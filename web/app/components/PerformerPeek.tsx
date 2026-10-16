@@ -1,6 +1,6 @@
 import {useCallback, useEffect, useLayoutEffect, useRef, useState, type FocusEvent, type ReactNode} from 'react';
 import {createPortal} from 'react-dom';
-import {Link} from 'react-router';
+import {Link} from '../lib/nav';
 import {track} from '../lib/analytics';
 import {getPerformer, getPerformerReleases, type Performer, type PerformerDetail, type Release} from '../lib/api';
 import {ageAt, formatDate, formatYear} from '../lib/format';

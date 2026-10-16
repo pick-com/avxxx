@@ -29,11 +29,15 @@ export function usePaged<T>(
   load: (cursor: string | null, signal: AbortSignal) => Promise<Page<T>>,
   deps: unknown[],
   enabled = true,
+  /** First page already fetched by a route loader for these deps (server rendering). */
+  initial?: Page<T>,
 ): PagedState<T> {
-  const [items, setItems] = useState<T[]>([]);
-  const [next, setNext] = useState<string | null>(null);
-  const [paged, setPaged] = useState<boolean | undefined>(undefined);
-  const [loading, setLoading] = useState(enabled);
+  const seeded = !!initial && enabled;
+  const [items, setItems] = useState<T[]>(() => (seeded ? initial.items : []));
+  const [next, setNext] = useState<string | null>(() => (seeded ? initial.nextCursor : null));
+  const [paged, setPaged] = useState<boolean | undefined>(() => (seeded ? initial.paged : undefined));
+  const [loading, setLoading] = useState(enabled && !seeded);
+  const seedDeps = useRef<unknown[] | null>(seeded ? [...deps, enabled] : null);
   const [slow, setSlow] = useState(false);
   const [error, setError] = useState<Error | undefined>();
   const [loadingMore, setLoadingMore] = useState(false);
@@ -46,6 +50,16 @@ export function usePaged<T>(
   loadRef.current = load;
 
   useEffect(() => {
+    if (seedDeps.current) {
+      const same = seedDeps.current.length === deps.length + 1 && [...deps, enabled].every((v, i) => Object.is(v, seedDeps.current![i]));
+      if (nonce === 0 && same) {
+        // Keep the loader's first page; loadMore() continues from its cursor.
+        const controller = new AbortController();
+        generation.current = controller;
+        return () => controller.abort();
+      }
+      seedDeps.current = null;
+    }
     const controller = new AbortController();
     generation.current?.abort();
     generation.current = controller;

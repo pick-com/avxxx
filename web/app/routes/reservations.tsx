@@ -1,4 +1,4 @@
-import {Link} from 'react-router';
+import {Link} from '../lib/nav';
 import {ReleaseRow, Thumb} from '../components/Cards';
 import {ReserveButton} from '../components/SocialButtons';
 import {CardGridSkeleton, EmptyState, ErrorBanner} from '../components/States';

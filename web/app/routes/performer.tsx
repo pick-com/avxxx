@@ -1,20 +1,99 @@
 import {useEffect, useState} from 'react';
-import {useParams} from 'react-router';
+import {data, redirect, useLoaderData, useParams, type LoaderFunctionArgs, type MetaFunction} from 'react-router';
 import {Avatar, ReleaseCard, SectionHeader} from '../components/Cards';
 import {LoadMore} from '../components/Paging';
 import {SimilarPerformers} from '../components/PerformerRecs';
 import {FollowButton} from '../components/SocialButtons';
 import {BlockSkeleton, CardGridSkeleton, EmptyState, ErrorBanner} from '../components/States';
-import {ApiError, getPerformer, getPerformerReleases, listPerformerPage, listReleasePage, type PerformerDetail} from '../lib/api';
+import {ApiError, getPerformer, getPerformerReleases, listPerformerPage, listReleasePage, toPage, type LangCode, type Page, type PerformerDetail, type Release} from '../lib/api';
+import {isGone, serverApi} from '../lib/api.server';
+import {localizePath, routeLang} from '../lib/langs';
+import {breadcrumbs, clip, compact, isoDate, pageUrl, rootMeta, seoMeta, type SeoHandle} from '../lib/seo';
 import {ageAt, formatCount, formatDate, formatYear} from '../lib/format';
-import {t, useT} from '../lib/i18n';
+import {t, useI18n, useT} from '../lib/i18n';
 import {useAsync} from '../lib/useAsync';
 import {useCanonicalSlug} from '../lib/useCanonicalSlug';
 import {usePaged} from '../lib/usePaged';
 
-export const meta = () => [{title: t('title.performer')}];
+export const handle: SeoHandle = {seo: true};
 
 const PAGE_SIZE = 24;
+
+// Server rendering (PRD 13 SEO): profile and the first page of works come
+// from the loader; client-side navigations fetch in the page (clientLoader).
+type PerformerLoad = {
+  lang: LangCode;
+  slug: string;
+  detail?: PerformerDetail;
+  works?: Page<Release>;
+  missing?: boolean;
+  unavailable?: boolean;
+};
+
+export async function loader({params, request}: LoaderFunctionArgs) {
+  const lang = routeLang(params);
+  const slug = params.slug ?? '';
+  if (!lang) return null;
+  const enc = encodeURIComponent(slug);
+  try {
+    const detail = await serverApi<PerformerDetail>(`performers/${enc}`, {lang, signal: request.signal});
+    if (detail.slug && detail.slug !== slug) {
+      throw redirect(localizePath(`/performers/${encodeURIComponent(detail.slug)}`, lang) + new URL(request.url).search, 301);
+    }
+    const works = await serverApi<{items: Release[] | null; next_cursor?: string | null}>(`releases?performer=${enc}&limit=${PAGE_SIZE}`, {lang, signal: request.signal})
+      .then(toPage)
+      .catch(() => undefined);
+    // A backend without the performer filter answers every release: let the page fall back.
+    return {lang, slug, detail, works: works?.paged ? works : undefined} satisfies PerformerLoad;
+  } catch (e) {
+    if (e instanceof Response) throw e;
+    if (isGone(e)) return data({lang, slug, missing: true} satisfies PerformerLoad, {status: 404});
+    console.error('performer loader', slug, e);
+    return data({lang, slug, unavailable: true} satisfies PerformerLoad, {status: 503});
+  }
+}
+
+export const clientLoader = () => null;
+
+export const meta: MetaFunction<typeof loader> = ({data: d, params, matches}) => {
+  const path = `/performers/${encodeURIComponent(params.slug ?? '')}`;
+  const load = d as PerformerLoad | null | undefined;
+  const p = load?.detail;
+  if (!p) {
+    const title = load?.missing ? t('title.named', {name: t('performer.notFound')}) : t('title.performer');
+    return seoMeta({matches, path, title, noindex: true});
+  }
+  const count = load?.works?.items.length ?? 0;
+  const works = count ? t('seo.performerWorks', {n: load?.works?.nextCursor ? `${count}+` : String(count)}) : '';
+  const description = p.biography?.trim() ? clip(p.biography) : t('seo.performerDescription', {name: p.canonical_name, works});
+  const {lang, origin} = rootMeta(matches);
+  // Person: public facts only. A hidden birthday (birth_date_hidden) is never stated.
+  const person = compact({
+    '@context': 'https://schema.org',
+    '@type': 'Person',
+    name: p.canonical_name,
+    alternateName: p.canonical_name_ja && p.canonical_name_ja !== p.canonical_name ? p.canonical_name_ja : undefined,
+    description,
+    url: pageUrl(origin, path, lang),
+    birthDate: p.birth_date_hidden === false ? isoDate(p.birth_date) : undefined,
+    birthPlace: p.birth_place || undefined,
+  });
+  return seoMeta({
+    matches,
+    path,
+    title: t('title.named', {name: p.canonical_name}),
+    description,
+    ogType: 'profile',
+    jsonLd: [
+      person,
+      breadcrumbs(matches, [
+        [t('seo.breadcrumbHome'), '/'],
+        [t('seo.breadcrumbActors'), '/discover?tab=actors'],
+        [p.canonical_name, path],
+      ]),
+    ],
+  });
+};
 const LEGACY_LIMIT = 100;
 
 // Actor / MobileActor.
@@ -36,14 +115,23 @@ const LEGACY_LIMIT = 100;
 export default function PerformerPage() {
   const t = useT();
   const {slug = ''} = useParams();
-  const detail = useAsync(signal => getPerformer(slug, signal), [slug]);
-  const works = usePaged(async (cursor, signal) => {
-    const page = await listReleasePage({performer: slug}, PAGE_SIZE, cursor, signal);
-    if (page.paged) return page;
-    // Old backend ignored ?performer= and returned every release.
-    const items = await getPerformerReleases(slug, LEGACY_LIMIT, signal);
-    return {items, nextCursor: null, paged: false};
-  }, [slug]);
+  const {contentLang} = useI18n();
+  const loaded = useLoaderData<typeof loader>() as PerformerLoad | null;
+  const own = loaded && loaded.slug === slug && loaded.lang === contentLang ? loaded : null;
+  const missingOnServer = !!(loaded && loaded.slug === slug && loaded.missing);
+  const detail = useAsync(signal => getPerformer(slug, signal), [slug], !missingOnServer, own?.detail);
+  const works = usePaged(
+    async (cursor, signal) => {
+      const page = await listReleasePage({performer: slug}, PAGE_SIZE, cursor, signal);
+      if (page.paged) return page;
+      // Old backend ignored ?performer= and returned every release.
+      const items = await getPerformerReleases(slug, LEGACY_LIMIT, signal);
+      return {items, nextCursor: null, paged: false};
+    },
+    [slug],
+    !missingOnServer,
+    own?.detail ? own.works : undefined,
+  );
   const name = detail.data?.canonical_name;
   const stats = useAsync(
     signal => listPerformerPage('works', 20, null, name, signal).then(page => page.items.find(p => p.slug === slug)?.works_count),
@@ -58,14 +146,14 @@ export default function PerformerPage() {
     if (detail.data) document.title = t('title.named', {name: detail.data.canonical_name});
   }, [detail.data]);
 
-  if (detail.error) {
-    const missing = detail.error instanceof ApiError && detail.error.status === 404;
+  if (detail.error || missingOnServer) {
+    const missing = missingOnServer || (detail.error instanceof ApiError && detail.error.status === 404);
     return (
       <div className="page">
         {missing ? (
           <EmptyState icon="me" title={t('performer.notFound')} body={t('performer.notFoundBody')} actions={[{to: '/discover?tab=actors', label: t('common.browseActors')}]} />
         ) : (
-          <ErrorBanner error={detail.error} onRetry={detail.reload} />
+          <ErrorBanner error={detail.error!} onRetry={detail.reload} />
         )}
       </div>
     );

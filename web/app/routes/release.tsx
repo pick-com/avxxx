@@ -1,5 +1,6 @@
-import {useEffect, useMemo, useRef, useState, type ReactNode} from 'react';
-import {Link, useLocation, useNavigate, useParams, useSearchParams} from 'react-router';
+import {useEffect, useRef, useState, type ReactNode} from 'react';
+import {data, redirect, useLoaderData, useParams, useSearchParams, type LoaderFunctionArgs, type MetaFunction} from 'react-router';
+import {Link, useLocation, useNavigate} from '../lib/nav';
 import {Avatar, ReleaseRow, SectionHeader} from '../components/Cards';
 import {Icon} from '../components/Icon';
 import {PerformerHoverCard, PerformerSheet} from '../components/PerformerPeek';
@@ -12,8 +13,12 @@ import {BlockSkeleton, CardGridSkeleton, EmptyState, ErrorBanner} from '../compo
 import {ApiError, getFavorites, getPerformerReleases, getWatchLater, getRelease, getReleasePerformers, getWatchHistory, setFavorite, type Performer, type ReleaseDetail} from '../lib/api';
 import {track} from '../lib/analytics';
 import {useAuth} from '../lib/auth';
-import {t, useT} from '../lib/i18n';
+import {t, useI18n, useT} from '../lib/i18n';
+import {isGone, serverApi} from '../lib/api.server';
+import {localizePath, routeLang} from '../lib/langs';
 import type {MessageKey} from '../lib/messages.zh-CN';
+import {breadcrumbs, clip, compact, isoDate, isoMinutes, pageUrl, rootMeta, seoMeta, type SeoHandle} from '../lib/seo';
+import type {LangCode} from '../lib/api';
 import {markAutoplayNavigation} from '../lib/playAnalytics';
 import {usePlayerPrefs} from '../lib/playerPrefs';
 import {ageAt, formatDate, formatRuntime} from '../lib/format';
@@ -25,8 +30,98 @@ import {readQueue} from '../lib/queue';
 import {getRecs, performerName, reasonText, recTitle, inRelatedTab, type RecItem, type RelatedTab} from '../lib/recs';
 import type {ShellHandle} from './shell';
 
-export const handle: ShellHandle = {immersive: true};
-export const meta = () => [{title: t('title.release')}];
+export const handle: ShellHandle & SeoHandle = {immersive: true, seo: true};
+
+// Server rendering (PRD 13 SEO): the loader fetches the release and its cast
+// from the API so the document carries the title, metadata, cast links and
+// JSON-LD without JavaScript. Client-side navigations skip it (clientLoader)
+// and the page fetches as before; the loader's data seeds useAsync so the
+// hydrating render matches the server HTML.
+type ReleaseLoad = {
+  lang: LangCode;
+  slug: string;
+  release?: ReleaseDetail;
+  performers?: Performer[];
+  /** 404 / 410: not published, held, removed or unknown. */
+  missing?: boolean;
+  /** The API failed: render the loading state and let the browser retry. */
+  unavailable?: boolean;
+};
+
+export async function loader({params, request}: LoaderFunctionArgs) {
+  const lang = routeLang(params);
+  const slug = params.slug ?? '';
+  if (!lang) return null;
+  const enc = encodeURIComponent(slug);
+  try {
+    const [release, cast] = await Promise.all([
+      serverApi<ReleaseDetail>(`releases/${enc}`, {lang, signal: request.signal}),
+      serverApi<{items: Performer[] | null}>(`releases/${enc}/performers`, {lang, signal: request.signal}).catch(() => ({items: []})),
+    ]);
+    // Merged release: the API followed the 301; send crawlers to the surviving URL.
+    if (release.slug && release.slug !== slug) {
+      throw redirect(localizePath(`/releases/${encodeURIComponent(release.slug)}`, lang) + new URL(request.url).search, 301);
+    }
+    return {lang, slug, release, performers: cast.items ?? []} satisfies ReleaseLoad;
+  } catch (e) {
+    if (e instanceof Response) throw e;
+    if (isGone(e)) return data({lang, slug, missing: true} satisfies ReleaseLoad, {status: 404});
+    console.error('release loader', slug, e);
+    return data({lang, slug, unavailable: true} satisfies ReleaseLoad, {status: 503});
+  }
+}
+
+export const clientLoader = () => null;
+
+export const meta: MetaFunction<typeof loader> = ({data: d, params, matches}) => {
+  const path = `/releases/${encodeURIComponent(params.slug ?? '')}`;
+  const load = d as ReleaseLoad | null | undefined;
+  const r = load?.release;
+  if (!r) {
+    const title = load?.missing ? t('title.named', {name: t('release.unavailableTitle')}) : t('title.release');
+    return seoMeta({matches, path, title, noindex: true});
+  }
+  const performers = load?.performers ?? [];
+  const names = performers.map(p => p.canonical_name).filter(Boolean);
+  const facts = [r.maker_name, r.release_date && formatDate(r.release_date), formatRuntime(r.runtime_minutes), names.slice(0, 3).join('、')].filter(Boolean).join(' · ');
+  const description = r.synopsis?.trim()
+    ? clip(r.synopsis)
+    : facts
+      ? t('seo.releaseDescription', {title: r.canonical_title, facts})
+      : t('seo.releaseDescriptionShort', {title: r.canonical_title});
+  const {lang, origin} = rootMeta(matches);
+  const url = pageUrl(origin, path, lang);
+  const video = compact({
+    '@context': 'https://schema.org',
+    '@type': 'VideoObject',
+    name: r.canonical_title,
+    alternateName: r.title_ja && r.title_ja !== r.canonical_title ? r.title_ja : undefined,
+    description,
+    uploadDate: isoDate(r.release_date),
+    duration: isoMinutes(r.runtime_minutes),
+    url,
+    inLanguage: lang,
+    productionCompany: r.maker_name ? {'@type': 'Organization', name: r.maker_name} : undefined,
+    director: r.director_name ? {'@type': 'Person', name: r.director_name} : undefined,
+    keywords: (r.tags ?? []).map(tag => tag?.name).filter(Boolean).join(', ') || undefined,
+    actor: performers.map(p => ({'@type': 'Person', name: p.canonical_name, url: pageUrl(origin, `/performers/${encodeURIComponent(p.slug)}`, lang)})),
+  });
+  return seoMeta({
+    matches,
+    path,
+    title: t('title.named', {name: r.canonical_title}),
+    description,
+    ogType: 'video.movie',
+    jsonLd: [
+      video,
+      breadcrumbs(matches, [
+        [t('seo.breadcrumbHome'), '/'],
+        [t('seo.breadcrumbDiscover'), '/discover'],
+        [r.canonical_title, path],
+      ]),
+    ],
+  });
+};
 
 // Video / VideoLight / MobileVideo.
 //
@@ -54,7 +149,12 @@ export default function ReleasePage() {
   const {slug = ''} = useParams();
   const navigate = useNavigate();
   const {status} = useAuth();
-  const detail = useAsync(signal => Promise.all([getRelease(slug, signal), getReleasePerformers(slug, signal)]), [slug]);
+  const {contentLang} = useI18n();
+  const loaded = useLoaderData<typeof loader>() as ReleaseLoad | null;
+  const own = loaded && loaded.slug === slug ? loaded : null;
+  const missingOnServer = !!own?.missing;
+  const seed = own?.release && own.lang === contentLang ? ([own.release, own.performers ?? []] as [ReleaseDetail, Performer[]]) : undefined;
+  const detail = useAsync(signal => Promise.all([getRelease(slug, signal), getReleasePerformers(slug, signal)]), [slug], !missingOnServer, seed);
   const history = useAsync(signal => getWatchHistory(signal), [status], status === 'user');
   const mobile = useMediaQuery('(max-width: 767px)');
   // Hover cards need a real hover; phones and tablets (any width) get the sheet.
@@ -64,7 +164,9 @@ export default function ReleasePage() {
   const [sheetPerformer, setSheetPerformer] = useState<Performer | null>(null);
   const [params] = useSearchParams();
   const listName = params.get('list');
-  const queue = useMemo(() => (listName === 'later' && typeof window !== 'undefined' ? readQueue('later') : null), [listName]);
+  // The queue lives in this browser (sessionStorage): read after hydration.
+  const [queue, setQueue] = useState<ReturnType<typeof readQueue>>(null);
+  useEffect(() => setQueue(listName === 'later' ? readQueue('later') : null), [listName]);
   const queueIndex = queue ? queue.slugs.indexOf(slug) : -1;
   const nextSlug = queue && queueIndex >= 0 ? queue.slugs[queueIndex + 1] : undefined;
   const prefs = usePlayerPrefs();
@@ -106,8 +208,8 @@ export default function ReleasePage() {
     else navigate('/');
   };
 
-  if (detail.error) {
-    const missing = detail.error instanceof ApiError && detail.error.status === 404;
+  if (detail.error || missingOnServer) {
+    const missing = missingOnServer || (detail.error instanceof ApiError && detail.error.status === 404);
     return (
       <div className="page">
         {missing ? (
@@ -118,7 +220,7 @@ export default function ReleasePage() {
             actions={[{to: '/', label: t('error.backHome')}, {to: '/discover?tab=new', label: t('release.seeNew'), primary: false}]}
           />
         ) : (
-          <ErrorBanner error={detail.error} onRetry={detail.reload} />
+          <ErrorBanner error={detail.error!} onRetry={detail.reload} />
         )}
       </div>
     );

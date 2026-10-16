@@ -1,5 +1,6 @@
 import {useEffect, useRef, useState} from 'react';
-import {Link, useNavigate, useSearchParams} from 'react-router';
+import {useSearchParams} from 'react-router';
+import {Link, useNavigate} from '../lib/nav';
 import {FollowButton} from '../components/SocialButtons';
 import {Avatar, ReleaseCard, SectionHeader} from '../components/Cards';
 import {FilterBar, ReleaseResults, type SortOption} from '../components/ReleaseFilters';

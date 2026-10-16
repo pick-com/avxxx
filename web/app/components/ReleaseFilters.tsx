@@ -1,5 +1,5 @@
 import type {ReactNode} from 'react';
-import {listReleasePage, needsFilterSupport, type Release, type ReleaseFilter} from '../lib/api';
+import {listReleasePage, needsFilterSupport, type Page, type Release, type ReleaseFilter} from '../lib/api';
 import {formatDate} from '../lib/format';
 import {t as translate, useT} from '../lib/i18n';
 import {DURATION_BUCKETS, bucketFor, durationLabel, yearOptions} from '../lib/releaseFilter';
@@ -91,7 +91,8 @@ export function FilterBar({filter, onChange, tagName, sortOptions, sortValue, on
   );
 }
 
-const PAGE_SIZE = 24;
+export const RELEASE_PAGE_SIZE = 24;
+const PAGE_SIZE = RELEASE_PAGE_SIZE;
 
 export function releaseCardProps(r: Release) {
   return {
@@ -107,8 +108,10 @@ export function releaseCardProps(r: Release) {
  * without filter support (no next_cursor) a filtered request would come back
  * unfiltered, so the results are withheld and the user is told instead.
  */
-export function ReleaseResults({filter, onClear, clearLabel, empty, gridClassName = 'card-grid', renderCard}: {
+export function ReleaseResults({filter, onClear, clearLabel, empty, gridClassName = 'card-grid', renderCard, initial}: {
   filter: ReleaseFilter;
+  /** First page from the route loader (server rendering), for this filter. */
+  initial?: Page<Release>;
   onClear: () => void;
   clearLabel?: string;
   empty: ReactNode;
@@ -117,7 +120,7 @@ export function ReleaseResults({filter, onClear, clearLabel, empty, gridClassNam
 }) {
   const t = useT();
   const key = JSON.stringify(filter);
-  const list = usePaged((cursor, signal) => listReleasePage(filter, PAGE_SIZE, cursor, signal), [key]);
+  const list = usePaged((cursor, signal) => listReleasePage(filter, PAGE_SIZE, cursor, signal), [key], true, initial);
   const unsupported = list.paged === false && needsFilterSupport(filter);
 
   if (list.error) return <ErrorBanner error={list.error} onRetry={list.reload} />;

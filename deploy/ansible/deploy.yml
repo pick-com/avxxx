@@ -45,6 +45,8 @@
           ALERT_TELEGRAM_BOT_TOKEN={{ alert_telegram_bot_token | default('') }}
           ALERT_TELEGRAM_CHAT_ID={{ alert_telegram_chat_id | default('') }}
           BACKUP_METRICS_DIR={{ backup_metrics_dir }}
+          PUBLIC_BASE_URL={{ public_base_url | default(base_url | default('')) }}
+          WEB_API_PROXY={{ web_api_proxy | default('true') }}
     - name: Build and start database
       ansible.builtin.command:
         cmd: docker compose up -d db
@@ -53,9 +55,13 @@
       ansible.builtin.command:
         cmd: docker compose build api
         chdir: "{{ app_dir }}"
+    - name: Build web (SSR) image
+      ansible.builtin.command:
+        cmd: docker compose build web
+        chdir: "{{ app_dir }}"
     - name: Start application services
       ansible.builtin.command:
-        cmd: docker compose up -d api scheduler scraper audit notifier
+        cmd: docker compose up -d api scheduler scraper audit notifier web
         chdir: "{{ app_dir }}"
     - name: Create backup directories (dumps private, metrics readable by node-exporter)
       ansible.builtin.file:
@@ -94,3 +100,24 @@
         status_code: 200
         retries: 12
         delay: 5
+    - name: Check web (SSR) health
+      ansible.builtin.uri:
+        url: http://127.0.0.1:3000/healthz
+        status_code: 200
+      register: web_health
+      retries: 12
+      delay: 5
+      until: web_health.status == 200
+    # 收录健康分 inputs (PRD 11 / 13): sample SSR pages and sitemap coverage,
+    # POST the report to /api/admin/seo/report (nightly_runs job seo.check).
+    # ADMIN_TOKEN comes from the rendered .env; it is not given to the web service.
+    - name: Daily SEO check
+      ansible.builtin.cron:
+        name: avxxx seo check
+        minute: "15"
+        hour: "5"
+        job: >-
+          cd {{ app_dir }} && set -a && . ./.env && set +a &&
+          docker compose run --rm --no-deps -e WEB_URL=http://web:3000 -e API_URL=http://api:8080 -e ADMIN_TOKEN
+          web node scripts/seo-check.mjs > /dev/null 2>> {{ app_dir }}/seo-check.log
+        state: "{{ 'present' if (seo_check_enabled | default(true) | bool) else 'absent' }}"

@@ -1,4 +1,4 @@
-import {Link} from 'react-router';
+import {Link} from '../lib/nav';
 import {useT} from '../lib/i18n';
 import {getHotSearches} from '../lib/search';
 import {useAsync} from '../lib/useAsync';

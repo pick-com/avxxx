@@ -1,5 +1,6 @@
 import {useId, useRef, useState} from 'react';
-import {Link, useLocation, useSearchParams} from 'react-router';
+import {useSearchParams} from 'react-router';
+import {Link, useLocation} from '../lib/nav';
 import {useAuth} from '../lib/auth';
 import {useI18n, useT} from '../lib/i18n';
 import {LANGS, LANG_LABELS} from '../lib/langs';

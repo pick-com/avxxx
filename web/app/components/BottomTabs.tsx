@@ -1,4 +1,4 @@
-import {Link, useLocation} from 'react-router';
+import {Link, useLocation} from '../lib/nav';
 import {useT} from '../lib/i18n';
 import type {MessageKey} from '../lib/messages.zh-CN';
 import {Icon, type IconName} from './Icon';

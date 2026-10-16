@@ -1,4 +1,4 @@
-import {Link, useNavigate} from 'react-router';
+import {Link, useNavigate} from '../lib/nav';
 import {Icon} from '../components/Icon';
 import {EmptyState} from '../components/States';
 import {useAuth} from '../lib/auth';

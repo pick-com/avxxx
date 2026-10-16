@@ -234,6 +234,64 @@ docker compose exec alertmanager amtool --alertmanager.url=http://127.0.0.1:9093
 - `MEDIA_LINK_ON_DEMAND`（API，默认 `true`）：播放页缺映射时按同一张尝试表即时搜索一次（同样遵守退避和进程内限速）；设为 `false` 则只依赖离线任务，未映射作品的播放接口返回 404。
 - `MEDIA_RESOLVE_TTL`（API，默认 5m，0 关闭）：`POST /api/resolve/{source}/{id}` 成功结果的进程内缓存时间；流地址带过期令牌，缓存不会超过最早的 `expires_at` 前 30 秒，错误从不缓存。
 
+## Web 前端（SSR）与反向代理
+
+PRD 13 SEO 要求视频页、演员页、分类页服务端渲染。此前 `web/dist` 没有任何服务在提供（compose 和 Ansible 只启动 Go 服务，仓库里没有 nginx / Caddy 配置），前端只能用 `npm run dev` 访问。现在：
+
+- `web` 服务（`web/Dockerfile`，node:24 bookworm-slim，以内置的非 root 用户 `node` 运行，`/healthz` 健康检查）运行 `web/server.mjs`：`/assets/*` 带 `immutable` 一年缓存，其余静态文件 1 小时，其余请求由 React Router 服务端渲染（`ssr: true`）。监听 compose 内 `web:3000`，主机只绑定 `127.0.0.1:${WEB_PORT:-3000}`。
+- SSR 加载器经 `API_INTERNAL_URL`（compose：`http://api:8080`）直接调用 Go API；公开 URL（canonical、hreflang、站点地图）用 `PUBLIC_BASE_URL`（默认取 `BASE_URL`，再退回请求自身的 origin），生产必须设置成对外域名。
+- 环境变量：`API_INTERNAL_URL`、`PUBLIC_BASE_URL`、`API_PROXY`（compose 用 `WEB_API_PROXY`）、`API_TIMEOUT_MS`（默认 4000）、`SITEMAP_TTL_SECONDS`（默认 3600）、`SITEMAP_CHUNK`（每个站点地图文件的 URL 数，默认 5000）、`LOG_REQUESTS`（每请求一行 JSON 日志，`false` 关闭）、`PORT` / `HOST`。
+
+反向代理（主机上的 Caddy / nginx，负责 TLS 和压缩）按路径分流：
+
+| 路径 | 上游 |
+| --- | --- |
+| `/api/*` | `127.0.0.1:8080`（Go API） |
+| 其余全部（页面、`/assets/*`、`/sitemap.xml`、`/sitemaps/*`、`/robots.txt`、`/sw.js`） | `127.0.0.1:3000`（web） |
+
+`/api/` 应直接交给 API：API 只用连接地址记录 `client_ip` 和做投稿限流，经 web 转发时看到的都是 web 容器。`WEB_API_PROXY=true`（默认）时 web 也会转发 `/api/*`，只用于单上游的简易部署和本地运行。示例（Caddy）：
+
+```
+reel.example {
+  encode zstd gzip
+  handle /api/* {
+    reverse_proxy 127.0.0.1:8080
+  }
+  handle {
+    reverse_proxy 127.0.0.1:3000
+  }
+}
+```
+
+HTML 响应为 `Cache-Control: no-cache` + `Vary: Cookie`（无前缀入口会按 `lang` cookie 302 到所选语言），不要让共享缓存缓存 HTML；站点地图和 robots.txt 为 `public, max-age=3600`。
+
+### 多语种 URL
+
+- 每个前台页面每种语言一个 URL：无前缀为简体中文（同时是 `x-default`），其余七种为 `/{lang}/...`（`/en/releases/abc-123`、`/zh-TW/performers/x`）。后台 `/admin` 无前缀。
+- `/zh-CN/...` 和不规范写法（`/EN/...`、`/zh-tw/...`）301 到规范 URL；不是语言的首段（`/foo/...`）返回 404。
+- 页面的界面语言和内容语言（`?lang=`）都取自 URL；切换器跳到同一页面的另一语言并写入 `lang` cookie（登录用户同时 PATCH `ui_lang`）；带前缀的入口也会写 cookie。无前缀入口在有非默认 cookie 时 302 到该语言；爬虫不带 cookie，总是看到 URL 自身的语言。登录用户在设置里单独选了不同于界面语言的内容语言时，内容按设置。
+- 每个可索引页面输出 canonical、8 种语言 + `x-default` 的 hreflang、Open Graph / Twitter 卡片和 JSON-LD（视频页 VideoObject、演员页 Person（隐藏的生日从不输出）、BreadcrumbList、首页 WebSite）。搜索、设置、个人页、登录、后台、404 和筛选组合页带 `noindex`；不存在 / 未发布 / 扣留的视频和演员返回 404，API 不可用时返回 503。
+
+### 站点地图与 robots.txt
+
+- `/sitemap.xml` 为索引，列出 `/sitemaps/{type}-{lang}-{n}.xml`：`pages`（首页、发现、分类、演员库、法律页）、`releases`（已发布、未合并且可播放：有 active/degraded 片源或 Javtiful 映射）、`performers`（有已发布作品的 active 演员）、`tags`（`/discover?tag=`），每种语言一份，每个 URL 带全部 hreflang 备选，视频 / 演员 / 标签带 `lastmod`。
+- 数据来自 `GET /api/sitemap/{releases,performers,tags}?cursor=&limit=`（游标分页，单页最多 10000）和 `GET /api/sitemap/counts`；web 进程内缓存 `SITEMAP_TTL_SECONDS`。
+- `robots.txt` 允许前台页面，禁止 `/admin`、`/api/`、个人页、设置、登录和带查询串的搜索页（按语言前缀逐条列出并以 `$` 结尾，避免误伤 slug），并声明站点地图地址。
+
+### 收录健康分（`seo.check`）
+
+PRD 11 / 13：收录健康分 = 服务端渲染通过率 × 0.6 + 站点地图覆盖率 × 0.4（目标 ≥ 90）。`npm run seo:check`（`web/scripts/seo-check.mjs`，镜像内为 `node scripts/seo-check.mjs`）：
+
+1. 读取 `/sitemap.xml`，统计 zh-CN 文件中各类型 URL 数，与 `GET /api/sitemap/counts` 比较得到覆盖率（缺少某语言文件按比例扣分）；
+2. 从站点地图每类型随机抽 `SEO_SAMPLES`（默认 5）个 URL（随机语言），不执行 JS 直接请求，检查 200、非空 `<h1>`、自指 canonical、8 语言 + x-default hreflang、`<html lang>`、无 noindex；
+3. 输出 JSON 报告；设置 `ADMIN_TOKEN` 时 POST 到 `/api/admin/seo/report`，写入 `nightly_runs`（job = `seo.check`，detail 含 `score`、`band`、各类型结果和最多 20 条失败），后台总览「收录健康分」显示最近一次结果，`GET /api/admin/seo/report` 返回最近一次。`SEO_MIN_SCORE` 可让分数不达标时退出码为 1。
+
+Ansible 部署会安装每日 05:15 的 cron（`seo_check_enabled=false` 关闭），在 compose 网络内运行：
+
+```bash
+docker compose run --rm --no-deps -e WEB_URL=http://web:3000 -e API_URL=http://api:8080 -e ADMIN_TOKEN web node scripts/seo-check.mjs
+```
+
 ## 发布验收清单
 
 发布的提交必须在 GitHub Actions CI（`.github/workflows/ci.yml`）中全部通过：`go`（build、vet、单元测试，gofmt 仅告警）、`integration`（Postgres 17 服务容器中的集成测试）、`web`（`npm ci` + `npm run build`）。
@@ -250,6 +308,8 @@ docker compose config
 docker compose --profile monitoring config -q
 make check-alerts       # 需要 docker 或本地 promtool
 API_URL=http://127.0.0.1:8080 ./scripts/smoke.sh
+docker compose build web && curl -fsS http://127.0.0.1:3000/healthz
+WEB_URL=http://127.0.0.1:3000 API_URL=http://127.0.0.1:8080 npm --prefix web run seo:check
 ```
 
 集成测试会删除 `AVXXX_TEST_DATABASE_URL` 指向数据库的 public schema，因此该变量只能指向一次性测试库，绝不能指向 `DATABASE_URL`、compose 的 `db` 服务或生产库；`make test-integration` 会自动创建并销毁专用容器。
