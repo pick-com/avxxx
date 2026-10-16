@@ -568,6 +568,13 @@ func (s *Store) SaveCatalogRecord(ctx context.Context, sourceID int64, parserVer
 		return 0, err
 	}
 	defer tx.Rollback(ctx)
+	// Fallback-only sources (third_party_api, FINAL_DATA_DESIGN 2.4) never
+	// create entities: their records attach to an existing performer /
+	// release or are kept as unresolved evidence.
+	fallback, err := fallbackOnlySource(ctx, tx, sourceID)
+	if err != nil {
+		return 0, err
+	}
 	var performerID, releaseID *int64
 	if rec.EntityType == catalog.Performer {
 		name, _ := rec.Fields["name"].(string)
@@ -575,8 +582,15 @@ func (s *Store) SaveCatalogRecord(ctx context.Context, sourceID int64, parserVer
 			return 0, fmt.Errorf("performer name is required")
 		}
 		ref := recordPerformerRef(rec.Fields, name)
-		slug, err := performerRecordSlug(ctx, tx, sourceID, rec, ref)
-		if err != nil {
+		var slug string
+		if fallback {
+			if slug, err = fallbackPerformerSlug(ctx, tx, sourceID, rec, ref); err != nil {
+				return 0, err
+			}
+			if slug == "" {
+				return saveUnresolvedRecord(ctx, tx, sourceID, parserVersion, rec)
+			}
+		} else if slug, err = performerRecordSlug(ctx, tx, sourceID, rec, ref); err != nil {
 			return 0, err
 		}
 		var id int64
@@ -612,6 +626,14 @@ func (s *Store) SaveCatalogRecord(ctx context.Context, sourceID int64, parserVer
 		// instead of the one its code slug names.
 		if slug, err = releaseRecordSlug(ctx, tx, sourceID, rec.SourceKey, slug); err != nil {
 			return 0, err
+		}
+		if fallback {
+			if slug, err = fallbackReleaseSlug(ctx, tx, sourceID, rec.SourceKey, slug); err != nil {
+				return 0, err
+			}
+			if slug == "" {
+				return saveUnresolvedRecord(ctx, tx, sourceID, parserVersion, rec)
+			}
 		}
 		var id int64
 		var date any = nil
@@ -669,7 +691,22 @@ func (s *Store) SaveCatalogRecord(ctx context.Context, sourceID int64, parserVer
 		return 0, err
 	}
 	if rec.EntityType == catalog.Release && releaseID != nil {
-		for order, ref := range performerRefs(rec.Fields) {
+		// A fallback-only source fills credits only for a release no other
+		// record (or admin) credits, and only with performers that already
+		// exist; its credits stay evidence (source_field_values) either way.
+		refs := performerRefs(rec.Fields)
+		if fallback {
+			var credited bool
+			if err = tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM release_performer_sources WHERE release_id=$1 AND source_record_id<>$2)
+				OR EXISTS(SELECT 1 FROM release_performers rp WHERE rp.release_id=$1 AND NOT EXISTS(SELECT 1 FROM release_performer_sources ps WHERE ps.release_id=rp.release_id AND ps.performer_id=rp.performer_id))`,
+				*releaseID, sourceRecordID).Scan(&credited); err != nil {
+				return 0, err
+			}
+			if credited {
+				refs = nil
+			}
+		}
+		for order, ref := range refs {
 			name := ref.Name
 			if name == "" || catalog.BoilerplateName(name) != "" {
 				continue // never create a performer from site chrome text
@@ -685,7 +722,14 @@ func (s *Store) SaveCatalogRecord(ctx context.Context, sourceID int64, parserVer
 				return 0, err
 			}
 			performerID := prev
-			if !sticky {
+			if !sticky && fallback {
+				if performerID, err = existingPerformer(ctx, tx, ref); err != nil {
+					return 0, err
+				}
+				if performerID == 0 {
+					continue // no such performer yet: evidence only
+				}
+			} else if !sticky {
 				// Japanese-only names (DMM) resolve by actress id or name
 				// match, or are created under a romaji / source-scoped slug.
 				var slug string
@@ -749,25 +793,9 @@ func (s *Store) SaveCatalogRecord(ctx context.Context, sourceID int64, parserVer
 			}
 		}
 	}
-	fieldNames := make([]string, 0, len(rec.Fields))
-	for field, value := range rec.Fields {
-		raw, marshalErr := json.Marshal(value)
-		if marshalErr != nil {
-			return 0, marshalErr
-		}
-		if _, err = tx.Exec(ctx, `UPDATE source_field_values SET is_current=false WHERE source_record_id=$1 AND field_name=$2 AND is_current`, sourceRecordID, field); err != nil {
-			return 0, err
-		}
-		if _, err = tx.Exec(ctx, `INSERT INTO source_field_values(source_record_id,field_name,raw_value,normalized_value,confidence,captured_at,is_current) VALUES($1,$2,$3::jsonb,$3::jsonb,'verified',now(),true)`, sourceRecordID, field, string(raw)); err != nil {
-			return 0, err
-		}
-		if field == catalog.FieldPageTitle {
-			// Evidence for R-PERFORMER-NAME only: it differs per source by
-			// design, so it never competes for a canonical value or opens a
-			// conflict.
-			continue
-		}
-		fieldNames = append(fieldNames, field)
+	fieldNames, err := writeFieldValues(ctx, tx, sourceRecordID, rec.Fields)
+	if err != nil {
+		return 0, err
 	}
 	// Canonical columns follow source_field_policies / source_kind tiers;
 	// conflicts open only where a source disagrees with the winning value.
@@ -779,6 +807,33 @@ func (s *Store) SaveCatalogRecord(ctx context.Context, sourceID int64, parserVer
 	}
 	return sourceRecordID, nil
 }
+
+// writeFieldValues stores fields as the current evidence of a source record
+// and returns the names that compete for canonical values.
+func writeFieldValues(ctx context.Context, tx pgx.Tx, sourceRecordID int64, fields map[string]any) ([]string, error) {
+	fieldNames := make([]string, 0, len(fields))
+	for field, value := range fields {
+		raw, err := json.Marshal(value)
+		if err != nil {
+			return nil, err
+		}
+		if _, err = tx.Exec(ctx, `UPDATE source_field_values SET is_current=false WHERE source_record_id=$1 AND field_name=$2 AND is_current`, sourceRecordID, field); err != nil {
+			return nil, err
+		}
+		if _, err = tx.Exec(ctx, `INSERT INTO source_field_values(source_record_id,field_name,raw_value,normalized_value,confidence,captured_at,is_current) VALUES($1,$2,$3::jsonb,$3::jsonb,'verified',now(),true)`, sourceRecordID, field, string(raw)); err != nil {
+			return nil, err
+		}
+		if field == catalog.FieldPageTitle {
+			// Evidence for R-PERFORMER-NAME only: it differs per source by
+			// design, so it never competes for a canonical value or opens a
+			// conflict.
+			continue
+		}
+		fieldNames = append(fieldNames, field)
+	}
+	return fieldNames, nil
+}
+
 func (s *Store) Heartbeat(ctx context.Context, id int64, worker string, version int64) error {
 	r, e := s.Exec(ctx, "UPDATE jobs SET lease_until=now()+interval '90 seconds',heartbeat_at=now() WHERE id=$1 AND status='running' AND worker_id=$2 AND (execution_version=$3 OR $3=0) AND lease_until>now()", id, worker, version)
 	if e == nil && r.RowsAffected() != 1 {

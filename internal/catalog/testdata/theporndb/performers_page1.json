@@ -1,0 +1,72 @@
+{
+  "data": [
+    {
+      "id": "32aa4b68-4dbe-49f2-92a5-0e54e5074f4b",
+      "_id": 1,
+      "slug": "jessica-jaymes",
+      "name": "Jessica Jaymes",
+      "full_name": "Jessica Jaymes (2005)",
+      "disambiguation": "2005",
+      "bio": null,
+      "rating": 5,
+      "is_parent": false,
+      "extras": {
+        "gender": "Male",
+        "birthday": "1990-01-01",
+        "birthday_type": null,
+        "birthplace": "Florida, USA",
+        "birthplace_code": "US",
+        "nationality": "American",
+        "weight": "50kg",
+        "height": "160cm",
+        "measurements": "34C-24-34",
+        "cupsize": "34C",
+        "waist": "24",
+        "hips": "34",
+        "career_start_year": 2014,
+        "career_end_year": 2024
+      },
+      "aliases": ["Jessi Jaymes"],
+      "image": "https://example.com/image.jpg",
+      "thumbnail": null,
+      "face": null
+    },
+    {
+      "id": "7e8d5654-2ca4-46de-ac1e-8683f9e7f778",
+      "_id": 900020,
+      "slug": "placeholder-actress",
+      "name": "Placeholder Actress",
+      "full_name": "Placeholder Actress",
+      "disambiguation": null,
+      "bio": null,
+      "rating": 0,
+      "is_parent": false,
+      "extras": {
+        "gender": "Female",
+        "birthday": "1999-01-01",
+        "birthday_type": "YEAR",
+        "birthplace": null,
+        "birthplace_code": "JP",
+        "nationality": "Japanese",
+        "weight": null,
+        "height": "158",
+        "measurements": null,
+        "cupsize": null,
+        "waist": null,
+        "hips": null,
+        "career_start_year": null,
+        "career_end_year": null
+      },
+      "aliases": ["Placeholder Alias"],
+      "image": null,
+      "thumbnail": null,
+      "face": null
+    }
+  ],
+  "meta": {
+    "total": 2,
+    "per_page": 25,
+    "current_page": 1,
+    "last": 1
+  }
+}

@@ -13,7 +13,8 @@ import (
 
 // dryRunStartURLs are the default discovery URLs for -dry-run.
 var dryRunStartURLs = map[string]string{
-	catalog.DMMAdapterName: catalog.DMMItemListURL,
+	catalog.DMMAdapterName:       catalog.DMMItemListURL,
+	catalog.ThePornDBAdapterName: catalog.ThePornDBJAVListURL,
 }
 
 type dryRunOutput struct {

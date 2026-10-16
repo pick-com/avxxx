@@ -62,6 +62,9 @@
 - [ ] DMM/FANZA 官方目录或 Affiliate API — **已实现，待凭据实测**：`dmm` adapter（ItemList digital/videoa + ActressSearch `sort=-id`）已接入 baseline/增量/verify 阶段（增量用增量 checkpoint 水位推导 `gte_date` 并按头部记录停止，baseline 独立游标），走 robots/许可门禁；官方目录（优先级 10）按字段策略胜出作品身份字段。来源以 `official_api` 默认停用、`terms_reviewed_at` 为空：配置 `DMM_API_ID`/`DMM_AFFILIATE_ID`/`CATALOG_CONTACT` 后先跑 `go run ./cmd/scraper -dry-run -adapter dmm` 用真实响应核对字段（含 `sort=date`/`sort=-id` 排序方向），再记录条款审核并启用
 - [ ] 厂商目录 adapter
 - [ ] JavDB、IAFD、ThePornDB、javinfo 交叉验证 adapter
+  - [ ] ThePornDB — **已实现，待凭据实测**：`theporndb` adapter 按官方 OpenAPI（`https://api.theporndb.net/specs?openapi.json`，文档 `https://api.theporndb.net/docs`）映射 `GET /jav`、`/jav/{id}`、`/performers`、`/performers/{id}`，`THEPORNDB_API_TOKEN` 只以 Bearer 头发往 API 主机并全程脱敏。主模式是 `crosscheck` 任务（cmd/scheduler 每 `CROSSCHECK_EVERY` 入队、cmd/audit 执行）：对缺发售日/厂商/演员/封面证据或有待审字段冲突的作品按品番查询，唯一精确品番匹配才保存为证据，尝试记录在 `crosscheck_attempts`（未找到 14 天、3 次后 60 天重试；错误指数退避）；次要模式是 `GET /jav`（按发售日倒序）的 baseline/增量/verify 抓取。`third_party_api` 层级（优先级 50）只附着到已有作品/演员、只补缺字段、不单独开字段冲突、不新建演员，作品已有他源署名时不加署名；ThePornDB 演员 UUID 写入 `performer_external_ids(namespace='theporndb_performer')`。来源（migration 032）以 `official_api` 默认停用、`terms_reviewed_at` 为空，API 文档未给出条款/署名要求，审核时需确认。配置 token 与 `CATALOG_CONTACT` 后先跑 `go run ./cmd/scraper -dry-run -adapter theporndb` 核对 JAV 品番所在字段（`sku`/`external_id`）、`duration` 单位和 `meta.last` 含义，再记录条款审核并启用
+  - [ ] JavDB、IAFD：没有官方 API，条款未确认前保持在许可门禁后，只能人工 verify，不实现自动抓取
+  - [ ] javinfo：待评估
 
 ### 增量调度
 

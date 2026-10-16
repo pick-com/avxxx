@@ -29,6 +29,10 @@ import (
 // externalDMMActress is the performer_external_ids namespace of DMM ids.
 const externalDMMActress = "dmm_actress"
 
+// externalThePornDB is the performer_external_ids namespace of ThePornDB
+// performer UUIDs (third_party_api: an id never creates a slug).
+const externalThePornDB = "theporndb_performer"
+
 // performerRef is one credited performer of a release record, or the
 // performer of a performer record.
 type performerRef struct {
@@ -36,6 +40,8 @@ type performerRef struct {
 	// Readings: romaji / English forms and kana readings, best first.
 	Readings []string
 	DMMID    string
+	// TPDBID is the ThePornDB performer UUID (catalog.ThePornDBPerformerID).
+	TPDBID string
 	// Primary is the record's is_primary flag when it has one.
 	Primary *bool
 }
@@ -62,7 +68,8 @@ func recordText(v any) string {
 }
 
 func refFromMap(get func(string) any) performerRef {
-	r := performerRef{Name: recordText(get("name")), DMMID: recordText(get("dmm_actress_id"))}
+	r := performerRef{Name: recordText(get("name")), DMMID: recordText(get("dmm_actress_id")),
+		TPDBID: catalog.ThePornDBPerformerID(recordText(get("theporndb_performer_id")))}
 	for _, k := range readingKeys {
 		if v := recordText(get(k)); v != "" {
 			r.Readings = append(r.Readings, v)
@@ -136,6 +143,9 @@ func resolvePerformer(ctx context.Context, tx pgx.Tx, sourceID int64, ref perfor
 	if id, err = performerByExternalID(ctx, tx, ref.DMMID); err != nil || id != 0 {
 		return finishResolve(ctx, tx, id, err)
 	}
+	if id, err = performerByNamespacedID(ctx, tx, externalThePornDB, ref.TPDBID); err != nil || id != 0 {
+		return finishResolve(ctx, tx, id, err)
+	}
 	if s := catalog.NameSlug(ref.Name); s != "" {
 		return 0, s, nil
 	}
@@ -194,6 +204,48 @@ func performerByExternalID(ctx context.Context, tx pgx.Tx, dmmID string) (int64,
 		return 0, err
 	}
 	return survivingID(ctx, tx, "performers", id)
+}
+
+// performerByNamespacedID: the performer an id of namespace was recorded for
+// (following merges); 0 when id is empty or unknown. Unlike DMM ids, other
+// namespaces have no source-scoped slug.
+func performerByNamespacedID(ctx context.Context, tx pgx.Tx, namespace, id string) (int64, error) {
+	if id == "" {
+		return 0, nil
+	}
+	var pid int64
+	err := tx.QueryRow(ctx, `SELECT performer_id FROM performer_external_ids WHERE namespace=$1 AND external_id=$2`, namespace, id).Scan(&pid)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return 0, nil
+	}
+	if err != nil {
+		return 0, err
+	}
+	return survivingID(ctx, tx, "performers", pid)
+}
+
+// existingPerformer resolves ref like resolvePerformer but never creates a
+// performer: source ids, then an existing performer under the Latin name
+// slug, then a unique name / alias match. 0 when none exists. Fallback-only
+// sources (third_party_api) attach evidence through it.
+func existingPerformer(ctx context.Context, tx pgx.Tx, ref performerRef) (int64, error) {
+	if id, err := performerByExternalID(ctx, tx, ref.DMMID); err != nil || id != 0 {
+		return id, err
+	}
+	if id, err := performerByNamespacedID(ctx, tx, externalThePornDB, ref.TPDBID); err != nil || id != 0 {
+		return id, err
+	}
+	if s := catalog.NameSlug(ref.Name); s != "" {
+		var id int64
+		err := tx.QueryRow(ctx, `SELECT id FROM performers WHERE slug=$1`, s).Scan(&id)
+		if err == nil {
+			return survivingID(ctx, tx, "performers", id)
+		}
+		if !errors.Is(err, pgx.ErrNoRows) {
+			return 0, err
+		}
+	}
+	return performerByName(ctx, tx, ref)
 }
 
 // performerByName returns the one live performer whose name, Japanese name or
@@ -293,6 +345,12 @@ func linkPerformerIdentity(ctx context.Context, tx pgx.Tx, sourceID, id int64, r
 	if catalog.DMMActressSlug(ref.DMMID) != "" {
 		if _, err := tx.Exec(ctx, `INSERT INTO performer_external_ids(namespace,external_id,performer_id,source_id) VALUES($1,$2,$3,$4) ON CONFLICT DO NOTHING`,
 			externalDMMActress, ref.DMMID, id, sourceID); err != nil {
+			return err
+		}
+	}
+	if ref.TPDBID != "" {
+		if _, err := tx.Exec(ctx, `INSERT INTO performer_external_ids(namespace,external_id,performer_id,source_id) VALUES($1,$2,$3,$4) ON CONFLICT DO NOTHING`,
+			externalThePornDB, ref.TPDBID, id, sourceID); err != nil {
 			return err
 		}
 	}

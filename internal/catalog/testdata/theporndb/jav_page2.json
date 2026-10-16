@@ -1,0 +1,51 @@
+{
+  "data": [
+    {
+      "id": "9a8b7c6d-5e4f-4a3b-8c2d-1e0f9a8b7c6d",
+      "_id": 900002,
+      "title": "ABP-123 Placeholder Title",
+      "type": "JAV",
+      "slug": "prestige-abp-123-placeholder-title",
+      "external_id": "118abp00123",
+      "site_id": 900011,
+      "date": "2024-01-10",
+      "url": "https://studio.example/works/118abp00123",
+      "image": "https://cdn.theporndb.net/jav/placeholder/abp-123-cover.jpg",
+      "back_image": null,
+      "poster_image": null,
+      "poster": null,
+      "trailer": null,
+      "duration": null,
+      "format": null,
+      "sku": null,
+      "background": {"full": null, "large": null, "medium": null, "small": null},
+      "posters": {"full": null, "large": null, "medium": null, "small": null},
+      "created": "2024-01-11 01:00:00",
+      "last_updated": "2024-01-11 01:00:00",
+      "performers": [],
+      "site": {
+        "uuid": "b8d2f6e3-4c5a-4f7b-9d0e-1f2a3b4c5d6e",
+        "id": 900011,
+        "parent_id": null,
+        "network_id": null,
+        "name": "Prestige",
+        "short_name": "prestige",
+        "url": "https://studio.example",
+        "description": null,
+        "rating": "0",
+        "logo": null,
+        "favicon": null,
+        "poster": null
+      },
+      "tags": [],
+      "directors": [],
+      "links": null
+    }
+  ],
+  "meta": {
+    "total": 3,
+    "per_page": 2,
+    "current_page": 2,
+    "last": 2
+  }
+}

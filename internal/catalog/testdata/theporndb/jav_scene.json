@@ -1,0 +1,60 @@
+{
+  "data": {
+    "id": "5b0d3a6e-4f1c-4c39-9a51-6f0a1f2e8c01",
+    "_id": 900001,
+    "title": "SONE-156 Placeholder Title",
+    "type": "JAV",
+    "slug": "s1-no1-style-sone-156-placeholder-title",
+    "external_id": "sone00156",
+    "site_id": 900010,
+    "date": "2024-04-23",
+    "url": "https://studio.example/works/sone00156",
+    "image": "https://cdn.theporndb.net/jav/placeholder/sone-156-cover.jpg",
+    "back_image": null,
+    "poster_image": null,
+    "poster": "https://thumb.theporndb.net/placeholder/sone-156.jpg",
+    "trailer": null,
+    "duration": 7200,
+    "format": null,
+    "sku": "SONE-156",
+    "background": {"full": null, "large": null, "medium": null, "small": null},
+    "posters": {"full": "https://cdn.theporndb.net/jav/placeholder/sone-156-poster.jpg", "large": null, "medium": null, "small": null},
+    "created": "2024-04-24 01:00:00",
+    "last_updated": "2024-04-25 02:00:00",
+    "performers": [
+      {
+        "id": "7e8d5654-2ca4-46de-ac1e-8683f9e7f778",
+        "_id": 900020,
+        "slug": "placeholder-actress",
+        "name": "Placeholder Actress",
+        "full_name": "Placeholder Actress",
+        "disambiguation": null,
+        "bio": null,
+        "rating": 0,
+        "is_parent": false,
+        "extras": {"gender": "Female"},
+        "aliases": null,
+        "image": null
+      }
+    ],
+    "site": {
+      "uuid": "a7c1e5d2-3b4f-4e6a-8c9d-0e1f2a3b4c5d",
+      "id": 900010,
+      "parent_id": null,
+      "network_id": null,
+      "name": "S1 NO.1 STYLE",
+      "short_name": "s1no1style",
+      "url": "https://studio.example",
+      "description": null,
+      "rating": "0",
+      "logo": null,
+      "favicon": null,
+      "poster": null
+    },
+    "tags": [],
+    "directors": [
+      {"id": "900030", "uuid": "c3d4e5f6-a7b8-4c9d-8e0f-1a2b3c4d5e6f", "name": "Placeholder Director", "slug": "placeholder-director"}
+    ],
+    "links": null
+  }
+}

@@ -61,6 +61,12 @@ func (c fieldCandidate) effectivePriority() int {
 	return TierPriority(c.SourceKind)
 }
 
+// fallbackOnly reports whether c is missing-field fallback evidence: a
+// third_party_api source without an explicit policy row for the field.
+func (c fieldCandidate) fallbackOnly() bool {
+	return c.SourceKind == FallbackSourceKind && c.Policy == nil
+}
+
 // isEmptyValue reports whether a parser value carries no information
 // (null, "", whitespace, [] or {}): such values are evidence of absence, not
 // candidates for the canonical field or conflicts.
@@ -159,6 +165,11 @@ func decideField(entityType, field string, cands []fieldCandidate) fieldDecision
 	}
 	want := compareKey(entityType, field, d.Winner.Value)
 	for _, c := range ranked {
+		if c.fallbackOnly() {
+			// Fallback evidence (third_party_api without a policy row) joins
+			// a conflict other sources open, but never opens one by itself.
+			continue
+		}
 		if compareKey(entityType, field, c.Value) != want {
 			d.Conflict = true
 			break

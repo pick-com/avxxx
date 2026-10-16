@@ -45,8 +45,17 @@ type Adapter interface {
 // the fixture acceptance harness share this list). The DMM adapter reads its
 // credentials from the environment; unconfigured, it still parses fixtures
 // but refuses to build an HTTP client (HTTPClientFor -> ErrNotConfigured).
+// The ThePornDB adapter (THEPORNDB_API_TOKEN) behaves the same way.
 func Adapters() []Adapter {
-	return []Adapter{NewJAVDatabaseAdapter(), NewXCITYAdapter(), NewJavGuruAdapter(), NewDMMAdapter()}
+	return []Adapter{NewJAVDatabaseAdapter(), NewXCITYAdapter(), NewJavGuruAdapter(), NewDMMAdapter(), NewThePornDBAdapter()}
+}
+
+// LookupAdapter is implemented by adapters that can look a release up by
+// product code (cross-check mode, internal/crosscheck): LookupURLs returns
+// the API URLs to fetch for one code; Discover maps their responses.
+type LookupAdapter interface {
+	Adapter
+	LookupURLs(code string) []string
 }
 
 type Registry struct{ adapters map[string]Adapter }
