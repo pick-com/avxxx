@@ -113,11 +113,17 @@ const PLAY_CONFIG_PATH = /^releases\/[^/?]+\/play-config(\?|$)/;
 // Recommendations (internal/api/recs.go): public, but a user token adds the
 // viewer's history, follows and watched filter.
 const RECS_PATH = /^recs(\?|$)/;
-// Community routes (internal/api/community.go).
-const COMMUNITY_PATH = /^(releases\/[^/?]+\/(danmaku|rating|reviews)|danmaku\/\d+\/report|reviews\/\d+(\/(like|report))?|reports)(\?|$)/;
+// Upcoming (internal/api/catalog.go): public, but ?followed=1 needs the user
+// and a token adds each item's `reserved` state.
+const UPCOMING_PATH = /^upcoming(\?|$)/;
+// Community routes (internal/api/community.go) and 赞 / 踩 / comments
+// (internal/api/interactions.go): a signed-in voter is identified by the
+// token only (no X-Device-ID), and posting or liking a comment needs it.
+const COMMUNITY_PATH =
+  /^(releases\/[^/?]+\/(danmaku|rating|reviews|reaction|comments)|danmaku\/\d+\/report|reviews\/\d+(\/(like|report))?|comments\/\d+(\/(like|replies|report))?|reports)(\?|$)/;
 
 function tokenFor(path: string): string | null {
-  if (path.startsWith('me/') || path === 'auth/me' || PLAY_CONFIG_PATH.test(path) || COMMUNITY_PATH.test(path) || RECS_PATH.test(path)) return tokens.user();
+  if (path.startsWith('me/') || path === 'auth/me' || PLAY_CONFIG_PATH.test(path) || COMMUNITY_PATH.test(path) || RECS_PATH.test(path) || UPCOMING_PATH.test(path)) return tokens.user();
   return null;
 }
 
