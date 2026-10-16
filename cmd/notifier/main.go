@@ -14,12 +14,13 @@ import (
 	"context"
 	"flag"
 	"fmt"
-	"log"
+	"log/slog"
 	"os"
 	"os/signal"
 	"syscall"
 
 	"avxxx/internal/notify"
+	"avxxx/internal/obs"
 	"avxxx/internal/store"
 	"avxxx/internal/webpush"
 )
@@ -29,10 +30,11 @@ func main() {
 	gen := flag.Bool("gen-vapid", false, "print a new VAPID key pair and exit")
 	flag.Parse()
 
+	obs.SetupLogging("notifier")
 	if *gen {
 		pub, priv, err := webpush.GenerateVAPID()
 		if err != nil {
-			log.Fatal(err)
+			obs.Fatal("generate VAPID keys", err)
 		}
 		fmt.Printf("VAPID_PUBLIC_KEY=%s\nVAPID_PRIVATE_KEY=%s\n", pub, priv)
 		return
@@ -40,17 +42,17 @@ func main() {
 
 	cfg, err := notify.LoadConfig(os.Getenv)
 	if err != nil {
-		log.Fatalf("notifier config: %v", err)
+		obs.Fatal("notifier config", err)
 	}
 	r, err := notify.NewRenderer(cfg.BaseURL)
 	if err != nil {
-		log.Fatal(err)
+		obs.Fatal("notifier templates", err)
 	}
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 	s, err := store.Open(ctx)
 	if err != nil {
-		log.Fatal(err)
+		obs.Fatal("open store", err)
 	}
 	defer s.Close()
 
@@ -61,17 +63,21 @@ func main() {
 	if cfg.Mail != nil {
 		w.Mail = cfg.Mail
 	}
-	log.Printf("notifier: channels=%v", w.Channels())
+	slog.Info("notifier: starting", "channels", w.Channels())
 	if len(w.Channels()) == 0 {
-		log.Print("notifier: no channel configured (VAPID_* / SMTP_*); idling")
+		slog.Warn("notifier: no channel configured (VAPID_* / SMTP_*); idling")
 	}
 	if *once {
 		n, err := w.Tick(ctx)
-		log.Printf("notifier: processed %d rows", n)
+		slog.Info("notifier: processed rows", "rows", n)
 		if err != nil {
-			log.Fatal(err)
+			obs.Fatal("notifier tick", err)
 		}
 		return
+	}
+	obs.RegisterPool(s.Stat)
+	if err := obs.ServeMetrics(ctx, obs.MetricsAddr("127.0.0.1:9094")); err != nil {
+		obs.Fatal("metrics listener", err)
 	}
 	w.Run(ctx)
 }

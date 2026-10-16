@@ -27,6 +27,7 @@ package main
 
 import (
 	"avxxx/internal/audit"
+	"avxxx/internal/obs"
 	"avxxx/internal/playcurve"
 	"avxxx/internal/recs"
 	"avxxx/internal/search"
@@ -35,7 +36,7 @@ import (
 	"encoding/json"
 	"errors"
 	"flag"
-	"log"
+	"log/slog"
 	"os"
 	"os/signal"
 	"strconv"
@@ -54,11 +55,12 @@ func main() {
 	searchNow := flag.Bool("search", false, "run the search statistics job once and exit")
 	flag.Parse()
 
+	obs.SetupLogging("audit")
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 	s, err := store.Open(ctx)
 	if err != nil {
-		log.Fatal(err)
+		obs.Fatal("open store", err)
 	}
 	defer s.Close()
 
@@ -67,45 +69,49 @@ func main() {
 		res, err := audit.CheckRelease(ctx, s, *release, audit.DefaultAgeConfig, time.Now())
 		printJSON(res)
 		if err != nil {
-			log.Fatal(err)
+			obs.Fatal("run failed", err)
 		}
 	case *health:
 		rep, err := (&audit.HealthRunner{Store: s, Config: healthConfig()}).Run(ctx)
 		printJSON(rep)
 		if err != nil {
-			log.Fatal(err)
+			obs.Fatal("run failed", err)
 		}
 	case *curves:
 		rep, err := (&playcurve.Runner{Store: s}).Run(ctx)
 		printJSON(rep)
 		if err != nil {
-			log.Fatal(err)
+			obs.Fatal("run failed", err)
 		}
 	case *recsNow:
 		rn := &recs.Runner{Store: s}
 		sim, err := rn.RunSimilarity(ctx)
 		printJSON(sim)
 		if err != nil {
-			log.Fatal(err)
+			obs.Fatal("run failed", err)
 		}
 		tr, err := rn.RunTrending(ctx)
 		printJSON(tr)
 		if err != nil {
-			log.Fatal(err)
+			obs.Fatal("run failed", err)
 		}
 	case *searchNow:
 		rep, err := (&search.Runner{Store: s}).Run(ctx)
 		printJSON(rep)
 		if err != nil {
-			log.Fatal(err)
+			obs.Fatal("run failed", err)
 		}
 	case *once:
 		rep, err := (&audit.Runner{Store: s}).Run(ctx)
 		printJSON(rep)
 		if err != nil {
-			log.Fatal(err)
+			obs.Fatal("run failed", err)
 		}
 	default:
+		obs.RegisterPool(s.Stat)
+		if err := obs.ServeMetrics(ctx, obs.MetricsAddr("127.0.0.1:9093")); err != nil {
+			obs.Fatal("metrics listener", err)
+		}
 		work(ctx, s)
 	}
 }
@@ -119,7 +125,8 @@ func printJSON(v any) {
 func work(ctx context.Context, s *store.Store) {
 	for ctx.Err() == nil {
 		if err := s.ReapExpired(ctx); err != nil {
-			log.Printf("reap expired jobs: %v", err)
+			obs.JobClaimErrors.WithLabelValues("audit", "reap").Inc()
+			slog.Error("reap expired jobs", "err", err)
 		}
 		claimed := false
 		for _, kind := range []string{store.JobKindSourceHealth, store.JobKindRecsTrending, store.JobKindReleaseCurves, store.JobKindSearchStats, store.JobKindAudit, store.JobKindRecsSimilarity} {
@@ -128,7 +135,8 @@ func work(ctx context.Context, s *store.Store) {
 				continue
 			}
 			if err != nil {
-				log.Printf("claim %s job: %v", kind, err)
+				obs.JobClaimErrors.WithLabelValues(kind, "claim").Inc()
+				slog.Error("claim job", "kind", kind, "err", err)
 				continue
 			}
 			claimed = true
@@ -182,7 +190,8 @@ func execute(ctx context.Context, s *store.Store, kind string, id int64) (any, e
 }
 
 func runJob(ctx context.Context, s *store.Store, kind string, id, version int64) {
-	runCtx, cancel := context.WithCancel(ctx)
+	jl := slog.With("job_id", id, "kind", kind)
+	runCtx, cancel := context.WithCancel(obs.WithLogger(ctx, jl))
 	done := make(chan struct{})
 	go func() { // keep the lease; losing it cancels the run
 		defer close(done)
@@ -194,7 +203,8 @@ func runJob(ctx context.Context, s *store.Store, kind string, id, version int64)
 				return
 			case <-t.C:
 				if err := s.Heartbeat(runCtx, id, s.WorkerID(), version); err != nil {
-					log.Printf("%s job %d heartbeat: %v", kind, id, err)
+					obs.JobLeaseLost.WithLabelValues(kind).Inc()
+					jl.Warn("job heartbeat failed; cancelling", "err", err)
 					cancel()
 					return
 				}
@@ -208,9 +218,15 @@ func runJob(ctx context.Context, s *store.Store, kind string, id, version int64)
 	fin, stop := context.WithTimeout(context.Background(), 10*time.Second)
 	defer stop()
 	if err := s.FinishJob(fin, id, version, counts, cause); err != nil {
-		log.Printf("finish %s job %d: %v", kind, id, err)
+		obs.JobClaimErrors.WithLabelValues(kind, "finish").Inc()
+		jl.Error("finish job", "err", err)
 	}
-	log.Printf("%s job=%d duration=%s error=%v", kind, id, time.Since(start).Round(time.Millisecond), cause)
+	obs.ObserveJob(kind, time.Since(start), cause)
+	lvl := slog.LevelInfo
+	if cause != nil {
+		lvl = slog.LevelWarn
+	}
+	jl.Log(ctx, lvl, "job finished", "duration_ms", time.Since(start).Milliseconds(), "err", cause)
 }
 
 func sleep(ctx context.Context, d time.Duration) {

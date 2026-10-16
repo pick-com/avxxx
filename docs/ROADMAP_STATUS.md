@@ -96,7 +96,7 @@
 
 ### 生产化
 
-- [ ] 结构化日志、指标和告警
+- [x] 结构化日志、指标和告警（`internal/obs`、`deploy/monitoring`；值班通知待接 Alertmanager）
 - [x] robots、terms、授权和配额门禁
 - [ ] 数据保留和图片使用策略
 - [ ] 部署、备份和恢复文档

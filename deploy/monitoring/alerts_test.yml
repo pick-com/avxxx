@@ -1,0 +1,60 @@
+# promtool test rules deploy/monitoring/alerts_test.yml (scripts/check-alerts.sh)
+rule_files:
+  - alerts.yml
+evaluation_interval: 1m
+tests:
+  - interval: 1m
+    input_series:
+      - series: 'avxxx_audit_holds_total{job="avxxx-scheduler",instance="scheduler:9091",rule="R-AGE"}'
+        values: '0 0 0 1 1 1'
+      - series: 'avxxx_http_requests_total{job="avxxx-api",instance="api:9090",method="GET",route="/api/releases/{slug}",code="200"}'
+        values: '0+100x20'
+      - series: 'avxxx_http_requests_total{job="avxxx-api",instance="api:9090",method="GET",route="/api/releases/{slug}",code="500"}'
+        values: '0+5x20'
+      - series: 'avxxx_play_pairing_ratio{job="avxxx-scheduler",instance="scheduler:9091"}'
+        values: '0.9x40'
+      - series: 'avxxx_play_pairing_requests{job="avxxx-scheduler",instance="scheduler:9091"}'
+        values: '500x40'
+      - series: 'avxxx_health_up{job="avxxx-api",instance="api:9090"}'
+        values: '1 1 0 0 0 0 0'
+      - series: 'up{job="avxxx-api",instance="api:9090"}'
+        values: '1x10'
+    alert_rule_test:
+      - eval_time: 5m
+        alertname: RAgeHold
+        exp_alerts:
+          - exp_labels:
+              severity: page
+              job: avxxx-scheduler
+              instance: scheduler:9091
+              rule: R-AGE
+            exp_annotations:
+              summary: "R-AGE hold: 1 release(s) held for age review"
+              description: "Review in AdminAudit (rule R-AGE) before the release can be republished."
+      - eval_time: 20m
+        alertname: ApiHigh5xxRate
+        exp_alerts:
+          - exp_labels:
+              severity: page
+            exp_annotations:
+              summary: "API 5xx rate 4.762%"
+              description: "More than 1% of API requests returned 5xx for 10 minutes (99.9% availability target, PRD 13)."
+      - eval_time: 6m
+        alertname: ApiHealthProbeFailing
+        exp_alerts:
+          - exp_labels:
+              severity: page
+              job: avxxx-api
+              instance: api:9090
+            exp_annotations:
+              summary: "API health check failing on api:9090"
+              description: "/api/health (database ping) or the API metrics listener has failed for 3 minutes."
+      - eval_time: 35m
+        alertname: PlayPairingLow
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              job: avxxx-scheduler
+              instance: scheduler:9091
+            exp_annotations:
+              summary: "play_request→play_end pairing 90% < 95%"

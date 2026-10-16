@@ -31,6 +31,8 @@ jobs:
         run: go vet ./...
       - name: go test
         run: go test ./...
+      - name: Prometheus alert rules (promtool check + rule tests)
+        run: ./scripts/check-alerts.sh
       - name: gofmt (warning only)
         run: |
           unformatted="$(gofmt -l . | grep -v '^web/' || true)"

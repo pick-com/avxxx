@@ -2,7 +2,7 @@ ifneq (,$(wildcard .env))
 include .env
 export
 endif
-.PHONY: db-up seed-demo api scheduler scraper audit notifier web test test-integration fixturecheck build smoke backup
+.PHONY: db-up seed-demo api scheduler scraper audit notifier web test test-integration fixturecheck build smoke backup check-alerts monitoring
 db-up:
 	docker compose up -d db
 seed-demo:
@@ -34,3 +34,9 @@ smoke:
 	./scripts/smoke.sh
 backup:
 	./scripts/backup-db.sh
+# promtool check + unit tests for deploy/monitoring (docker, or a local promtool).
+check-alerts:
+	./scripts/check-alerts.sh
+# Prometheus + alert rules on 127.0.0.1:9095 (compose profile "monitoring").
+monitoring:
+	docker compose --profile monitoring up -d prometheus

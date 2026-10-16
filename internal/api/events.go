@@ -2,11 +2,11 @@ package api
 
 import (
 	"avxxx/internal/events"
+	"avxxx/internal/obs"
 	"context"
 	"encoding/json"
 	"errors"
 	"io"
-	"log"
 	"net/http"
 	"time"
 )
@@ -85,16 +85,21 @@ func (srv *Server) ingestEvents(sink eventSink, reg events.Registry, now func() 
 		}
 		if err := sink.QuarantineEvents(r.Context(), batch.Rejected); err != nil {
 			// Not worth failing the batch (and re-sending valid events) over.
-			log.Printf("events: quarantine %d events: %v", len(batch.Rejected), err)
+			obs.L(r.Context()).Error("events: quarantine failed", "events", len(batch.Rejected), "err", err)
 		}
 
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusAccepted)
-		json.NewEncoder(w).Encode(ingestResult{
+		res := ingestResult{
 			Accepted:    inserted,
 			Duplicates:  len(batch.Valid) - inserted + batch.InBatchDups,
 			Quarantined: len(batch.Rejected),
-		})
+		}
+		obs.Events.WithLabelValues("accepted").Add(float64(res.Accepted))
+		obs.Events.WithLabelValues("duplicate").Add(float64(res.Duplicates))
+		obs.Events.WithLabelValues("quarantined").Add(float64(res.Quarantined))
+
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusAccepted)
+		json.NewEncoder(w).Encode(res)
 	}
 }
 
@@ -107,7 +112,7 @@ func (srv *Server) optionalUserID(r *http.Request) *int64 {
 	id, err := srv.userID(r)
 	if err != nil {
 		if !errors.Is(err, errUnauthorized) {
-			log.Printf("events: resolve user: %v", err)
+			obs.L(r.Context()).Warn("events: resolve user failed", "err", err)
 		}
 		return nil
 	}
