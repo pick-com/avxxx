@@ -195,6 +195,7 @@ JAV Database adapter 已接入 scraper，可完成发现、详情抓取、解析
 - AdminDashboard 播放 / 日活 / 时长 / 完播 KPI（事件已入库，缺聚合与接口）。
 - 冷启动推荐使用 Onboarding 兴趣与 Tonight 的「想要 / 和谁看」。
 - AdminDedupe 对比面板实体摘要，视频两种合并方式。
+- 设置页：默认片源；接上已有的清除搜索记录接口。
 
 ## 总体状态
 
