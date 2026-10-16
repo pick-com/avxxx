@@ -10,6 +10,7 @@ import {SocialProvider} from './lib/social';
 import {ThemeProvider, themeInitScript} from './lib/theme';
 import './styles/app.css';
 import './styles/beta.css';
+import './styles/community.css';
 
 export const links = () => [
   {rel: 'preconnect', href: 'https://fonts.googleapis.com'},
@@ -24,7 +25,8 @@ export const meta = () => [{title: 'REEL'}, {name: 'description', content: 'REEL
 
 export function Layout({children}: {children: ReactNode}) {
   return (
-    <html lang="zh-CN">
+    // themeInitScript sets data-theme before hydration; React must not flag it.
+    <html lang="zh-CN" suppressHydrationWarning>
       <head>
         <meta charSet="utf-8" />
         <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />

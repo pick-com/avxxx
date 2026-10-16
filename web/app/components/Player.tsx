@@ -1,6 +1,6 @@
 import {useCallback, useEffect, useId, useMemo, useRef, useState, type ReactNode} from 'react';
 import type HlsType from 'hls.js';
-import {getPlayConfig, getPlayback, resolvePlayback, saveWatchProgress} from '../lib/api';
+import {ApiError, getPlayConfig, getPlayback, resolvePlayback, saveWatchProgress} from '../lib/api';
 import {currentPage, entryFrom, track} from '../lib/analytics';
 import {useAuth} from '../lib/auth';
 import {useT} from '../lib/i18n';
@@ -10,7 +10,10 @@ import {heightCap, prefHeight, qualityParam, rememberRate, rememberedRate, usePl
 import {entriesFromConfig, entriesFromStreams, isHlsEntry, type PlayEntry} from '../lib/playSources';
 import {useAsync} from '../lib/useAsync';
 import {useMediaQuery} from '../lib/useMediaQuery';
+import {useDanmakuPrefs} from '../lib/danmakuPrefs';
+import {DanmakuBar, DanmakuLayer, DanmakuListSheet, DanmakuSettings, useDanmakuFeed, type DanmakuLayerHandle} from './Danmaku';
 import {Icon} from './Icon';
+import {PeakCurve} from './PeakCurve';
 import {PlayerMenu} from './PlayerMenu';
 import {PlayerSettingsSheet, type Choice, type SettingsTab} from './PlayerSettingsSheet';
 import {PlayerTouchLayer} from './PlayerTouchLayer';
@@ -102,6 +105,8 @@ export function Player({slug, releaseId, title, resumeAt, onBack, theater = fals
   const [failure, setFailure] = useState('');
   const [notice, setNotice] = useState('');
   const videoRef = useRef<HTMLVideoElement>(null);
+  // The same element as state, for the danmaku hooks that subscribe to it.
+  const [videoEl, setVideoEl] = useState<HTMLVideoElement | null>(null);
   const shellRef = useRef<HTMLDivElement>(null);
   const hlsRef = useRef<HlsType | null>(null);
   const trackerRef = useRef<PlayTracker | null>(null);
@@ -144,6 +149,19 @@ export function Player({slug, releaseId, title, resumeAt, onBack, theater = fals
   levelRef.current = level;
   const [flash, setFlash] = useState('');
   const flashTimer = useRef<number | undefined>(undefined);
+
+  const dmPrefs = useDanmakuPrefs();
+  const [dmListOpen, setDmListOpen] = useState(false);
+  const dmLayer = useRef<DanmakuLayerHandle>(null);
+  // Alternate versions have their own danmaku timeline (version_key alt:<source id>).
+  const dmSourceId = stream?.alt ? stream.sourceId : undefined;
+  const dmFeed = useDanmakuFeed(slug, dmSourceId, videoEl, dmPrefs.enabled && !!stream && !!videoEl);
+  // 高能波峰 of the timeline being played (PRD 5.5.1); null under 50 valid danmaku.
+  const peakCurve = stream
+    ? stream.alt
+      ? config.data?.danmaku?.alt_curves?.[String(stream.sourceId)] ?? null
+      : config.data?.danmaku_curve ?? null
+    : null;
 
   const coarse = useMediaQuery('(pointer: coarse)');
   const reducedMotion = useMediaQuery('(prefers-reduced-motion: reduce)');
@@ -662,7 +680,10 @@ export function Player({slug, releaseId, title, resumeAt, onBack, theater = fals
           {stream ? (
             <video
               key={stream.key}
-              ref={videoRef}
+              ref={el => {
+                videoRef.current = el;
+                setVideoEl(el);
+              }}
               className="player-video"
               controls={!touchMode}
               autoPlay
@@ -720,7 +741,7 @@ export function Player({slug, releaseId, title, resumeAt, onBack, theater = fals
           ) : mode === 'legacy' && info.error ? (
             <div className="player-state">
               <strong>{t('player.unavailable')}</strong>
-              <span>{info.error.message === '内容不存在或已下架' ? t('player.noSource') : info.error.message}</span>
+              <span>{info.error instanceof ApiError && info.error.status === 404 ? t('player.noSource') : info.error.message}</span>
               <button type="button" className="btn btn-on-dark" onClick={info.reload}>
                 {t('player.retry')}
               </button>
@@ -759,6 +780,8 @@ export function Player({slug, releaseId, title, resumeAt, onBack, theater = fals
             />
           )}
 
+          {stream && <DanmakuLayer ref={dmLayer} video={videoEl} feed={dmFeed} prefs={dmPrefs} reducedMotion={reducedMotion} />}
+
           {overlay}
 
           <div className="player-flash" role="status" aria-live="polite">
@@ -774,6 +797,16 @@ export function Player({slug, releaseId, title, resumeAt, onBack, theater = fals
             </div>
           )}
         </div>
+
+        {stream && !touchMode && dmPrefs.enabled && dmPrefs.showPeaks && peakCurve && peakCurve.length > 0 && (
+          <PeakCurve
+            curve={peakCurve}
+            video={videoEl}
+            // PRD 5.5.1: no top-3 markers on a first watch with 屏蔽剧透 on.
+            showMarkers={!(dmPrefs.blockSpoiler && !resumeFrom)}
+            playId={trackerRef.current?.playId}
+          />
+        )}
 
         {phase === 'ready' && !touchMode && (
           <div className="player-bar" role="toolbar" aria-label={t('player.toolbar')}>
@@ -827,6 +860,21 @@ export function Player({slug, releaseId, title, resumeAt, onBack, theater = fals
           </div>
         )}
 
+        {stream && !touchMode && (
+          <DanmakuBar
+            slug={slug}
+            releaseId={releaseId}
+            sourceId={dmSourceId}
+            video={videoEl}
+            feed={dmFeed}
+            layer={dmLayer}
+            onOpenSettings={() => openSettings('danmaku')}
+            onOpenList={() => setDmListOpen(true)}
+          />
+        )}
+
+        <DanmakuListSheet open={dmListOpen} onClose={() => setDmListOpen(false)} feed={dmFeed} video={videoEl} container={fullscreen ? shellRef.current : null} />
+
         <PlayerSettingsSheet
           open={settings.open}
           initialTab={settings.tab}
@@ -837,6 +885,7 @@ export function Player({slug, releaseId, title, resumeAt, onBack, theater = fals
           rate={{options: rateOptions, value: rate, onChange: chooseRate}}
           captions={{options: captionOptions, value: caption, onChange: chooseCaption}}
           audio={{options: audioOptions, value: audioTrack, onChange: chooseAudio}}
+          danmaku={stream ? <DanmakuSettings /> : undefined}
         />
       </div>
 

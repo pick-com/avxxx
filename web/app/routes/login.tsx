@@ -4,8 +4,9 @@ import {BirthMonthPicker, MIN_REGISTER_AGE, ageFromYearMonth} from '../component
 import {ThemeToggle} from '../components/TopBar';
 import {ApiError, login, register} from '../lib/api';
 import {useAuth} from '../lib/auth';
+import {t, useT} from '../lib/i18n';
 
-export const meta = () => [{title: 'REEL · 登录'}];
+export const meta = () => [{title: t('title.login')}];
 
 type Mode = 'login' | 'register';
 
@@ -35,8 +36,9 @@ function ageBlocked(): boolean {
   }
 }
 
-const UNDER_AGE = `抱歉，REEL 不面向 ${MIN_REGISTER_AGE} 岁以下的用户，暂时无法注册。不登录也可以浏览公开内容。`;
+const underAge = () => t('login.underAge', {age: MIN_REGISTER_AGE});
 export default function LoginPage() {
+  const t = useT();
   const [params] = useSearchParams();
   const navigate = useNavigate();
   const {signIn} = useAuth();
@@ -55,11 +57,11 @@ export default function LoginPage() {
     setError('');
     if (mode === 'register') {
       if (ageBlocked()) {
-        setError(UNDER_AGE);
+        setError(underAge());
         return;
       }
       if (!birthYear || !birthMonth) {
-        setError('请选择出生年月');
+        setError(t('login.pickBirth'));
         return;
       }
       if (ageFromYearMonth(Number(birthYear), Number(birthMonth)) < MIN_REGISTER_AGE) {
@@ -68,12 +70,12 @@ export default function LoginPage() {
         } catch {
           /* not persisted */
         }
-        setError(UNDER_AGE);
+        setError(underAge());
         return;
       }
     }
     if (password.length < 8) {
-      setError('密码至少 8 位');
+      setError(t('login.passwordShort'));
       return;
     }
     setBusy(true);
@@ -85,8 +87,8 @@ export default function LoginPage() {
     } catch (cause) {
       // The API reports every auth failure as a generic 500/409 without a reason.
       if (cause instanceof ApiError && cause.status === 0) setError(cause.message);
-      else if (mode === 'login') setError('登录失败：邮箱或密码不正确，或服务暂时不可用。');
-      else setError(cause instanceof ApiError && cause.status === 409 ? '这个邮箱已经注册过了，请直接登录。' : '注册失败：邮箱可能已被注册，或服务暂时不可用。');
+      else if (mode === 'login') setError(t('login.loginFailed'));
+      else setError(cause instanceof ApiError && cause.status === 409 ? t('login.emailTaken') : t('login.registerFailed'));
     } finally {
       setBusy(false);
     }
@@ -104,8 +106,8 @@ export default function LoginPage() {
           ))}
         </div>
         <div className="auth-pitch">
-          <strong>登录后，继续你没看完的故事</strong>
-          <span>同步观看进度和收藏，在手机和电脑上无缝接着看。</span>
+          <strong>{t('login.pitchTitle')}</strong>
+          <span>{t('login.pitchBody')}</span>
         </div>
       </section>
 
@@ -118,39 +120,39 @@ export default function LoginPage() {
           <ThemeToggle />
         </div>
         <div className="auth-card">
-          <div className="segmented segmented-lg" role="tablist" aria-label="登录或注册">
+          <div className="segmented segmented-lg" role="tablist" aria-label={t('login.modeTabs')}>
             <button type="button" role="tab" aria-selected={mode === 'login'} className="segmented-item" onClick={() => setMode('login')}>
-              登录
+              {t('auth.login')}
             </button>
             <button type="button" role="tab" aria-selected={mode === 'register'} className="segmented-item" onClick={() => setMode('register')}>
-              注册
+              {t('login.register')}
             </button>
           </div>
 
           <form className="auth-form" onSubmit={submit} noValidate={false}>
             {mode === 'register' && (
               <label className="field">
-                <span>昵称</span>
-                <input value={displayName} onChange={e => setDisplayName(e.target.value)} placeholder="你的昵称" autoComplete="nickname" />
+                <span>{t('login.nickname')}</span>
+                <input value={displayName} onChange={e => setDisplayName(e.target.value)} placeholder={t('login.nicknamePlaceholder')} autoComplete="nickname" />
               </label>
             )}
             <label className="field">
-              <span>邮箱</span>
+              <span>{t('login.email')}</span>
               <input type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="name@example.com" autoComplete="email" required />
             </label>
             {mode === 'register' && (
               <div className="field">
                 <BirthMonthPicker year={birthYear} month={birthMonth} onYear={setBirthYear} onMonth={setBirthMonth} idPrefix="reg-birth" />
-                <span className="field-hint">只用来确认年龄，不会公开。</span>
+                <span className="field-hint">{t('login.birthHint')}</span>
               </div>
             )}
             <label className="field">
-              <span>密码</span>
+              <span>{t('login.password')}</span>
               <input
                 type="password"
                 value={password}
                 onChange={e => setPassword(e.target.value)}
-                placeholder="至少 8 位"
+                placeholder={t('login.passwordPlaceholder')}
                 autoComplete={mode === 'login' ? 'current-password' : 'new-password'}
                 minLength={8}
                 required
@@ -162,24 +164,24 @@ export default function LoginPage() {
               </p>
             )}
             <button type="submit" className="btn btn-primary btn-block btn-lg" disabled={busy}>
-              {busy ? '请稍候…' : mode === 'login' ? '登录' : '创建账号'}
+              {busy ? t('login.wait') : mode === 'login' ? t('auth.login') : t('login.createAccount')}
             </button>
           </form>
 
           <div className="divider-text">
-            <span>或</span>
+            <span>{t('login.or')}</span>
           </div>
           <button type="button" className="btn btn-secondary btn-block btn-lg" disabled aria-describedby="sso-soon">
-            使用 Google 继续 · 即将支持
+            {t('login.google')}
           </button>
           <button type="button" className="btn btn-secondary btn-block btn-lg" disabled aria-describedby="sso-soon">
-            使用 Apple 继续 · 即将支持
+            {t('login.apple')}
           </button>
           <span id="sso-soon" className="sr-only">
-            第三方登录即将支持
+            {t('login.ssoSoon')}
           </span>
           <Link to={next} className="auth-skip">
-            先逛逛，稍后登录
+            {t('login.skip')}
           </Link>
         </div>
       </section>

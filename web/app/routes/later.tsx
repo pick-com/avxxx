@@ -6,11 +6,12 @@ import {CardGridSkeleton, EmptyState, ErrorBanner} from '../components/States';
 import {getWatchLater, isMissingEndpoint, removeWatchLater, reorderWatchLater, type WatchLaterItem} from '../lib/api';
 import {useAuth} from '../lib/auth';
 import {formatDate} from '../lib/format';
+import {t, useT} from '../lib/i18n';
 import {startQueue} from '../lib/queue';
 import {useSocial} from '../lib/social';
 import {useAsync} from '../lib/useAsync';
 
-export const meta = () => [{title: 'REEL · 稍后观看'}];
+export const meta = () => [{title: t('title.later')}];
 
 // NavLater: GET /api/me/watch-later in position order; drag the handle (mouse
 // or touch) or focus it and press ↑ / ↓ to reorder, saved with POST
@@ -21,11 +22,12 @@ export const meta = () => [{title: 'REEL · 稍后观看'}];
 
 function totalLabel(items: WatchLaterItem[]): string {
   const minutes = items.reduce((sum, i) => sum + (i.runtime_minutes > 0 ? i.runtime_minutes : 0), 0);
-  if (!minutes) return `${items.length} 个视频`;
+  if (!minutes) return t('later.count', {n: items.length});
   const h = Math.floor(minutes / 60);
   const m = minutes % 60;
   const known = items.every(i => i.runtime_minutes > 0);
-  return `${items.length} 个视频 · 共${known ? '' : '约'} ${h > 0 ? `${h} 小时 ` : ''}${m} 分`;
+  const time = h > 0 ? t('later.hoursMinutes', {h, m}) : t('card.minutes', {n: m});
+  return t(known ? 'later.total' : 'later.totalApprox', {n: items.length, time});
 }
 
 function shuffled<T>(list: T[]): T[] {
@@ -38,6 +40,7 @@ function shuffled<T>(list: T[]): T[] {
 }
 
 export default function LaterPage() {
+  const t = useT();
   const {status} = useAuth();
   const {refreshLater} = useSocial();
   const navigate = useNavigate();
@@ -60,7 +63,7 @@ export default function LaterPage() {
   if (status === 'anon') {
     return (
       <div className="page">
-        <EmptyState icon="later" title="登录后使用稍后观看" body="看到想看的先存下来，换设备也能接着看。" actions={[{to: '/login?next=%2Flater', label: '登录'}]} />
+        <EmptyState icon="later" title={t('later.anonTitle')} body={t('later.anonBody')} actions={[{to: '/login?next=%2Flater', label: t('auth.login')}]} />
       </div>
     );
   }
@@ -76,7 +79,7 @@ export default function LaterPage() {
     } catch (cause) {
       committed.current = previous;
       setItems(cur => previous.map(slug => cur.find(i => i.slug === slug)).filter((i): i is WatchLaterItem => !!i));
-      setError(cause instanceof Error ? `排序没有保存：${cause.message}` : '排序没有保存');
+      setError(cause instanceof Error ? t('later.orderNotSavedWith', {message: cause.message}) : t('later.orderNotSaved'));
     }
   };
 
@@ -95,7 +98,7 @@ export default function LaterPage() {
     event.preventDefault();
     const target = event.currentTarget;
     const next = move(index, to);
-    setAnnounce(`《${items[index].title}》移到第 ${to + 1} 位，共 ${items.length} 个`);
+    setAnnounce(t('later.moved', {title: items[index].title, n: to + 1, total: items.length}));
     save(next);
     // Keep focus on the moved row's handle after React re-renders.
     window.requestAnimationFrame(() => {
@@ -135,7 +138,7 @@ export default function LaterPage() {
     setDragging(null);
     const index = items.findIndex(i => i.slug === d.slug);
     if (items.map(i => i.slug).join('\n') !== d.startOrder.join('\n')) {
-      setAnnounce(`《${items[index]?.title ?? ''}》移到第 ${index + 1} 位`);
+      setAnnounce(t('later.movedShort', {title: items[index]?.title ?? '', n: index + 1}));
       save(items);
     }
   };
@@ -151,7 +154,7 @@ export default function LaterPage() {
     } catch (cause) {
       setItems(before);
       committed.current = before.map(i => i.slug);
-      setError(cause instanceof Error ? cause.message : '移除失败');
+      setError(cause instanceof Error ? cause.message : t('later.removeFailed'));
     }
   };
 
@@ -165,18 +168,18 @@ export default function LaterPage() {
     <div className="page narrow later-page">
       <div className="later-head">
         <div>
-          <h1 className="page-title">稍后观看</h1>
-          {items.length > 0 && <p className="muted">{totalLabel(items)} · 仅自己可见</p>}
+          <h1 className="page-title">{t('nav.later')}</h1>
+          {items.length > 0 && <p className="muted">{t('later.private', {total: totalLabel(items)})}</p>}
         </div>
         {items.length > 0 && (
           <div className="action-row">
             <button type="button" className="btn btn-primary" onClick={() => play(items)}>
               <Icon name="play" size={16} filled />
-              全部播放
+              {t('later.playAll')}
             </button>
             <button type="button" className="btn btn-secondary" onClick={() => play(shuffled(items))}>
               <Icon name="shuffle" size={16} />
-              随机播放
+              {t('later.shuffle')}
             </button>
           </div>
         )}
@@ -187,18 +190,18 @@ export default function LaterPage() {
       </span>
       {data.error ? (
         isMissingEndpoint(data.error) ? (
-          <EmptyState icon="later" title="稍后观看即将上线" body="上线后可以把想看的视频先存下来。" />
+          <EmptyState icon="later" title={t('later.soonTitle')} body={t('later.soonBody')} />
         ) : (
           <ErrorBanner error={data.error} onRetry={data.reload} />
         )
       ) : data.loading ? (
         data.slow && <CardGridSkeleton count={5} variant="row" />
       ) : items.length === 0 ? (
-        <EmptyState icon="later" title="稍后观看还是空的" body="在视频卡片或视频页点「稍后观看」，作品会出现在这里。" actions={[{to: '/', label: '去首页逛逛'}]} />
+        <EmptyState icon="later" title={t('later.emptyTitle')} body={t('later.emptyBody')} actions={[{to: '/', label: t('common.goHome')}]} />
       ) : (
         <>
           <p className="muted later-hint" id="later-hint">
-            拖动左侧手柄调整顺序；键盘用户可以聚焦手柄后按 ↑ / ↓。
+            {t('later.dragHint')}
           </p>
           <ol className="later-list" ref={listRef}>
             {items.map((item, index) => (
@@ -206,7 +209,7 @@ export default function LaterPage() {
                 <button
                   type="button"
                   className="drag-handle"
-                  aria-label={`调整《${item.title}》的顺序，当前第 ${index + 1} 位`}
+                  aria-label={t('later.handle', {title: item.title, n: index + 1})}
                   aria-describedby="later-hint"
                   onKeyDown={event => onHandleKey(event, index)}
                   onPointerDown={event => onPointerDown(event, item.slug)}
@@ -220,13 +223,13 @@ export default function LaterPage() {
                   {index + 1}
                 </span>
                 <Link to={`/releases/${encodeURIComponent(item.slug)}`} className="release-row-link">
-                  <Thumb seed={item.slug} badge={item.runtime_minutes ? `${item.runtime_minutes} 分` : undefined} className="thumb-row" />
+                  <Thumb seed={item.slug} badge={item.runtime_minutes ? t('card.minutes', {n: item.runtime_minutes}) : undefined} className="thumb-row" />
                   <span className="release-row-text">
                     <span className="card-title">{item.title}</span>
-                    <span className="card-meta">加入于 {formatDate(item.added_at)}</span>
+                    <span className="card-meta">{t('later.addedAt', {date: formatDate(item.added_at)})}</span>
                   </span>
                 </Link>
-                <button type="button" className="icon-btn" aria-label={`从稍后观看移除《${item.title}》`} title="移除" onClick={() => remove(item)}>
+                <button type="button" className="icon-btn" aria-label={t('social.laterRemoveLabel', {title: item.title})} title={t('later.remove')} onClick={() => remove(item)}>
                   <Icon name="close" size={18} />
                 </button>
               </li>

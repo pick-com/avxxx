@@ -3,17 +3,35 @@ import {useLocation, useNavigate} from 'react-router';
 import {track} from '../lib/analytics';
 import type {NotifyMode} from '../lib/api';
 import {useAuth} from '../lib/auth';
+import {t, useT} from '../lib/i18n';
 import {useSocial} from '../lib/social';
 import {Icon, type IconName} from './Icon';
 
 // NewWorkAlert: 关注 + bell with three modes; 预约 for upcoming works; 稍后观看.
 // Signed-out clicks go to login and come back to the same page.
 
-export const notifyModeLabels: Record<NotifyMode, string> = {all: '所有新作', lead_only: '只提醒主演作品', off: '不提醒'};
+// Getters, so labels follow the current UI language.
+export const notifyModeLabels: Record<NotifyMode, string> = {
+  get all() {
+    return t('social.notifyAll');
+  },
+  get lead_only() {
+    return t('social.notifyLeadOnly');
+  },
+  get off() {
+    return t('social.notifyOff');
+  },
+};
 const notifyModeHints: Record<NotifyMode, string> = {
-  all: '有新作上线就提醒',
-  lead_only: '只在担任主演时提醒',
-  off: '仍然关注，但不发提醒',
+  get all() {
+    return t('social.notifyAllHint');
+  },
+  get lead_only() {
+    return t('social.notifyLeadOnlyHint');
+  },
+  get off() {
+    return t('social.notifyOffHint');
+  },
 };
 const modeIcon: Record<NotifyMode, IconName> = {all: 'bell', lead_only: 'bellLead', off: 'bellOff'};
 
@@ -57,6 +75,7 @@ export function FollowButton({slug, name, performerId, source = 'other', size = 
   block?: boolean;
 }) {
   const {status} = useAuth();
+  const t = useT();
   const {available, followMode, setFollow, followsReady} = useSocial();
   const toLogin = useLoginRedirect();
   const [open, setOpen] = useState(false);
@@ -91,12 +110,12 @@ export function FollowButton({slug, name, performerId, source = 'other', size = 
         type="button"
         className={(following ? 'btn btn-secondary' : 'btn btn-primary') + sizeClass + ' follow-btn'}
         aria-pressed={following}
-        aria-label={following ? `已关注 ${name}，点击取消关注` : `关注 ${name}`}
+        aria-label={following ? t('social.unfollowLabel', {name}) : t('social.followLabel', {name})}
         disabled={busy || (status === 'user' && !followsReady)}
         onClick={() => run(following ? null : 'all')}
       >
         <Icon name={following ? 'check' : 'plus'} size={16} />
-        {following ? '已关注' : '关注'}
+        {following ? t('social.following') : t('social.follow')}
       </button>
       {following && mode && (
         <>
@@ -107,16 +126,16 @@ export function FollowButton({slug, name, performerId, source = 'other', size = 
             aria-haspopup="true"
             aria-expanded={open}
             aria-controls={open ? menuId : undefined}
-            aria-label={`新作提醒：${notifyModeLabels[mode]}，点击修改`}
-            title={`新作提醒：${notifyModeLabels[mode]}`}
+            aria-label={t('social.bellLabel', {mode: notifyModeLabels[mode]})}
+            title={t('social.bellTitle', {mode: notifyModeLabels[mode]})}
             onClick={() => setOpen(o => !o)}
           >
             <Icon name={modeIcon[mode]} size={18} />
           </button>
           {open && (
-            <div className="popover bell-menu" id={menuId} role="group" aria-label={`${name}有新作时提醒我`}>
-              <span className="popover-title">{name}有新作时提醒我</span>
-              <div role="radiogroup" aria-label="提醒方式">
+            <div className="popover bell-menu" id={menuId} role="group" aria-label={t('social.bellMenu', {name})}>
+              <span className="popover-title">{t('social.bellMenu', {name})}</span>
+              <div role="radiogroup" aria-label={t('social.notifyMode')}>
                 {(Object.keys(notifyModeLabels) as NotifyMode[]).map(m => (
                   <button
                     key={m}
@@ -139,7 +158,7 @@ export function FollowButton({slug, name, performerId, source = 'other', size = 
                   </button>
                 ))}
               </div>
-              <span className="popover-note">渠道和免打扰时段在「设置 › 通知」统一管理</span>
+              <span className="popover-note">{t('social.bellNote')}</span>
             </div>
           )}
         </>
@@ -156,6 +175,7 @@ export function FollowButton({slug, name, performerId, source = 'other', size = 
 /** 稍后观看 toggle. `variant="icon"` overlays a card thumbnail. */
 export function LaterButton({slug, title, variant = 'pill'}: {slug: string; title: string; variant?: 'pill' | 'icon' | 'text'}) {
   const {status} = useAuth();
+  const t = useT();
   const {available, later, setLater} = useSocial();
   const toLogin = useLoginRedirect();
   const [error, setError] = useState('');
@@ -173,10 +193,10 @@ export function LaterButton({slug, title, variant = 'pill'}: {slug: string; titl
     setError(await setLater(slug, !on));
   };
 
-  const label = on ? `从稍后观看移除《${title}》` : `加入稍后观看：《${title}》`;
+  const label = on ? t('social.laterRemoveLabel', {title}) : t('social.laterAddLabel', {title});
   if (variant === 'icon') {
     return (
-      <button type="button" className={on ? 'card-action is-on' : 'card-action'} aria-pressed={on} aria-label={label} title={error || (on ? '已在稍后观看' : '稍后观看')} onClick={toggle}>
+      <button type="button" className={on ? 'card-action is-on' : 'card-action'} aria-pressed={on} aria-label={label} title={error || (on ? t('social.laterIn') : t('nav.later'))} onClick={toggle}>
         <Icon name={on ? 'check' : 'later'} size={18} />
       </button>
     );
@@ -184,7 +204,7 @@ export function LaterButton({slug, title, variant = 'pill'}: {slug: string; titl
   if (variant === 'text') {
     return (
       <button type="button" className="text-btn" aria-label={label} onClick={toggle}>
-        {on ? '移出稍后观看' : '稍后观看'}
+        {on ? t('social.laterOut') : t('nav.later')}
       </button>
     );
   }
@@ -192,7 +212,7 @@ export function LaterButton({slug, title, variant = 'pill'}: {slug: string; titl
     <>
       <button type="button" className={on ? 'pill-btn is-on' : 'pill-btn'} aria-pressed={on} aria-label={label} onClick={toggle}>
         <Icon name={on ? 'check' : 'later'} size={18} />
-        {on ? '已加入稍后观看' : '稍后观看'}
+        {on ? t('social.laterAdded') : t('nav.later')}
       </button>
       {error && (
         <span className="inline-error" role="alert">
@@ -206,6 +226,7 @@ export function LaterButton({slug, title, variant = 'pill'}: {slug: string; titl
 /** 预约 / 已预约 for an upcoming release (PRD 17: no follow needed). */
 export function ReserveButton({slug, title, initial, size = 'md'}: {slug: string; title: string; initial?: boolean; size?: 'sm' | 'md'}) {
   const {status} = useAuth();
+  const t = useT();
   const {available, reserved, setReserved, noteReserved} = useSocial();
   const toLogin = useLoginRedirect();
   const [error, setError] = useState('');
@@ -235,12 +256,12 @@ export function ReserveButton({slug, title, initial, size = 'md'}: {slug: string
         type="button"
         className={(on ? 'btn btn-secondary' : 'btn btn-outline-accent') + (size === 'sm' ? ' btn-sm' : '')}
         aria-pressed={on}
-        aria-label={on ? `已预约《${title}》，点击取消预约` : `预约《${title}》，上线时提醒我`}
+        aria-label={on ? t('social.unreserveLabel', {title}) : t('social.reserveLabel', {title})}
         disabled={busy}
         onClick={toggle}
       >
         <Icon name={on ? 'check' : 'calendar'} size={16} />
-        {on ? '已预约' : '预约'}
+        {on ? t('social.reserved') : t('social.reserve')}
       </button>
       {error && (
         <span className="inline-error" role="alert">

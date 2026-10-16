@@ -1,12 +1,20 @@
+import {pagesZhCN} from './messages.pages.zh-CN';
+
 // Bundled zh-CN UI strings: the source language and the fallback for every
 // key (lib/i18n.tsx). Other languages come from GET /api/i18n/ui/{lang}
 // (ui_strings, same keys). {name} placeholders are filled by t(key, vars).
 //
 // Covered: app shell (top bar, side nav, bottom tabs, footer, network banner,
 // error pages), player controls and settings sheet, autoplay, home and the
-// settings page. Other pages still have inline zh-CN text.
+// settings page; page titles and the content pages (video, discover, search,
+// performer, login, welcome, me, notifications, library pages, cookie banner,
+// age gate) come from messages.pages.zh-CN.ts. Admin pages stay zh-CN only.
+
+import {communityZhCN} from './messages.community.zh-CN';
 
 export const zhCN = {
+  ...pagesZhCN,
+  ...communityZhCN,
   // app / errors
   'app.loading': '正在加载',
   'error.notFound': '页面不存在',
@@ -236,7 +244,7 @@ export const zhCN = {
   'settings.channelPush': '推送',
   'settings.channelEmail': '邮件',
   'settings.channelLabel': '{kind}：{channel}',
-  'settings.pushNote': '推送需要在设备上授权。网页推送即将支持，开关会先保存到你的账号。',
+  'settings.pushNote': '推送开关对整个账号生效，会发到每台开启了推送的设备；在这台设备上收推送需要先允许浏览器通知。',
   'settings.timing': '时机与频率',
   'settings.when': '什么时候提醒',
   'settings.whenDesc': '作品上线时提醒；「上线前一天」提醒即将支持',

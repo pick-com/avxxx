@@ -4,11 +4,11 @@ import {CardGridSkeleton, ErrorBanner} from '../components/States';
 import {getWatchHistory, listPerformerPage, listReleases, listTags} from '../lib/api';
 import {discoverHref} from '../lib/releaseFilter';
 import {useAuth} from '../lib/auth';
-import {useT} from '../lib/i18n';
+import {t, useT} from '../lib/i18n';
 import {formatDate, formatRuntime} from '../lib/format';
 import {useAsync} from '../lib/useAsync';
 
-export const meta = () => [{title: 'REEL · 首页'}];
+export const meta = () => [{title: t('title.home')}];
 
 // NavHome / NavHomeVisitor / MobileHome.
 //

@@ -71,6 +71,16 @@ export type EventProps = {
   audio_change: {lang: string; from?: string};
   theme_change: {theme: 'system' | 'dark' | 'light'};
   consent_change: {categories: ConsentCategory[]; gpc?: boolean};
+  // 14.4 弹幕 / 高能波峰
+  peak_click: {curve: 'danmaku' | 'playback'; position_ms: number; top3: boolean; watched_30s: boolean};
+  danmaku_toggle: {enabled: boolean};
+  danmaku_send: {release_id: number; position_ms: number; length: number; color: string};
+  danmaku_report: {danmaku_id: number; reason: string};
+  danmaku_setting: {setting: string};
+  // 14.4 评分与短评 (score on the 10-point scale)
+  rating_submit: {release_id: number; score: number; watched: boolean};
+  review_post: {release_id: number; spoiler: boolean; watched: boolean};
+  review_like: {review_id: number};
 };
 export type EventName = keyof EventProps;
 
@@ -88,6 +98,7 @@ const PLAY_SCOPED = new Set<EventName>([
   'source_switch',
   'play_end',
   'progress',
+  'peak_click',
 ]);
 
 /** PRD 14.1 wire format of one event. */

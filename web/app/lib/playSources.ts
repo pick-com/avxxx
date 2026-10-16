@@ -3,6 +3,7 @@
 
 import type {PlayConfig, PlaySource, Stream} from './api';
 import {formatClock} from './format';
+import {t} from './i18n';
 
 export type EntryRender = 'video' | 'embed' | 'external';
 
@@ -24,11 +25,20 @@ export type PlayEntry = {
   sourceId?: number;
 };
 
+// Getters, so labels follow the current UI language.
 export const VERSION_LABELS: Record<string, string> = {
-  main: '正片',
-  high_quality: '高画质',
-  dub: '配音',
-  alt: '其他版本',
+  get main() {
+    return t('play.versionMain');
+  },
+  get high_quality() {
+    return t('play.versionHigh');
+  },
+  get dub() {
+    return t('play.versionDub');
+  },
+  get alt() {
+    return t('play.versionAlt');
+  },
 };
 
 const MEDIA_FILE = /\.(m3u8|mp4|m4v|webm|mov)(\?|#|$)/i;
@@ -71,8 +81,8 @@ function sourceHint(s: PlaySource, alt: boolean): string {
     s.max_height ? `${s.max_height}p${s.has_hdr ? ' HDR' : ''}` : s.has_hdr ? 'HDR' : '',
     s.duration_seconds ? formatClock(s.duration_seconds) : '',
     audio.length ? audio.join(' / ') : '',
-    subs.length ? `${subs.length} 种字幕` : '',
-    alt ? '时长不同 · 从头播放' : '',
+    subs.length ? t('play.subsCount', {n: subs.length}) : '',
+    alt ? t('play.altHint') : '',
   ]
     .filter(Boolean)
     .join(' · ');
@@ -93,7 +103,7 @@ export function entriesFromConfig(config: PlayConfig | null | undefined): PlayEn
       render,
       url,
       protocol: render === 'video' ? (HLS_FILE.test(url) || s.kind === 'hls_owned' ? 'hls' : 'file') : render,
-      name: `片源 ${letter(out.length)}`,
+      name: t('play.sourceName', {id: letter(out.length)}),
       version: alt ? VERSION_LABELS.alt : VERSION_LABELS[s.version_kind] ?? VERSION_LABELS.main,
       alt,
       hint: sourceHint(s, alt),
@@ -110,7 +120,7 @@ export function entriesFromStreams(streams: Stream[]): PlayEntry[] {
     render: 'video' as const,
     url: s.url,
     protocol: s.protocol,
-    name: `线路 ${i + 1}`,
+    name: t('play.lineName', {n: i + 1}),
     version: '',
     alt: false,
     hint: s.quality || s.protocol.toUpperCase() || '',

@@ -1,5 +1,6 @@
 import {useEffect, useRef, useState, type ReactNode, type PointerEvent as ReactPointerEvent} from 'react';
 import {createPortal} from 'react-dom';
+import {useT} from '../lib/i18n';
 
 type Snap = 'half' | 'full';
 
@@ -25,6 +26,7 @@ export function Sheet({open, onClose, label, header, children, initialSnap = 'ha
   container?: HTMLElement | null;
   className?: string;
 }) {
+  const t = useT();
   const [snap, setSnap] = useState<Snap>(initialSnap);
   const [drag, setDrag] = useState(0);
   const dragStart = useRef<{y: number; id: number; moved: boolean} | null>(null);
@@ -120,7 +122,7 @@ export function Sheet({open, onClose, label, header, children, initialSnap = 'ha
 
   const sheet = (
     <div className={`sheet-layer ${container ? 'sheet-layer-contained' : ''}`}>
-      <button type="button" className="sheet-backdrop" aria-label="关闭" tabIndex={-1} onClick={onClose} />
+      <button type="button" className="sheet-backdrop" aria-label={t('common.close')} tabIndex={-1} onClick={onClose} />
       <div
         ref={dialogRef}
         role="dialog"
@@ -142,7 +144,7 @@ export function Sheet({open, onClose, label, header, children, initialSnap = 'ha
           <button
             type="button"
             className="sheet-handle"
-            aria-label={snap === 'full' ? '收起面板' : '展开面板'}
+            aria-label={snap === 'full' ? t('sheet.collapse') : t('sheet.expand')}
             aria-expanded={snap === 'full'}
             onClick={() => {
               if (suppressClick.current) {

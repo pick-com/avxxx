@@ -1,11 +1,13 @@
 import {EmptyState} from '../components/States';
+import {t, useT} from '../lib/i18n';
 
-export const meta = () => [{title: 'REEL · 页面不存在'}];
+export const meta = () => [{title: t('title.notFound')}];
 
 export default function NotFound() {
+  const t = useT();
   return (
     <div className="page">
-      <EmptyState title="页面不存在" body="链接可能有误，或页面已经移走。" actions={[{to: '/', label: '回到首页'}, {to: '/search', label: '搜索', primary: false}]} />
+      <EmptyState title={t('error.notFound')} body={t('error.notFoundBody')} actions={[{to: '/', label: t('error.backHome')}, {to: '/search', label: t('topbar.search'), primary: false}]} />
     </div>
   );
 }
