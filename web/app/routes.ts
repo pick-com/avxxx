@@ -25,6 +25,8 @@ export default [
   // Back office (PRD 11): AdminNav shell with the shared token and 操作人.
   layout('routes/admin-layout.tsx', [
     route('admin', 'routes/admin-dashboard.tsx'),
+    route('admin/videos', 'routes/admin-videos.tsx'),
+    route('admin/videos/:id', 'routes/admin-video.tsx'),
     route('admin/pipeline', 'routes/admin-pipeline.tsx'),
     route('admin/review', 'routes/admin-review.tsx'),
     route('admin/dedupe', 'routes/admin-dedupe.tsx'),
