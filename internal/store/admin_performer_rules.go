@@ -256,8 +256,11 @@ var performerFilterSQL = map[string]string{
 const hasPhotoSQL = "EXISTS (SELECT 1 FROM media_assets ma WHERE ma.entity_type='performer' AND ma.entity_id=p.id AND ma.asset_type IN ('avatar','gallery') AND ma.suppressed_at IS NULL)"
 
 // upcomingReleaseSQL: release r is scheduled (upcoming) or dated in the
-// future and not taken down or held.
-const upcomingReleaseSQL = "r.merged_into_id IS NULL AND (r.status='upcoming' OR (r.status IN ('published','draft') AND r.release_date > current_date))"
+// future and not taken down or held. It is always TRUE or FALSE, never NULL:
+// release_date is legitimately NULL (date unknown), and a bare
+// `release_date > current_date` would make the whole expression NULL for an
+// undated published/draft release, which performerWorks scans into a bool.
+const upcomingReleaseSQL = "r.merged_into_id IS NULL AND (r.status='upcoming' OR (r.status IN ('published','draft') AND COALESCE(r.release_date > current_date, false)))"
 
 // ValidPerformerFilter reports whether f is a known list filter.
 func ValidPerformerFilter(f string) bool { _, ok := performerFilterSQL[f]; return ok }
