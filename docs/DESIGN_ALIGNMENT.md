@@ -145,7 +145,7 @@ PRD 把 REEL 定位为面向大众的视频站：第 15 节「不面向 13 岁�
 | `AdminPipeline` | 11 | 7 个阶段、按阶段重试、来源接入（出口、成功率） | 现有 `sources` / `jobs` + 新阶段视图 | Alpha | 已覆盖；来源 B、C 见 PRD 第 15 节和第 2 节 #6；来源许可审核、手动建任务和 checkpoint 页面已实现（#88，`AdminSourceGovernance`） |
 | `AdminVideo` | 11、14.3 | 基本信息、片源优先级与健康、演员与出演年龄、多语言、截屏章节、发布（定时、地区、分级、推荐位、版权凭证）、修改记录、数据标签（留存 / 重看 / 跳过曲线） | 3.11；3.14 播放波峰聚合 | Alpha | 已补充 |
 | `AdminDedupe` | 11 | 视频：新片源 / 其他版本 / 不是重复；演员：合并为别名 / 不是同一人，301 跳转 | `identity_candidates`；3.13 `not_duplicate_pairs`、slug 重定向 | Alpha | 已补充 |
-| `AdminAudit` | 11 | 入库检查 + 夜间 8 条规则，按播放量排序，导出 CSV | 3.11 A5 | Alpha | 已覆盖；已实现 A 片源健康、C 元数据缺失、E 繁简与标题、H 收录检查（R-SEO，读 `seo.check` 报告）；B 水印、D 字幕、F 截屏、G 统计重建缺数据，仍为桩 |
+| `AdminAudit` | 11 | 入库检查 + 夜间 8 条规则，按播放量排序，导出 CSV | 3.11 A5 | Alpha | 已覆盖；已实现 A 片源健康、C 元数据缺失、E 繁简与标题、H 收录检查（R-SEO，读 `seo.check` 报告）、G 统计重建（R-STATS：`reviews.likes`、`danmaku_curves.valid_count`、保留期内的 `search_query_daily` 按源重算并修复；热榜 plays 与 `release_curves` 只报告，年榜和保留期外的日报因原始事件 90 天清除只做单调 / 一致性检查）；B 水印、D 字幕、F 截屏缺数据，仍为桩 |
 | `AdminSearch` | 4.5、11 | 无结果词分类处理（补片、同义词、补英文标题、建预约页、加别名、跳帮助页）、修饰词、外部热点 | 3.4；3.13 `search_synonyms`、`search_redirects` | V1 | 已补充 |
 | `AdminOps` | 11 | 首页按天排期 + 自动补位、公告条（类型、语言 / 地区、定时）、举报（含时限）、版权投诉流程、弹幕与短评审核、刷分识别 | 3.8、3.11 | V1 | 已覆盖 |
 | `AdminUsers` | 11 | 用户检索与处罚、7 种角色矩阵、操作日志（含 IP）、双人审批、两步验证、登录失败锁定 | 3.6；角色数改为 7 | V1 | 已补充 |

@@ -153,6 +153,6 @@ JAV Database adapter 已接入 scraper，可完成发现、详情抓取、解析
 **关系与冲突审核：已完成**  
 **多来源规模化采集：进行中**  
 **增量调度：分页 checkpoint、预算限速、阻断隔离、授权/robots 门禁和 baseline/增量隔离已完成**  
-**数据质量：字段优先级策略、fixture 验收工具和审计规则 R-AGE/META/TITLE/SOURCE/PERFORMER-NAME/SEO 已完成（水印、字幕、截屏、统计重建仍缺数据，保持桩），录制 fixture 未达标（各来源 0/20、0/100）**  
+**数据质量：字段优先级策略、fixture 验收工具和审计规则 R-AGE/META/TITLE/SOURCE/PERFORMER-NAME/SEO/STATS 已完成（水印、字幕、截屏仍缺数据，保持桩），录制 fixture 未达标（各来源 0/20、0/100）**  
 **WebApp 完整交付：已完成（浏览、审核、checkpoint 页面 #88、来源证据 #87、6 种界面语言内置译文）**  
 **生产化验收：图片存储（#91）、部署/备份/恢复手册、恢复演练和全量验收套件（#92）已完成；正式环境（生产主机值班通道、首次许可审核）验收未完成**
