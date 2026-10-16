@@ -22,6 +22,8 @@ type Server struct {
 	// accounts is the subset of the store used by the account and health
 	// handlers, as an interface so they can be tested without a database.
 	accounts accountStore
+	// audit backs the admin audit and dashboard routes (admin_audit.go).
+	audit auditAdmin
 	// adminToken is ADMIN_TOKEN, read once at construction. Empty disables
 	// every admin route (they all return 401).
 	adminToken string
@@ -44,6 +46,7 @@ func Register(mux *http.ServeMux, s *store.Store, mediaHandler *media.Handler) {
 	srv := &Server{store: s, media: mediaHandler, adminToken: os.Getenv("ADMIN_TOKEN")}
 	if s != nil {
 		srv.accounts = s
+		srv.audit = s
 	}
 	for _, rt := range srv.routes() {
 		mux.HandleFunc(rt.pattern, rt.handler)
@@ -58,6 +61,7 @@ func (srv *Server) routes() []route {
 	rs = append(rs, srv.catalogRoutes()...)
 	rs = append(rs, srv.mediaRoutes()...)
 	rs = append(rs, srv.adminRoutes()...)
+	rs = append(rs, srv.adminAuditRoutes()...)
 	return rs
 }
 
