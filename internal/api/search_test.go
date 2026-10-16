@@ -98,7 +98,7 @@ func (s *stubSearch) AddEnglishTitleFromTerm(_ context.Context, id int64, term, 
 }
 
 func searchServer(st *stubSearch) http.Handler {
-	srv := &Server{adminToken: "tok"}
+	srv := &Server{adminToken: "tok", adminAuth: newFakeAdmins()}
 	if st != nil {
 		srv.search = st
 	}
@@ -118,8 +118,7 @@ func doSearch(t *testing.T, h http.Handler, method, path, body string, admin boo
 		req = httptest.NewRequest(method, path, nil)
 	}
 	if admin {
-		req.Header.Set("Authorization", "Bearer tok")
-		req.Header.Set("X-Admin-User", "alice")
+		asAdmin(req, "alice")
 	}
 	rec := httptest.NewRecorder()
 	h.ServeHTTP(rec, req)

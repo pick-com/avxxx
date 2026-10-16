@@ -2,7 +2,7 @@ package api
 
 // Versioned legal documents (LegalPage; PRD 15; tech plan 3.13). Public
 // routes serve published versions with a language fallback; admin routes
-// draft, edit, publish and diff (review_events with the X-Admin-User actor).
+// draft, edit, publish and diff (review_events with the authenticated admin as actor).
 
 import (
 	"avxxx/internal/store"

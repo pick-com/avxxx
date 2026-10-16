@@ -3,7 +3,7 @@ package api
 // Admin moderation (AdminOps / A7; PRD 5.5, 11, 19; tech plan 3.8): the
 // queue (reports with SLA, shadowed danmaku and reviews, suspected rating
 // floods), moderator actions, the keyword list and mutes. Every change writes
-// review_events with the actor from X-Admin-User ("admin" when absent).
+// review_events with the authenticated admin as actor (adminActor).
 
 import (
 	"avxxx/internal/community"
@@ -49,17 +49,16 @@ func (srv *Server) moderationRoutes() []route {
 	}
 }
 
-// adminActor is the X-Admin-User header (admin auth is a shared token, so
-// this is a self-declared label), "admin" when absent.
+// adminActor is the review_events actor of an admin request: the signed-in
+// admin's username, or "token:<label>" on the ADMIN_TOKEN break-glass path
+// (admin_auth.go). The X-Admin-User header is never trusted as an actor; it
+// is only the break-glass label.
 func adminActor(r *http.Request) (string, error) {
-	a := strings.TrimSpace(r.Header.Get("X-Admin-User"))
-	if a == "" {
-		return "admin", nil
+	p, ok := principalFrom(r.Context())
+	if !ok {
+		return "", errUnauthorized
 	}
-	if len(a) > maxActorLen {
-		return "", badRequest("X-Admin-User too long", nil)
-	}
-	return a, nil
+	return p.Actor(), nil
 }
 
 // decodeAdminJSON reads an optional bounded JSON body (empty is allowed).

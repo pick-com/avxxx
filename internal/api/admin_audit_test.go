@@ -66,7 +66,7 @@ func (s *stubAudit) SourceHealthList(_ context.Context, f audit.SourceHealthFilt
 }
 
 func auditMux(st *stubAudit) *http.ServeMux {
-	srv := &Server{adminToken: "secret", audit: st}
+	srv := &Server{adminToken: "secret", adminAuth: newFakeAdmins(), audit: st}
 	mux := http.NewServeMux()
 	for _, rt := range srv.routes() {
 		mux.HandleFunc(rt.pattern, rt.handler)

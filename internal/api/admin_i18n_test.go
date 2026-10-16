@@ -76,7 +76,7 @@ func (s *stubI18n) PublicUIStrings(context.Context, string) (map[string]string, 
 }
 
 func i18nMux(st *stubI18n) *http.ServeMux {
-	srv := &Server{adminToken: "secret", i18n: st}
+	srv := &Server{adminToken: "secret", adminAuth: newFakeAdmins(), i18n: st}
 	mux := http.NewServeMux()
 	for _, rt := range srv.routes() {
 		mux.HandleFunc(rt.pattern, rt.handler)
@@ -164,8 +164,8 @@ func TestAdminI18nPassesArguments(t *testing.T) {
 	mux := i18nMux(st)
 	do := func(method, path, body string) {
 		req := httptest.NewRequest(method, path, strings.NewReader(body))
-		req.Header.Set("Authorization", "Bearer secret")
-		req.Header.Set("X-Admin-User", " editor-1 ")
+		asAdmin(req, "editor-1")
+		req.Header.Set("X-Admin-User", "someone-else") // ignored for sessions
 		mux.ServeHTTP(httptest.NewRecorder(), req)
 	}
 	do("GET", "/api/admin/i18n/translations?lang=th&missing=1&entity_type=performer&limit=7", "")

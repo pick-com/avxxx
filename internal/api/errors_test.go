@@ -251,7 +251,7 @@ func TestAccountAndHealthStatusCodes(t *testing.T) {
 }
 
 func TestMediaLinkAdminBadRequests(t *testing.T) {
-	srv := &Server{adminToken: "secret"}
+	srv := &Server{adminToken: "secret", adminAuth: newFakeAdmins()}
 	mux := http.NewServeMux()
 	for _, rt := range srv.routes() {
 		mux.HandleFunc(rt.pattern, rt.handler)

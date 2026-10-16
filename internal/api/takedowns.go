@@ -5,7 +5,7 @@ package api
 // file a counter-notice. Admin: queue with the 24 h SLA, status changes,
 // take content down through the existing release status and image
 // suppression paths, and restore after a counter-notice. Every admin change
-// writes review_events with the X-Admin-User actor.
+// writes review_events with the authenticated admin as actor.
 
 import (
 	"avxxx/internal/obs"

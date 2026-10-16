@@ -3,8 +3,8 @@ package api
 // Admin performer editor (AdminActors / A9, PRD 6, 11, 15): performer list
 // with completeness filters and counts, detail, field edits (manual
 // overrides), aliases, hide / unhide, personal-information requests, and
-// the similarity weights preview. Every admin route sits behind ADMIN_TOKEN;
-// the X-Admin-User header is recorded as review_events.actor. Validation
+// the similarity weights preview. Every admin route sits behind srv.admin;
+// the authenticated admin is recorded as review_events.actor. Validation
 // errors are 400, unknown ids 404, stale versions and decided requests 409.
 //
 // POST /api/performer-requests is the public intake of the correction /

@@ -50,7 +50,7 @@ func (s *stubSitemap) LatestRun(context.Context, string) (audit.Run, bool, error
 }
 
 func sitemapMux(st *stubSitemap) *http.ServeMux {
-	srv := &Server{adminToken: "secret", sitemap: st}
+	srv := &Server{adminToken: "secret", adminAuth: newFakeAdmins(), sitemap: st}
 	mux := http.NewServeMux()
 	for _, rt := range srv.routes() {
 		mux.HandleFunc(rt.pattern, rt.handler)

@@ -39,7 +39,7 @@ func (s *stubSplitter) UndoSplit(_ context.Context, id int64, actor, _ string) (
 }
 
 func splitServer(st *stubSplitter) http.Handler {
-	srv := &Server{splitter: st, adminToken: "secret"}
+	srv := &Server{splitter: st, adminToken: "secret", adminAuth: newFakeAdmins()}
 	mux := http.NewServeMux()
 	for _, rt := range srv.routes() {
 		mux.HandleFunc(rt.pattern, rt.handler)
@@ -49,8 +49,7 @@ func splitServer(st *stubSplitter) http.Handler {
 
 func splitDo(h http.Handler, method, path, body string) *httptest.ResponseRecorder {
 	req := httptest.NewRequest(method, path, strings.NewReader(body))
-	req.Header.Set("Authorization", "Bearer secret")
-	req.Header.Set("X-Admin-User", "alice")
+	asAdmin(req, "alice")
 	rec := httptest.NewRecorder()
 	h.ServeHTTP(rec, req)
 	return rec
@@ -101,7 +100,7 @@ func TestSplitHandlers(t *testing.T) {
 		}
 	}
 
-	none := &Server{adminToken: "secret"}
+	none := &Server{adminToken: "secret", adminAuth: newFakeAdmins()}
 	mux := http.NewServeMux()
 	for _, rt := range none.routes() {
 		mux.HandleFunc(rt.pattern, rt.handler)
