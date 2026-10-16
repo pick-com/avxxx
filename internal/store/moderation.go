@@ -28,11 +28,12 @@ const (
 	QueueDanmaku      = "danmaku"
 	QueueReviews      = "reviews"
 	QueueRatingFloods = "rating_floods"
+	QueueComments     = "comments"
 )
 
 // ValidQueueKind reports whether k is a moderation queue.
 func ValidQueueKind(k string) bool {
-	return k == QueueReports || k == QueueDanmaku || k == QueueReviews || k == QueueRatingFloods
+	return k == QueueReports || k == QueueDanmaku || k == QueueReviews || k == QueueRatingFloods || k == QueueComments
 }
 
 const (
@@ -56,6 +57,7 @@ type QueueCounts struct {
 	Danmaku        int `json:"danmaku"`
 	Reviews        int `json:"reviews"`
 	RatingFloods   int `json:"rating_floods"`
+	Comments       int `json:"comments"`
 }
 
 // ModerationCounts counts open work in every queue.
@@ -66,8 +68,9 @@ func (s *Store) ModerationCounts(ctx context.Context) (QueueCounts, error) {
 		(SELECT count(*) FROM reports WHERE status='open' AND due_at<now()),
 		(SELECT count(*) FROM danmaku WHERE status='shadow'),
 		(SELECT count(*) FROM reviews WHERE status='shadow'),
-		(SELECT count(*) FROM (`+ratingFloodSQL+`) f)`,
-		community.FloodMinVotes).Scan(&c.Reports, &c.ReportsOverdue, &c.Danmaku, &c.Reviews, &c.RatingFloods)
+		(SELECT count(*) FROM (`+ratingFloodSQL+`) f),
+		(SELECT count(*) FROM comments WHERE status='shadow')`,
+		community.FloodMinVotes).Scan(&c.Reports, &c.ReportsOverdue, &c.Danmaku, &c.Reviews, &c.RatingFloods, &c.Comments)
 	return c, err
 }
 
@@ -102,6 +105,21 @@ type QueuedDanmaku struct {
 	UserID      int64     `json:"user_id"`
 	Status      string    `json:"status"`
 	Peak        *int      `json:"peak"` // curve value (0-255) at this moment, if the release has a curve
+	OpenReports int       `json:"open_reports"`
+	CreatedAt   time.Time `json:"created_at"`
+}
+
+// QueuedComment is a comment in the moderation queue.
+type QueuedComment struct {
+	ID          int64     `json:"id"`
+	ReleaseID   int64     `json:"release_id"`
+	ReleaseSlug string    `json:"release_slug"`
+	ParentID    *int64    `json:"parent_id"`
+	UserID      int64     `json:"user_id"`
+	Body        string    `json:"body"`
+	Spoiler     bool      `json:"spoiler"`
+	Status      string    `json:"status"`
+	Likes       int       `json:"likes"`
 	OpenReports int       `json:"open_reports"`
 	CreatedAt   time.Time `json:"created_at"`
 }
@@ -147,6 +165,7 @@ func queueNext(offset, limit, got int) string {
 //   - danmaku: shadowed danmaku, highest peak-curve moment first (PRD 5.5.1:
 //     review the busiest moments first), then oldest;
 //   - reviews: shadowed reviews, oldest first;
+//   - comments: shadowed comments, oldest first;
 //   - rating_floods: suspected floods, largest first.
 func (s *Store) ModerationQueue(ctx context.Context, f QueueFilter) (any, string, error) {
 	limit := f.Limit
@@ -236,6 +255,28 @@ func (s *Store) ModerationQueue(ctx context.Context, f QueueFilter) (any, string
 		}
 		next := queueNext(offset, limit, len(items))
 		return nonNil(items[:min(len(items), limit)]), next, nil
+	case QueueComments:
+		status, err := contentStatus(f.Status)
+		if err != nil {
+			return nil, "", err
+		}
+		rows, err := s.Query(ctx, `SELECT c.id,c.release_id,r.slug,c.parent_id,c.user_id,c.body,c.spoiler,c.status,c.likes,
+				(SELECT count(*) FROM reports p WHERE p.target_type='comment' AND p.target_id=c.id AND p.status='open'),
+				c.created_at
+			FROM comments c JOIN releases r ON r.id=c.release_id WHERE c.status=$1
+			ORDER BY c.created_at, c.id LIMIT $2 OFFSET $3`, status, limit+1, offset)
+		if err != nil {
+			return nil, "", err
+		}
+		items, err := pgx.CollectRows(rows, func(r pgx.CollectableRow) (QueuedComment, error) {
+			var x QueuedComment
+			return x, r.Scan(&x.ID, &x.ReleaseID, &x.ReleaseSlug, &x.ParentID, &x.UserID, &x.Body, &x.Spoiler, &x.Status, &x.Likes, &x.OpenReports, &x.CreatedAt)
+		})
+		if err != nil {
+			return nil, "", err
+		}
+		next := queueNext(offset, limit, len(items))
+		return nonNil(items[:min(len(items), limit)]), next, nil
 	case QueueRatingFloods:
 		rows, err := s.Query(ctx, `SELECT f.release_id,r.slug,f.score,f.window_start,f.votes,f.anonymous
 			FROM (`+ratingFloodSQL+`) f JOIN releases r ON r.id=f.release_id
@@ -286,6 +327,9 @@ func (s *Store) reportTarget(ctx context.Context, targetType string, id int64) a
 	case "review":
 		q = `SELECT json_build_object('body',v.body,'status',v.status,'user_id',v.user_id,'spoiler',v.spoiler,'release_slug',r.slug)
 			FROM reviews v JOIN releases r ON r.id=v.release_id WHERE v.id=$1`
+	case "comment":
+		q = `SELECT json_build_object('body',c.body,'status',c.status,'user_id',c.user_id,'spoiler',c.spoiler,'parent_id',c.parent_id,'release_slug',r.slug)
+			FROM comments c JOIN releases r ON r.id=c.release_id WHERE c.id=$1`
 	case "rating":
 		q = `SELECT json_build_object('score',a.score,'status',a.status,'weight',a.weight,'release_slug',r.slug)
 			FROM ratings a JOIN releases r ON r.id=a.release_id WHERE a.id=$1`
@@ -310,7 +354,7 @@ func (s *Store) reportTarget(ctx context.Context, targetType string, id int64) a
 
 // ModerationAction is one moderator decision on a danmaku, review or rating.
 type ModerationAction struct {
-	TargetType string // danmaku | review | rating
+	TargetType string // danmaku | review | comment | rating
 	ID         int64
 	Action     string // community.Action*
 	MuteDays   int    // delete_mute only
@@ -361,15 +405,12 @@ func (s *Store) Moderate(ctx context.Context, a ModerationAction) (ModerationRes
 	var userID *int64
 	var releaseID int64
 	switch a.TargetType {
-	case "danmaku", "review":
+	case "danmaku", "review", "comment":
 		after, ok := community.ActionStatus(a.Action)
 		if !ok {
 			return res, ErrInvalidAction
 		}
-		table := "danmaku"
-		if a.TargetType == "review" {
-			table = "reviews"
-		}
+		table := map[string]string{"danmaku": "danmaku", "review": "reviews", "comment": "comments"}[a.TargetType]
 		var uid int64
 		if err = tx.QueryRow(ctx, `SELECT status,user_id,release_id FROM `+table+` WHERE id=$1 FOR UPDATE`, a.ID).Scan(&res.Before, &uid, &releaseID); err != nil {
 			return res, err
@@ -377,7 +418,7 @@ func (s *Store) Moderate(ctx context.Context, a ModerationAction) (ModerationRes
 		userID = &uid
 		res.After = after
 		extra := ""
-		if a.TargetType == "review" && a.Action == community.ActionFold {
+		if a.TargetType != "danmaku" && a.Action == community.ActionFold {
 			extra = ",spoiler=true"
 		}
 		if _, err = tx.Exec(ctx, `UPDATE `+table+` SET status=$2,updated_at=now()`+extra+` WHERE id=$1`, a.ID, after); err != nil {

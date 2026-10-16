@@ -465,7 +465,7 @@ func TestMergeTablesCoverUserTables(t *testing.T) {
 			t.Errorf("PerformerTables misses %s.%s", c.table, c.fk)
 		}
 	}
-	for _, c := range []struct{ table, fk string }{{"reservations", "release_id"}, {"watch_later", "release_id"}, {"playlist_items", "release_id"}, {"notification_receipts", "release_id"}, {"playback_sources", "release_id"}, {"audit_issues", "entity_id"}} {
+	for _, c := range []struct{ table, fk string }{{"reservations", "release_id"}, {"watch_later", "release_id"}, {"playlist_items", "release_id"}, {"notification_receipts", "release_id"}, {"playback_sources", "release_id"}, {"audit_issues", "entity_id"}, {"release_reactions", "release_id"}, {"comments", "release_id"}} {
 		if !has(ReleaseTables, c.table, c.fk) {
 			t.Errorf("ReleaseTables misses %s.%s", c.table, c.fk)
 		}

@@ -22,6 +22,13 @@ var skipPublicRoutes = map[string]bool{
 	"GET /api/detail/{source}/{id...}": true,
 }
 
+// Comment canaries for the leak walk.
+const (
+	commenterDomain = "commenter-mail.invalid"
+	shadowCanary    = "SHADOW-COMMENT-CANARY"
+	deletedCanary   = "DELETED-COMMENT-CANARY"
+)
+
 var (
 	restWildcard = regexp.MustCompile(`\{[^}]+\.\.\.\}`)
 	wildcard     = regexp.MustCompile(`\{[^}]+\}`)
@@ -133,9 +140,24 @@ func TestPublicAPINeverLeaksIntegration(t *testing.T) {
 	must(err)
 	_, err = e.s.RecordConsent(ctx, store.ConsentRecord{DeviceHash: "consent-device-hash-canary", Input: store.ConsentInput{Analytics: true, Source: "banner"}})
 	must(err)
+	// Comments and 赞 / 踩 (migration 040): commenters' emails, a shadowed
+	// (keyword-hit) comment, a deleted comment that still has a reply (listed
+	// as a placeholder) and the private 踩 count must never show. Comment 1 is
+	// the deleted thread, so /api/comments/1/replies walks it.
+	commenter := e.int64(`INSERT INTO users(email,password_hash,display_name) VALUES('commenter@` + commenterDomain + `','x','Commenter') RETURNING id`)
+	other := e.int64(`INSERT INTO users(email,password_hash,display_name) VALUES('other@` + commenterDomain + `','x','') RETURNING id`)
+	rel := e.int64(`SELECT id FROM releases WHERE slug='juq-743'`)
+	thread := e.int64(`INSERT INTO comments(id,release_id,user_id,body,status) VALUES(1,$1,$2,$3,'deleted') RETURNING id`, rel, commenter, deletedCanary)
+	e.exec(`SELECT setval(pg_get_serial_sequence('comments','id'), 100)`)
+	e.exec(`INSERT INTO comments(release_id,parent_id,user_id,body) VALUES($1,$2,$3,'a visible reply')`, rel, thread, other)
+	e.exec(`INSERT INTO comments(release_id,user_id,body,status) VALUES($1,$2,$3,'shadow')`, rel, other, shadowCanary)
+	e.exec(`INSERT INTO comments(release_id,user_id,body) VALUES($1,$2,'a visible comment')`, rel, commenter)
+	e.exec(`INSERT INTO release_reactions(release_id,voter_key,user_id,value) VALUES($1,'u:'||$2::bigint::text,$2::bigint,-1)`, rel, commenter)
 
 	leaks := map[string]string{
-		"raw_data": "the raw_data column", rawCanary: "a source payload canary", "raw_html": "raw HTML",
+		commenterDomain: "a commenter's email", shadowCanary: "a shadowed comment", deletedCanary: "a deleted comment's body",
+		`"dislikes"`: "the private 踩 count",
+		"raw_data":   "the raw_data column", rawCanary: "a source payload canary", "raw_html": "raw HTML",
 		dmmAPIID: "the DMM API id", dmmAffiliate: "the DMM affiliate id", "api_id=": "a DMM credential parameter", "affiliate_id=": "a DMM credential parameter",
 		overrideNote: "an override / review reason", overrideActor: "an override / review actor", "1995-01-01": "a hidden birthday",
 		tdName: "a takedown claimant name", tdEmail: "a takedown claimant email", tdPhone: "a takedown claimant phone", tdAddress: "a takedown address",
@@ -251,6 +273,9 @@ func TestPublicAPINeverLeaksIntegration(t *testing.T) {
 		"/api/performers/jane-doe/evidence": `javguru-fixture`,
 		"/api/releases?limit=100":           `"abc-001"`,
 		"/api/items":                        `Feed Two`,
+		"/api/releases/juq-743/comments":    `a visible comment`,
+		"/api/comments/1/replies":           `a visible reply`,
+		"/api/releases/juq-743/reaction":    `"likes":0`,
 	} {
 		rec := httptest.NewRecorder()
 		h.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, p, nil))

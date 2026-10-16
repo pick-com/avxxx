@@ -2,12 +2,13 @@ import {useEffect, useRef, useState, type ReactNode} from 'react';
 import {data, redirect, useLoaderData, useParams, useSearchParams, type LoaderFunctionArgs, type MetaFunction} from 'react-router';
 import {Link, useLocation, useNavigate} from '../lib/nav';
 import {absoluteImageUrl, Avatar, CatalogImage, ReleaseRow, SectionHeader} from '../components/Cards';
-import {Icon} from '../components/Icon';
 import {PerformerHoverCard, PerformerSheet} from '../components/PerformerPeek';
 import {Player} from '../components/Player';
 import {HostedPlayer} from '../components/PlayerHost';
 import type {EndItem} from '../components/PlayerStates';
 import {Community} from '../components/Ratings';
+import {Comments} from '../components/Comments';
+import {ShareButton, VoteButtons} from '../components/ReleaseActions';
 import {SourceCredits} from '../components/SourceCredits';
 import {SourceEvidence} from '../components/SourceEvidence';
 import {FavoritePicker} from '../components/PlaylistPicker';
@@ -32,6 +33,7 @@ import {useAsync} from '../lib/useAsync';
 import {useCanonicalSlug} from '../lib/useCanonicalSlug';
 import {useMediaQuery} from '../lib/useMediaQuery';
 import {QUEUE_LISTS, readQueue, type Queue} from '../lib/queue';
+import {parseStartTime} from '../lib/interactions';
 import {getRecs, performerName, reasonText, recTitle, inRelatedTab, type RecItem, type RelatedTab} from '../lib/recs';
 import type {ShellHandle} from './shell';
 
@@ -140,8 +142,8 @@ export const meta: MetaFunction<typeof loader> = ({data: d, params, matches}) =>
 
 // Video / VideoLight / MobileVideo.
 //
-// Omitted for lack of backend (never filled with sample data):
-// TODO(tech plan 3.13): 赞 / 踩, 评论 (V1.1).
+// 赞 / 踩 and 分享 (with ?t= start time) sit in the action row; 评论 (PRD
+// V1.1, COMMENTS_ENABLED) follow the cast, apart from 短评 in <Community>.
 // 稍后观看 toggles here; ?list=later follows the 全部播放 / 随机播放 queue.
 // 自动连播 (PRD 5.4, settings.autoplay, default on): when a video ends, the
 // next one (the queue's next, else — also after the queue's last item — the
@@ -179,6 +181,8 @@ export default function ReleasePage() {
   const [sheetPerformer, setSheetPerformer] = useState<Performer | null>(null);
   const [params] = useSearchParams();
   const listName = params.get('list');
+  // A shared link's start time (分享 · 从当前位置开始).
+  const startAt = parseStartTime(params.get('t'));
   // The queue lives in this browser (sessionStorage): read after hydration.
   const [queue, setQueue] = useState<ReturnType<typeof readQueue>>(null);
   useEffect(() => setQueue(listName && (QUEUE_LISTS as readonly string[]).includes(listName) ? readQueue(listName) : null), [listName]);
@@ -263,6 +267,7 @@ export default function ReleasePage() {
           releaseId={release?.id}
           title={release?.canonical_title ?? ''}
           resumeAt={resumeAt}
+          startAt={startAt}
           onBack={back}
           theater={theater}
           onToggleTheater={() => setTheater(on => !on)}
@@ -302,13 +307,14 @@ export default function ReleasePage() {
                 </span>
                 <span className="section-spacer" />
                 <div className="action-row">
+                  <VoteButtons slug={slug} releaseId={release.id} />
                   {release.status === 'upcoming' ? (
                     <ReserveButton slug={slug} title={release.canonical_title} />
                   ) : (
                     <LaterButton slug={slug} title={release.canonical_title} />
                   )}
                   <FavoritePicker slug={slug} title={release.canonical_title} />
-                  <ShareButton title={release.canonical_title} />
+                  <ShareButton title={release.canonical_title} releaseId={release.id} />
                 </div>
               </div>
             </div>
@@ -346,6 +352,7 @@ export default function ReleasePage() {
               currentSlug={slug}
               onClose={() => setSheetPerformer(null)}
             />
+            <Comments slug={release.slug} releaseId={release.id} />
             <SourceEvidence kind="release" slug={release.slug} />
           </>
         )}
@@ -597,36 +604,6 @@ function SamePerformer({performer, currentSlug, onFirst, onList}: {
         </div>
       )}
     </section>
-  );
-}
-
-function ShareButton({title}: {title: string}) {
-  const t = useT();
-  const [message, setMessage] = useState('');
-  const share = async () => {
-    const url = window.location.href;
-    try {
-      if (navigator.share) {
-        await navigator.share({title, url});
-        return;
-      }
-      await navigator.clipboard.writeText(url);
-      setMessage(t('release.linkCopied'));
-    } catch {
-      setMessage('');
-    }
-    window.setTimeout(() => setMessage(''), 2000);
-  };
-  return (
-    <>
-      <button type="button" className="pill-btn" onClick={share}>
-        <Icon name="share" size={18} />
-        {t('release.share')}
-      </button>
-      <span className="sr-status" role="status">
-        {message}
-      </span>
-    </>
   );
 }
 

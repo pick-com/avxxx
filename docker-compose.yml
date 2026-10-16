@@ -45,6 +45,8 @@ services:
       LOG_HASH_KEY: ${LOG_HASH_KEY:-}
       # false = playback mappings come only from the offline media_link job.
       MEDIA_LINK_ON_DEMAND: ${MEDIA_LINK_ON_DEMAND:-true}
+      # false = release-page comments off (routes 404, web hides them).
+      COMMENTS_ENABLED: ${COMMENTS_ENABLED:-true}
       MEDIA_LINK_MIN_INTERVAL: ${MEDIA_LINK_MIN_INTERVAL:-2s}
       MEDIA_RESOLVE_TTL: ${MEDIA_RESOLVE_TTL:-5m}
       # Catalog images (internal/images): S3-compatible storage; empty

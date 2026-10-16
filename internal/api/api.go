@@ -96,6 +96,10 @@ type Server struct {
 	// compliance backs consent records, legal documents, feedback and
 	// copyright takedowns (consent.go, legal.go, feedback.go, takedowns.go).
 	compliance complianceStore
+	// interactions backs 赞 / 踩 and comments (interactions.go);
+	// commentsOff is COMMENTS_ENABLED=false (comment routes answer 404).
+	interactions interactionStore
+	commentsOff  bool
 	// adminToken is ADMIN_TOKEN, read once at construction. Empty disables
 	// every admin route (they all return 401).
 	adminToken string
@@ -177,7 +181,9 @@ func Register(mux *http.ServeMux, s *store.Store, mediaHandler *media.Handler) {
 		srv.home = s
 		srv.homeCache = newRespCache()
 		srv.compliance = s
+		srv.interactions = s
 	}
+	srv.commentsOff = !commentsEnabled(os.Getenv("COMMENTS_ENABLED"))
 	srv.linkOnDemand = medialink.OnDemandFromEnv(os.Getenv("MEDIA_LINK_ON_DEMAND"))
 	for _, rt := range srv.routes() {
 		mux.HandleFunc(rt.pattern, rt.handler)
@@ -222,6 +228,7 @@ func (srv *Server) routes() []route {
 	rs = append(rs, srv.legalRoutes()...)
 	rs = append(rs, srv.feedbackRoutes()...)
 	rs = append(rs, srv.takedownRoutes()...)
+	rs = append(rs, srv.interactionRoutes()...)
 	return srv.followMerges(rs)
 }
 

@@ -16,6 +16,7 @@ import {
   type ModerationAction,
   type ModerationTarget,
   type QueueKind,
+  type QueuedComment,
   type QueuedDanmaku,
   type QueuedReview,
   type RatingFlood,
@@ -35,13 +36,15 @@ const TABS: {kind: QueueKind; label: string}[] = [
   {kind: 'reports', label: '举报'},
   {kind: 'danmaku', label: '待审弹幕'},
   {kind: 'reviews', label: '待审短评'},
+  {kind: 'comments', label: '待审评论'},
   {kind: 'rating_floods', label: '疑似刷分'},
 ];
 
-const REPORT_TARGET: Record<string, ModerationTarget | undefined> = {danmaku: 'danmaku', review: 'reviews', rating: 'ratings'};
+const REPORT_TARGET: Record<string, ModerationTarget | undefined> = {danmaku: 'danmaku', review: 'reviews', rating: 'ratings', comment: 'comments'};
 const TARGET_LABELS: Record<string, string> = {
   danmaku: '弹幕',
   review: '短评',
+  comment: '评论',
   rating: '评分',
   release: '视频',
   performer_info: '演员资料',
@@ -49,7 +52,7 @@ const TARGET_LABELS: Record<string, string> = {
 };
 const CATEGORY_LABELS: Record<string, string> = {ad: '广告', abuse: '辱骂', spoiler: '剧透', illegal: '违法', political: '政治', other: '其他'};
 
-type Row = Report | QueuedDanmaku | QueuedReview | RatingFlood;
+type Row = Report | QueuedDanmaku | QueuedReview | QueuedComment | RatingFlood;
 
 function dueText(r: Report) {
   const ms = new Date(r.due_at).getTime() - Date.now();
@@ -227,7 +230,17 @@ export default function AdminModeration() {
 
   const counts = overview.data?.counts;
   const countOf = (k: QueueKind) =>
-    !counts ? null : k === 'reports' ? counts.reports : k === 'danmaku' ? counts.danmaku : k === 'reviews' ? counts.reviews : counts.rating_floods;
+    !counts
+      ? null
+      : k === 'reports'
+        ? counts.reports
+        : k === 'danmaku'
+          ? counts.danmaku
+          : k === 'reviews'
+            ? counts.reviews
+            : k === 'comments'
+              ? (counts.comments ?? 0)
+              : counts.rating_floods;
   const statusOptions =
     kind === 'reports'
       ? [
@@ -249,7 +262,7 @@ export default function AdminModeration() {
       <AdminHeader
         eyebrow="ADMIN · MODERATION"
         title="举报与审核"
-        sub="举报按处理时限排序；关键词命中的弹幕和短评先对他人隐藏，等这里审核。"
+        sub="举报按处理时限排序；关键词命中的弹幕、短评和评论先对他人隐藏，等这里审核。"
       />
       <AdminNotice error={act.error || overview.error} notice={act.notice} onClose={() => (act.setError(''), act.setNotice(''))} />
 
@@ -436,6 +449,48 @@ export default function AdminModeration() {
             </table>
           )}
 
+          {kind === 'comments' && (
+            <table className="adm-table">
+              <thead>
+                <tr>
+                  <th>评论</th>
+                  <th>视频</th>
+                  <th>用户</th>
+                  <th>举报 / 赞</th>
+                  <th>时间</th>
+                  <th>操作</th>
+                </tr>
+              </thead>
+              <tbody>
+                {loaded && rows.length === 0 && <EmptyRow cols={6}>队列为空</EmptyRow>}
+                {(rows as QueuedComment[]).map(c => (
+                  <tr key={c.id}>
+                    <td className="wrap adm-mod-body">
+                      {c.parent_id !== null && <Pill>回复 #{c.parent_id}</Pill>} {c.spoiler && <Pill tone="amber">剧透</Pill>} {c.body}
+                    </td>
+                    <td>
+                      <Link to={`/releases/${c.release_slug}`} target="_blank">
+                        {c.release_slug}
+                      </Link>
+                    </td>
+                    <td className="mono">
+                      <button type="button" className="adm-link" title="填入解除禁言" onClick={() => setMuteUser(String(c.user_id))}>
+                        #{c.user_id}
+                      </button>
+                    </td>
+                    <td>
+                      {c.open_reports ? <Pill tone="red">{c.open_reports}</Pill> : '—'} / {c.likes}
+                    </td>
+                    <td>{fmtTime(c.created_at)}</td>
+                    <td>
+                      <ActionBar target="comments" id={c.id} busy={act.pending === `comments-${c.id}`} onAct={onAct} />
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+
           {kind === 'rating_floods' && (
             <table className="adm-table">
               <thead>
@@ -485,7 +540,7 @@ export default function AdminModeration() {
           <div className="adm-card-head">
             <h2>关键词（{words.data?.length ?? 0}）</h2>
           </div>
-          <p className="adm-field-hint">命中的弹幕和短评先只对发布者可见，进入上面的待审队列。</p>
+          <p className="adm-field-hint">命中的弹幕、短评和评论先只对发布者可见，进入上面的待审队列。</p>
           <AdminNotice error={words.error} />
           <div className="adm-words">
             {words.data?.length === 0 && <span className="muted">还没有关键词</span>}
