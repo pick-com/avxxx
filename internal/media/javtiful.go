@@ -2,6 +2,7 @@ package media
 
 import (
 	"context"
+	"crypto/tls"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -9,6 +10,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"os"
 	"regexp"
 	"sort"
 	"strconv"
@@ -26,8 +28,14 @@ type JavtifulAdapter struct {
 }
 
 func NewJavtifulAdapter() *JavtifulAdapter {
+	transport := http.DefaultTransport.(*http.Transport).Clone()
+	// Local test environments may use a corporate MITM CA. Keep verification
+	// enabled by default; the opt-in flag is deliberately scoped to JAVtiful.
+	if os.Getenv("AVXXX_JAVTIFUL_INSECURE_TLS") == "1" {
+		transport.TLSClientConfig = &tls.Config{InsecureSkipVerify: true} // #nosec G402 -- explicit local-test opt-in
+	}
 	return &JavtifulAdapter{
-		client:    &http.Client{Timeout: 15 * time.Second},
+		client:    &http.Client{Timeout: 15 * time.Second, Transport: transport},
 		baseURL:   "https://javtiful.com",
 		userAgent: "Mozilla/5.0 (compatible; avxxx/0.1)",
 	}
