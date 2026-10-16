@@ -254,6 +254,18 @@ var expectedRoutes = []string{
 	"POST /api/me/deletion",
 	"GET /api/me/interests",
 	"PUT /api/me/interests",
+	// 赞 / 踩 and comments (interactions.go, moderation.go).
+	"POST /api/admin/moderation/comments/{id}/action",
+	"GET /api/releases/{slug}/reaction",
+	"PUT /api/releases/{slug}/reaction",
+	"DELETE /api/releases/{slug}/reaction",
+	"GET /api/releases/{slug}/comments",
+	"POST /api/releases/{slug}/comments",
+	"GET /api/comments/{id}/replies",
+	"DELETE /api/comments/{id}",
+	"PUT /api/comments/{id}/like",
+	"DELETE /api/comments/{id}/like",
+	"POST /api/comments/{id}/report",
 }
 
 var (

@@ -71,6 +71,10 @@ var ReleaseTables = []TableSpec{
 	{Table: "reservations", FK: "release_id", Key: []string{"user_id"}, Dedupe: true},
 	{Table: "watch_later", FK: "release_id", Key: []string{"user_id"}, Dedupe: true, Combine: combineWatchLater},
 	{Table: "notification_receipts", FK: "release_id", Key: []string{"user_id"}, Dedupe: true},
+	// 赞 / 踩 (migration 040): one vote per voter; the target's vote wins.
+	{Table: "release_reactions", FK: "release_id", Key: []string{"voter_key"}, Dedupe: true},
+	// Comments (migration 040) all move; replies keep their parent.
+	{Table: "comments", FK: "release_id", Key: []string{"id"}},
 	// Every playback source is a distinct way to play the release: keep all.
 	{Table: "playback_sources", FK: "release_id", Key: []string{"id"}},
 	{Table: "audit_issues", FK: "entity_id", Key: []string{"id"}, DedupeOn: []string{"rule"}, Dedupe: true,

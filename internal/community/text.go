@@ -13,6 +13,7 @@ import (
 const (
 	MaxDanmakuRunes = 50
 	MaxReviewRunes  = 140
+	MaxCommentRunes = 500
 	MaxKeywordRunes = 64
 )
 

@@ -9,23 +9,29 @@ import (
 // Posting limits (PRD 5.5: new accounts at most 3 danmaku per minute;
 // tech plan 3.8: the same check guards reviews).
 const (
-	NewPosterAge        = 3 * 24 * time.Hour
-	NewPosterPerMinute  = 3
-	DanmakuPerMinute    = 20
-	ReviewPerMinute     = 5
+	NewPosterAge       = 3 * 24 * time.Hour
+	NewPosterPerMinute = 3
+	DanmakuPerMinute   = 20
+	ReviewPerMinute    = 5
+	CommentPerMinute   = 5
+	// ReactionPerMinute bounds 赞 / 踩 toggles per voter (users and devices alike).
+	ReactionPerMinute   = 30
 	PostingLimitWindow  = time.Minute
 	limiterSweepEvery   = 5 * time.Minute
 	limiterMaxKeysSweep = 10000
 )
 
 // PostingLimit is the per-minute limit for a poster of the given account
-// age; kind is "danmaku" or "review".
+// age; kind is "danmaku", "review" or "comment".
 func PostingLimit(kind string, accountAge time.Duration) int {
 	if accountAge < NewPosterAge {
 		return NewPosterPerMinute
 	}
-	if kind == "review" {
+	switch kind {
+	case "review":
 		return ReviewPerMinute
+	case "comment":
+		return CommentPerMinute
 	}
 	return DanmakuPerMinute
 }
