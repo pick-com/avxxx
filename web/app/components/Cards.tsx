@@ -3,6 +3,7 @@ import type {ApiImage} from '../lib/api';
 import {Link} from '../lib/nav';
 import {swatch} from '../lib/format';
 import {Icon} from './Icon';
+import {ReleaseCardMenu} from './CardMenu';
 import {LaterButton} from './SocialButtons';
 
 // Covers and portraits come from object storage (internal/images) as
@@ -96,7 +97,11 @@ export function ReleaseCard({slug, title, meta, sub, badge, progress, later = tr
   /** Recommendation reason code, sent as play_request `reason`. */
   reasonCode?: string;
   onOpen?: () => void;
-  /** A 「⋯」 CardMenu over the thumbnail (推荐反馈 on recommendation cards). */
+  /**
+   * The 「⋯」 CardMenu over the thumbnail: by default the shared items
+   * (添加到播放队列); recommendation cards pass theirs (RecFeedbackCard); null
+   * for none.
+   */
   menu?: ReactNode;
 }) {
   return (
@@ -109,7 +114,7 @@ export function ReleaseCard({slug, title, meta, sub, badge, progress, later = tr
         <CardReason text={reason} />
       </Link>
       {later && <LaterButton slug={slug} title={title} variant="icon" />}
-      {menu}
+      {menu === undefined ? <ReleaseCardMenu slug={slug} title={title} /> : menu}
     </div>
   );
 }

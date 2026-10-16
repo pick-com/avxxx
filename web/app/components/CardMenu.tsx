@@ -1,18 +1,44 @@
 import {useEffect, useId, useRef, useState, type KeyboardEvent as ReactKeyboardEvent} from 'react';
+import {useT} from '../lib/i18n';
+import {useAdhocQueue} from '../lib/useQueue';
 import {Icon, type IconName} from './Icon';
 
 /**
  * One action in a card's 「⋯」 menu. Features add their own items (推荐反馈
- * in RecFeedback.tsx; others such as 加入队列 can append theirs) and pass
- * the list to <CardMenu>; an empty list renders nothing.
+ * in RecFeedback.tsx) and pass the list to <CardMenu>; an empty list renders
+ * nothing. Every release card's menu starts with useReleaseMenuItems
+ * (添加到播放队列); feature items follow.
  */
 export type CardMenuItem = {
   key: string;
   label: string;
   icon?: IconName;
-  onSelect: () => void;
+  /** May return a short confirmation, shown by the button for a moment. */
+  onSelect: () => void | string;
   disabled?: boolean;
 };
+
+/** The items every release card's menu starts with: 添加到播放队列 (lib/queue ?list=queue). */
+export function useReleaseMenuItems(slug: string, title: string): CardMenuItem[] {
+  const t = useT();
+  const {queue, add} = useAdhocQueue();
+  const queued = queue.slugs.includes(slug);
+  return [
+    {
+      key: 'queue',
+      label: queued ? t('queue.already') : t('queue.add'),
+      icon: 'queue',
+      disabled: queued,
+      onSelect: () => (add(slug, title) ? t('queue.added') : t('queue.already')),
+    },
+  ];
+}
+
+/** A release card's menu with only the shared items (cards without feature items). */
+export function ReleaseCardMenu({slug, title}: {slug: string; title: string}) {
+  const t = useT();
+  return <CardMenu label={t('cardMenu.label', {title})} items={useReleaseMenuItems(slug, title)} />;
+}
 
 /**
  * The 「⋯」 button on a release card or row and its popup menu. Arrow keys
@@ -26,6 +52,13 @@ export function CardMenu({label, items}: {label: string; items: CardMenuItem[]})
   const buttonRef = useRef<HTMLButtonElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
   const menuId = useId();
+  const [note, setNote] = useState('');
+
+  useEffect(() => {
+    if (!note) return;
+    const timer = window.setTimeout(() => setNote(''), 2500);
+    return () => window.clearTimeout(timer);
+  }, [note]);
 
   useEffect(() => {
     if (!open) return;
@@ -96,7 +129,8 @@ export function CardMenu({label, items}: {label: string; items: CardMenuItem[]})
               disabled={item.disabled}
               onClick={() => {
                 close(false);
-                item.onSelect();
+                const message = item.onSelect();
+                if (message) setNote(message);
               }}
             >
               {item.icon && <Icon name={item.icon} size={16} />}
@@ -105,6 +139,9 @@ export function CardMenu({label, items}: {label: string; items: CardMenuItem[]})
           ))}
         </div>
       )}
+      <span className="card-menu-note" role="status">
+        {note}
+      </span>
     </div>
   );
 }
