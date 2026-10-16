@@ -18,13 +18,18 @@
 //	audit -recs        run the recommendation similarity + trending jobs now, print, exit
 //
 // The worker also claims 'release_curves' jobs (hourly, cmd/scheduler): the
-// PRD 14.3 replay peak and retention curves (internal/playcurve).
+// PRD 14.3 replay peak and retention curves (internal/playcurve), and
+// 'search_stats' jobs (hourly, cmd/scheduler): search_query_daily and the
+// hot-search board (internal/search).
+//
+//	audit -search      run the search statistics job now, print the report, exit
 package main
 
 import (
 	"avxxx/internal/audit"
 	"avxxx/internal/playcurve"
 	"avxxx/internal/recs"
+	"avxxx/internal/search"
 	"avxxx/internal/store"
 	"context"
 	"encoding/json"
@@ -46,6 +51,7 @@ func main() {
 	health := flag.Bool("health", false, "run the source health job once and exit")
 	curves := flag.Bool("curves", false, "run the replay / retention curve job once and exit")
 	recsNow := flag.Bool("recs", false, "run the recommendation similarity and trending jobs once and exit")
+	searchNow := flag.Bool("search", false, "run the search statistics job once and exit")
 	flag.Parse()
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
@@ -87,6 +93,12 @@ func main() {
 		if err != nil {
 			log.Fatal(err)
 		}
+	case *searchNow:
+		rep, err := (&search.Runner{Store: s}).Run(ctx)
+		printJSON(rep)
+		if err != nil {
+			log.Fatal(err)
+		}
 	case *once:
 		rep, err := (&audit.Runner{Store: s}).Run(ctx)
 		printJSON(rep)
@@ -110,7 +122,7 @@ func work(ctx context.Context, s *store.Store) {
 			log.Printf("reap expired jobs: %v", err)
 		}
 		claimed := false
-		for _, kind := range []string{store.JobKindSourceHealth, store.JobKindRecsTrending, store.JobKindReleaseCurves, store.JobKindAudit, store.JobKindRecsSimilarity} {
+		for _, kind := range []string{store.JobKindSourceHealth, store.JobKindRecsTrending, store.JobKindReleaseCurves, store.JobKindSearchStats, store.JobKindAudit, store.JobKindRecsSimilarity} {
 			id, version, err := s.ClaimJob(ctx, kind)
 			if errors.Is(err, pgx.ErrNoRows) {
 				continue
@@ -149,6 +161,8 @@ func execute(ctx context.Context, s *store.Store, kind string, id int64) (any, e
 		return (&recs.Runner{Store: s, JobID: id}).RunSimilarity(ctx)
 	case store.JobKindRecsTrending:
 		return (&recs.Runner{Store: s, JobID: id}).RunTrending(ctx)
+	case store.JobKindSearchStats:
+		return (&search.Runner{Store: s, JobID: id}).Run(ctx)
 	}
 	if kind == store.JobKindSourceHealth {
 		rep, err := (&audit.HealthRunner{Store: s, Config: healthConfig(), JobID: id}).Run(ctx)

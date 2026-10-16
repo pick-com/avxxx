@@ -135,6 +135,23 @@ var expectedRoutes = []string{
 	"GET /api/admin/similarity-weights",
 	"PUT /api/admin/similarity-weights",
 	"POST /api/admin/recs/rebuild",
+	"GET /api/search/hot",
+	"GET /api/search/suggest",
+	"GET /api/admin/search/zero-results",
+	"GET /api/admin/search/stats",
+	"GET /api/admin/search/synonyms",
+	"POST /api/admin/search/synonyms",
+	"PUT /api/admin/search/synonyms/{id}",
+	"DELETE /api/admin/search/synonyms/{id}",
+	"GET /api/admin/search/redirects",
+	"POST /api/admin/search/redirects",
+	"PUT /api/admin/search/redirects/{id}",
+	"DELETE /api/admin/search/redirects/{id}",
+	"GET /api/admin/search/blocklist",
+	"POST /api/admin/search/blocklist",
+	"DELETE /api/admin/search/blocklist/{id}",
+	"POST /api/admin/search/terms/alias",
+	"POST /api/admin/search/terms/english-title",
 }
 
 var (
