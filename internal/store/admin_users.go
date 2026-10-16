@@ -200,6 +200,21 @@ func (s *Store) BootstrapAdmin(ctx context.Context, in AdminUserInput, password 
 	return u, secret, codes, err
 }
 
+// UnlockAdmin clears an account's failure counter and lock (cmd/admin
+// unlock, for an operator with database access).
+func (s *Store) UnlockAdmin(ctx context.Context, username string) error {
+	tag, err := s.Exec(ctx, `UPDATE admin_users SET failed_attempts=0, locked_until=NULL, updated_at=now() WHERE username=$1`, strings.ToLower(strings.TrimSpace(username)))
+	if err != nil {
+		return err
+	}
+	if tag.RowsAffected() == 0 {
+		return pgx.ErrNoRows
+	}
+	_, err = s.Exec(ctx, `INSERT INTO review_events(entity_type,entity_id,action,actor) SELECT 'admin_user',id,'admin.unlock','cli' FROM admin_users WHERE username=$1`,
+		strings.ToLower(strings.TrimSpace(username)))
+	return err
+}
+
 // CountAdmins is the number of admin accounts (cmd/admin warns when adding
 // a non-super first admin).
 func (s *Store) CountAdmins(ctx context.Context) (int, error) {
