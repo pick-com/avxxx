@@ -58,13 +58,20 @@ func (a JavGuruAdapter) Parse(ctx context.Context, doc Document, entity EntityTy
 		return Record{}, fmt.Errorf("javguru: unexpected page %s", doc.FinalURL)
 	}
 	text := strings.TrimSpace(d.Find("body").Text())
-	title := strings.TrimSpace(d.Find("h1").First().Text())
-	if title == "" {
-		title = strings.TrimSpace(d.Find("title").First().Text())
+	// Entity heading only: a logo <h1> or the bare <title> is the site's own
+	// name, never a performer or release.
+	title := entityHeading(d, "h1.entry-title", ".entry-header h1")
+	if title == "" && entity == Release {
+		title = pageTitle(d)
 	}
 	f := map[string]any{}
 	if entity == Performer {
-		f["name"] = title
+		name := performerName(d, "h1.entry-title", ".entry-header h1")
+		if name == "" {
+			return Record{}, fmt.Errorf("javguru: no performer name on %s: %w", doc.FinalURL, ErrSkipRecord)
+		}
+		f["name"] = name
+		f[FieldPageTitle] = pageTitle(d)
 		f["name_ja"] = guruLabel(text, "Japanese Name")
 		f["cup_size"] = guruLabel(text, "Cup")
 		f["height_cm"] = number(guruLabel(text, "Height"))
@@ -77,15 +84,26 @@ func (a JavGuruAdapter) Parse(ctx context.Context, doc Document, entity EntityTy
 		f["maker"] = guruLabel(text, "Maker")
 		f["genres"] = guruLinks(d, "/genre/")
 		f["tags"] = f["genres"]
-		f["performers"] = guruLinks(d, "/actress/")
+		f["performers"] = performerLinks(d.Find("a[href]"), doc.FinalURL, func(u string) bool {
+			k, key := guruClassify(u)
+			return k == Performer && key != ""
+		})
 	}
 	return Record{EntityType: entity, SourceKey: key, URL: doc.FinalURL, Fields: f}, nil
+}
+
+// NextPage follows the WordPress archive pagination (/page/N/).
+func (JavGuruAdapter) NextPage(doc Document) string {
+	return nextPageLink(doc, []string{".wp-pagenavi a.nextpostslink"}, []string{"Next", "Next »", "»"})
 }
 
 func guruClassify(raw string) (EntityType, string) {
 	u, _ := url.Parse(raw)
 	parts := strings.Split(strings.Trim(u.Path, "/"), "/")
 	for i, p := range parts {
+		if i+1 < len(parts) && parts[i+1] == "page" {
+			continue // archive pagination, not an entity
+		}
 		if p == "actress" && i+1 < len(parts) && parts[i+1] != "" {
 			return Performer, parts[i+1]
 		}

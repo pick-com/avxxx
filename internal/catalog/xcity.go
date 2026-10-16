@@ -61,12 +61,19 @@ func (a XCITYAdapter) Parse(ctx context.Context, doc Document, entity EntityType
 	}
 	f := map[string]any{}
 	text := strings.TrimSpace(d.Find("body").Text())
-	title := strings.TrimSpace(d.Find("h1").First().Text())
-	if title == "" {
-		title = strings.TrimSpace(d.Find("title").First().Text())
+	// Entity heading only: a logo <h1> or the bare <title> is the site's own
+	// name, never a performer or release.
+	title := entityHeading(d, "h1.entry-title", ".entry-header h1")
+	if title == "" && entity == Release {
+		title = pageTitle(d)
 	}
 	if entity == Performer {
-		f["name"] = title
+		name := performerName(d, "h1.entry-title", ".entry-header h1")
+		if name == "" {
+			return Record{}, fmt.Errorf("xcity: no performer name on %s: %w", doc.FinalURL, ErrSkipRecord)
+		}
+		f["name"] = name
+		f[FieldPageTitle] = pageTitle(d)
 		f["birth_date"] = xcityLabel(text, "生年月日")
 		f["birth_place"] = xcityLabel(text, "出身地")
 		f["height_cm"] = number(xcityLabel(text, "身長"))
@@ -80,20 +87,47 @@ func (a XCITYAdapter) Parse(ctx context.Context, doc Document, entity EntityType
 		f["label"] = xcityLabel(text, "レーベル")
 		f["genres"] = xcityLinks(d, "/genre/")
 		f["tags"] = f["genres"]
-		f["performers"] = xcityLinks(d, "/idol/")
+		f["performers"] = performerLinks(d.Find("a[href]"), doc.FinalURL, func(u string) bool {
+			k, key := xcityClassify(u)
+			return k == Performer && key != ""
+		})
 	}
 	return Record{EntityType: entity, SourceKey: key, URL: doc.FinalURL, Fields: f}, nil
+}
+
+// NextPage follows XCITY list pagination (?page=N, labelled 次へ).
+func (XCITYAdapter) NextPage(doc Document) string {
+	return nextPageLink(doc, []string{".pageScroll a.next", ".pager a.next", ".pager li.next a"}, []string{"次へ", "次へ »", "次へ>", "次のページ", "Next", "»"})
 }
 
 func xcityClassify(raw string) (EntityType, string) {
 	u, _ := url.Parse(raw)
 	parts := strings.Split(strings.Trim(u.Path, "/"), "/")
 	for i, p := range parts {
-		if p == "idol" && i+1 < len(parts) && parts[i+1] != "" {
-			return Performer, parts[i+1]
+		var kind EntityType
+		switch p {
+		case "idol":
+			kind = Performer
+		case "title":
+			kind = Release
+		default:
+			continue
 		}
-		if p == "title" && i+1 < len(parts) && parts[i+1] != "" {
-			return Release, parts[i+1]
+		// Detail pages are /idol/detail/<id>/ or /idol/detail/?id=<id>: the
+		// "detail" segment is not the key (it once collapsed every idol of
+		// a list page into one record).
+		rest := parts[i+1:]
+		if len(rest) > 0 && rest[0] == "detail" {
+			rest = rest[1:]
+			if len(rest) == 0 || rest[0] == "" {
+				if id := u.Query().Get("id"); id != "" {
+					return kind, id
+				}
+				return "", ""
+			}
+		}
+		if len(rest) > 0 && rest[0] != "" {
+			return kind, rest[0]
 		}
 	}
 	return "", ""

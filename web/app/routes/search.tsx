@@ -1,0 +1,229 @@
+import {useEffect, useRef, useState} from 'react';
+import {Link, useSearchParams} from 'react-router';
+import {FollowButton} from '../components/SocialButtons';
+import {Avatar, ReleaseCard, SectionHeader} from '../components/Cards';
+import {FilterBar, ReleaseResults, type SortOption} from '../components/ReleaseFilters';
+import {SearchBox} from '../components/SearchBox';
+import {CardGridSkeleton, EmptyState, ErrorBanner} from '../components/States';
+import {onUnload, track} from '../lib/analytics';
+import {catalogSearch, type ReleaseFilter, type SearchHit} from '../lib/api';
+import {formatDate, formatYear} from '../lib/format';
+import {t, useT} from '../lib/i18n';
+import {clearRecentSearches, readRecentSearches, rememberSearch} from '../lib/recentSearches';
+import {RELEASE_SORTS, parseReleaseFilter, withFilter} from '../lib/releaseFilter';
+import {useAsync} from '../lib/useAsync';
+
+export const meta = () => [{title: t('title.search')}];
+
+const LIMIT = 60;
+const RETRY_WINDOW_MS = 2 * 60_000;
+
+// PRD 14 `search`: one event per search, sent when it ends — on a result
+// click (with clicked_rank, 1-based in display order: performers, then
+// videos), on the next query, on leaving the page. is_retry: the previous
+// search in this tab ended without a click less than 2 minutes earlier.
+let lastSearch: {at: number; clicked: boolean} | null = null;
+type PendingSearch = {query: string; count: number; isRetry: boolean};
+
+function useSearchTracking(q: string, hits: SearchHit[] | undefined) {
+  const pending = useRef<PendingSearch | null>(null);
+  const finish = (rank?: number) => {
+    const p = pending.current;
+    if (!p) return;
+    pending.current = null;
+    lastSearch = {at: Date.now(), clicked: rank !== undefined};
+    track('search', {query: p.query.slice(0, 200), result_count: p.count, is_retry: p.isRetry, clicked_rank: rank});
+  };
+  const finishRef = useRef(finish);
+  finishRef.current = finish;
+  useEffect(() => {
+    if (!q || !hits) return;
+    const isRetry = !!lastSearch && !lastSearch.clicked && Date.now() - lastSearch.at < RETRY_WINDOW_MS;
+    pending.current = {query: q, count: hits.length, isRetry};
+    const off = onUnload(() => finishRef.current());
+    return () => {
+      off();
+      finishRef.current();
+    };
+  }, [q, hits]);
+  return (rank: number) => finishRef.current(rank);
+}
+const SORTS: SortOption[] = [{value: 'relevance', get label() { return t('search.relevance'); }}, ...RELEASE_SORTS];
+
+// Browse / MobileSearch / MobileSearchTyping.
+//
+// Default (相关度): GET /api/catalog/search — performers first, then releases,
+// title match only. Choosing a sort, 时长 or 年份 switches the video results to
+// GET /api/releases?q=… (title / product-code match) with cursor paging.
+// TODO(tech plan 3.4): 类型 / 清晰度 / 字幕 filters, result counts, alias / tag /
+//   cross-language recall, modifier-word retry (PRD 4.5).
+// TODO(tech plan 3.13 search_queries): 大家都在搜; log zero-result queries for AdminSearch.
+export default function SearchPage() {
+  const t = useT();
+  const [params, setParams] = useSearchParams();
+  const q = (params.get('q') ?? '').trim();
+  const filter = parseReleaseFilter(params);
+  const browse = !!(filter.sort || filter.year || filter.min_runtime || filter.max_runtime || filter.tag || filter.maker || filter.performer);
+  const results = useAsync(signal => catalogSearch(q, LIMIT, signal), [q], q !== '');
+  const [recent, setRecent] = useState<string[]>([]);
+
+  useEffect(() => {
+    if (q) rememberSearch(q);
+    setRecent(readRecentSearches());
+  }, [q]);
+
+  const performers = (results.data ?? []).filter(h => h.type === 'performer');
+  const releases = (results.data ?? []).filter(h => h.type === 'release');
+  const clicked = useSearchTracking(q, results.data);
+
+  const update = (patch: Partial<Record<keyof ReleaseFilter, string | number | undefined>>) =>
+    setParams(withFilter(params, patch), {replace: true});
+  const clearFilters = () => setParams({q}, {replace: true});
+
+  return (
+    <div className="page search-page">
+      <SearchBox initialQuery={q} autoFocus={!q} className="page-search show-mobile" />
+
+      {!q ? (
+        <section className="shelf">
+          {recent.length > 0 ? (
+            <>
+              <SectionHeader
+                title={t('search.recent')}
+                action={
+                  <button
+                    type="button"
+                    className="text-btn"
+                    onClick={() => {
+                      clearRecentSearches();
+                      setRecent([]);
+                    }}
+                  >
+                    {t('common.clear')}
+                  </button>
+                }
+              />
+              <div className="chip-row chip-row-wrap">
+                {recent.map(term => (
+                  <Link key={term} to={`/search?q=${encodeURIComponent(term)}`} className="chip">
+                    {term}
+                  </Link>
+                ))}
+              </div>
+            </>
+          ) : (
+            <EmptyState icon="search" title={t('search.emptyTitle')} body={t('search.emptyBody')} actions={[{to: '/discover', label: t('search.browseDiscover'), primary: false}]} />
+          )}
+        </section>
+      ) : (
+        <>
+          <div className="search-head">
+            <h1>{t('search.heading', {q})}</h1>
+            {!browse && results.data && results.data.length > 0 && (
+              <span className="muted">{results.data.length >= LIMIT ? t('search.firstN', {n: LIMIT}) : t('search.count', {n: results.data.length})}</span>
+            )}
+          </div>
+
+          {performers.length > 0 && (
+            <div className="performer-hits">
+              {performers.map((hit, i) => (
+                <div key={hit.id} className="performer-hit">
+                  <Link
+                    to={`/performers/${encodeURIComponent(hit.slug)}`}
+                    className="performer-hit-link"
+                    state={{slot: `search:p${i + 1}`}}
+                    onClick={() => {
+                      clicked(i + 1);
+                      track('actor_card_open', {performer_id: hit.id, source: 'search'});
+                    }}
+                  >
+                    <Avatar seed={hit.slug} name={hit.name} size={64} />
+                    <span className="performer-hit-text">
+                      <span className="performer-hit-kind">{t('search.kindActor')}</span>
+                      <span className="performer-hit-name">{hit.name}</span>
+                      {performerSub(hit) && <span className="muted">{performerSub(hit)}</span>}
+                    </span>
+                  </Link>
+                  <FollowButton slug={hit.slug} name={hit.name} performerId={hit.id} source="search" size="sm" />
+                </div>
+              ))}
+            </div>
+          )}
+
+          {(browse || releases.length > 0) && (
+            <FilterBar
+              filter={filter}
+              onChange={update}
+              sortOptions={SORTS}
+              sortValue={filter.sort ?? (browse ? 'newest' : 'relevance')}
+              onSort={value => {
+                if (value === 'relevance') update({sort: undefined, year: undefined, min_runtime: undefined, max_runtime: undefined});
+                else update({sort: value});
+              }}
+            />
+          )}
+
+          {browse ? (
+            <section className="shelf">
+              {performers.length > 0 && <SectionHeader title={t('search.videos')} />}
+              <ReleaseResults
+                filter={{...filter, q, sort: filter.sort ?? 'newest'}}
+                onClear={clearFilters}
+                clearLabel={t('search.byRelevance')}
+                gridClassName="card-grid card-grid-4 search-grid"
+                empty={
+                  <EmptyState
+                    icon="search"
+                    title={t('search.noFiltered', {q})}
+                    body={t('search.noFilteredBody')}
+                  >
+                    <div className="empty-actions">
+                      <button type="button" className="btn btn-primary" onClick={clearFilters}>
+                        {t('common.clearFilters')}
+                      </button>
+                    </div>
+                  </EmptyState>
+                }
+              />
+            </section>
+          ) : results.error ? (
+            <ErrorBanner error={results.error} onRetry={results.reload} />
+          ) : results.slow ? (
+            <CardGridSkeleton count={8} />
+          ) : results.data && results.data.length === 0 ? (
+            <EmptyState
+              icon="search"
+              title={t('search.none', {q})}
+              body={t('search.noneBody')}
+              actions={[{to: '/', label: t('common.goHome')}, {to: '/discover?tab=actors', label: t('common.browseActors'), primary: false}]}
+            />
+          ) : (
+            releases.length > 0 && (
+              <section className="shelf">
+                {performers.length > 0 && <SectionHeader title={t('search.videos')} />}
+                <div className="card-grid card-grid-4 search-grid">
+                  {releases.map((hit, i) => (
+                    <ReleaseCard
+                      key={hit.id}
+                      slot={`search:r${i + 1}`}
+                      onOpen={() => clicked(performers.length + i + 1)}
+                      slug={hit.slug}
+                      title={hit.name}
+                      badge={hit.runtime_minutes ? t('card.minutes', {n: hit.runtime_minutes}) : undefined}
+                      meta={[hit.maker_name, formatDate(hit.release_date)].filter(Boolean).join(' · ') || undefined}
+                    />
+                  ))}
+                </div>
+              </section>
+            )
+          )}
+        </>
+      )}
+    </div>
+  );
+}
+
+function performerSub(hit: SearchHit): string {
+  const year = formatYear(hit.birth_date);
+  return [hit.canonical_name_ja, year && t('search.born', {year})].filter(Boolean).join(' · ');
+}

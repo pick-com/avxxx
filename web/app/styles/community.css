@@ -1,0 +1,777 @@
+/* Danmaku, 高能波峰, ratings and reviews (DanmakuPlayer, MobileDanmaku,
+   Ratings, MobileRatings). The player chrome is always dark (PRD 5.1, 8);
+   the rating / review card follows the page theme. */
+
+/* ---- Danmaku layer (over the video) ---- */
+
+.dm-layer {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  overflow: hidden;
+  pointer-events: none;
+  contain: strict;
+}
+
+.dm-item {
+  position: absolute;
+  top: 0;
+  left: 0;
+  white-space: pre;
+  font-weight: 700;
+  line-height: 1.3;
+  letter-spacing: 0.01em;
+  text-shadow:
+    0 0 1px #000,
+    0 0 2px #000,
+    1px 1px 1px rgba(0, 0, 0, 0.8);
+  will-change: transform;
+}
+
+.dm-mine {
+  padding: 0 4px;
+  border: 1px solid rgba(242, 169, 59, 0.9);
+  border-radius: 4px;
+}
+
+/* ---- Danmaku bar (toggle, send box, list, settings) ---- */
+
+.dm-bar-wrap {
+  border-top: 1px solid #1f2125;
+  background: #0b0b0d;
+  color: #ececee;
+  border-radius: 0 0 12px 12px;
+}
+
+.player-shell:has(.dm-bar-wrap) .player-bar {
+  border-radius: 0;
+}
+
+.player-shell[data-fullscreen='true'] .dm-bar-wrap {
+  border-radius: 0;
+}
+
+.dm-bar {
+  min-height: 52px;
+  padding: 4px 6px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.dm-toggle-glyph {
+  width: 26px;
+  height: 22px;
+  border: 1.6px solid currentColor;
+  border-radius: 5px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.dm-toggle[aria-pressed='false'] .dm-toggle-glyph {
+  opacity: 0.6;
+  text-decoration: line-through;
+}
+
+.dm-form {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 48px;
+  padding: 0 2px 0 14px;
+  border-radius: 24px;
+  background: #1b1c20;
+}
+
+span.dm-form {
+  background: none;
+}
+
+.dm-input {
+  flex: 1;
+  min-width: 0;
+  height: 40px;
+  border: 0;
+  background: none;
+  color: #ececee;
+  font-size: 14px;
+  outline: none;
+}
+
+.dm-input::placeholder {
+  color: #8e929a;
+}
+
+.dm-form:focus-within {
+  box-shadow: 0 0 0 2px #f2a93b;
+}
+
+.dm-count {
+  flex-shrink: 0;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: #8e929a;
+}
+
+.dm-count-over {
+  color: #ff6b5e;
+}
+
+.dm-send.btn-primary {
+  min-height: 44px;
+  padding: 0 16px;
+  background: #f2a93b;
+  color: #0f1012;
+}
+
+.dm-login {
+  flex: 1;
+  min-width: 0;
+  min-height: 44px;
+  padding: 0 14px;
+  border-radius: 22px;
+  background: #1b1c20;
+  color: #c9cbd0;
+  display: flex;
+  align-items: center;
+  font-size: 14px;
+  text-decoration: none;
+}
+
+.dm-login:hover {
+  color: #ececee;
+}
+
+.dm-error {
+  margin: 0;
+  padding: 0 16px 10px;
+  font-size: 13px;
+  color: #ff8a7f;
+}
+
+/* ---- Danmaku list ---- */
+
+.dm-list,
+.review-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.dm-row {
+  padding: 4px 16px;
+  border-bottom: 1px solid var(--line);
+}
+
+.dm-row-main {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 48px;
+}
+
+.dm-time {
+  flex-shrink: 0;
+  min-width: 56px;
+  min-height: 44px;
+  border: 0;
+  background: none;
+  color: var(--faint);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  text-align: left;
+}
+
+.dm-time:hover {
+  color: var(--accent);
+}
+
+.dm-body {
+  flex: 1;
+  min-width: 0;
+  font-size: 14px;
+  overflow-wrap: anywhere;
+}
+
+.dm-spoiler,
+.review-spoiler {
+  flex: 1;
+  min-height: 44px;
+  padding: 0 12px;
+  border: 1px dashed var(--line2);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--muted);
+  font-size: 13px;
+  text-align: left;
+}
+
+.dm-tag,
+.review-spoiler-tag {
+  margin-left: 6px;
+  padding: 1px 6px;
+  border-radius: 4px;
+  background: var(--warn-bg);
+  color: var(--warn-fg);
+  font-size: 11px;
+  font-weight: 500;
+  vertical-align: 1px;
+}
+
+.review-spoiler-tag {
+  margin: 0 6px 0 0;
+}
+
+.dm-done {
+  margin: 0 0 8px;
+  font-size: 13px;
+  color: var(--muted);
+}
+
+/* ---- Danmaku settings (player sheet tab) ---- */
+
+.dm-settings {
+  padding: 4px 16px 16px;
+  display: flex;
+  flex-direction: column;
+}
+
+.dm-set-row {
+  min-height: 56px;
+  padding: 6px 0;
+  border-bottom: 1px solid var(--line);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+}
+
+.dm-set-block {
+  padding: 10px 0;
+  border-bottom: 1px solid var(--line);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.dm-set-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  flex: 1;
+}
+
+.dm-set-label {
+  font-size: 14px;
+  font-weight: 500;
+}
+
+.dm-set-desc {
+  font-size: 12px;
+  color: var(--faint);
+}
+
+.dm-set-head {
+  margin: 18px 0 2px;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--faint);
+}
+
+.dm-settings .segmented-sm .segmented-item,
+.reviews-head .segmented-sm .segmented-item {
+  min-height: 44px;
+}
+
+.dm-colors {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.dm-swatch {
+  width: 44px;
+  height: 44px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.dm-swatch > span {
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  border: 1px solid var(--line2);
+}
+
+.dm-swatch[aria-checked='true'] > span {
+  box-shadow:
+    0 0 0 2px var(--pop),
+    0 0 0 4px var(--accent);
+}
+
+/* ---- 高能波峰 ---- */
+
+.peak {
+  position: relative;
+  height: 16px;
+  background: #0b0b0d;
+}
+
+.peak-svg {
+  display: block;
+  width: 100%;
+  height: 16px;
+  cursor: pointer;
+}
+
+.peak-area {
+  fill: #f2a93b;
+  fill-opacity: 0.35;
+}
+
+.peak-area-played {
+  fill: #f2a93b;
+  fill-opacity: 0.7;
+}
+
+.peak-marker {
+  position: absolute;
+  top: -14px;
+  width: 44px;
+  height: 44px;
+  margin-left: -22px;
+  padding: 0;
+  border: 0;
+  background: none;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+}
+
+.peak-marker > span {
+  margin-top: 10px;
+  width: 0;
+  height: 0;
+  border-left: 5px solid transparent;
+  border-right: 5px solid transparent;
+  border-top: 7px solid #f2a93b;
+}
+
+.peak-marker:hover > span,
+.peak-marker:focus-visible > span {
+  border-top-color: #ffd28a;
+}
+
+/* ---- Report picker ---- */
+
+.report-picker {
+  margin: 4px 0 12px;
+  padding: 12px;
+  border-radius: 10px;
+  background: var(--surface);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.report-title {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--muted);
+}
+
+.report-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+/* ---- Ratings ---- */
+
+.community {
+  gap: 20px;
+}
+
+.stars {
+  display: inline-flex;
+  gap: 2px;
+  color: var(--accent);
+  vertical-align: middle;
+}
+
+.star {
+  position: relative;
+  display: inline-block;
+}
+
+.star svg {
+  display: block;
+}
+
+.star-fill {
+  position: absolute;
+  inset: 0 auto 0 0;
+  overflow: hidden;
+}
+
+.rating-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.sheet .rating-panel {
+  padding: 4px 16px 16px;
+}
+
+.rating-top {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 16px 32px;
+}
+
+.rating-score {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 4px 10px;
+}
+
+.rating-number {
+  font-size: 40px;
+  font-weight: 700;
+  line-height: 1;
+  color: var(--accent);
+}
+
+.rating-scale {
+  font-size: 14px;
+  color: var(--faint);
+}
+
+.rating-meta {
+  display: inline-flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 13px;
+}
+
+.rating-score-hidden {
+  flex-direction: column;
+  gap: 4px;
+}
+
+.rating-score-hidden strong {
+  font-size: 18px;
+}
+
+.rating-dist {
+  flex: 1;
+  min-width: 200px;
+  max-width: 360px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 12px;
+}
+
+.rating-dist li {
+  display: grid;
+  grid-template-columns: 36px 1fr 36px;
+  align-items: center;
+  gap: 8px;
+}
+
+.rating-dist-label,
+.rating-dist-pct {
+  color: var(--faint);
+  font-family: var(--font-mono);
+}
+
+.rating-dist-pct {
+  text-align: right;
+}
+
+.rating-dist-bar {
+  height: 6px;
+  border-radius: 3px;
+  background: var(--surface3);
+  overflow: hidden;
+}
+
+.rating-dist-bar > span {
+  display: block;
+  height: 100%;
+  background: var(--accent);
+}
+
+.rating-mine {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.rating-mine-label {
+  font-size: 14px;
+  font-weight: 500;
+}
+
+.rating-stars-input {
+  display: flex;
+  gap: 2px;
+}
+
+.rating-star {
+  width: 44px;
+  height: 44px;
+  padding: 0;
+  border: 0;
+  border-radius: 8px;
+  background: none;
+  color: var(--faint);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.rating-star.is-on {
+  color: var(--accent);
+}
+
+.rating-star:hover {
+  background: var(--surface2);
+}
+
+.rating-hint {
+  font-size: 12px;
+}
+
+.rating-summary {
+  width: 100%;
+  min-height: 52px;
+  padding: 0 4px;
+  border: 0;
+  background: none;
+  color: var(--text);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 13px;
+  text-align: left;
+}
+
+.rating-summary-score {
+  font-size: 20px;
+  font-weight: 700;
+  color: var(--accent);
+}
+
+.rating-summary-score.muted {
+  font-size: 15px;
+  font-weight: 500;
+  color: var(--muted);
+}
+
+.rating-summary-cta {
+  color: var(--accent);
+  font-weight: 500;
+}
+
+/* ---- Reviews ---- */
+
+.reviews {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.reviews-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.reviews-head .section-title {
+  margin: 0;
+}
+
+.review-composer {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.review-input {
+  width: 100%;
+  min-height: 84px;
+  padding: 10px 12px;
+  border: 1px solid var(--line2);
+  border-radius: 10px;
+  background: var(--bg);
+  color: var(--text);
+  font: inherit;
+  font-size: 14px;
+  resize: vertical;
+}
+
+.review-input:focus {
+  outline: 2px solid var(--accent);
+  outline-offset: 0;
+  border-color: transparent;
+}
+
+.review-composer-foot {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.review-composer .dm-count {
+  color: var(--faint);
+}
+
+.review-composer .dm-count-over {
+  color: var(--badge);
+}
+
+.review-check {
+  min-height: 44px;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 14px;
+}
+
+.review-check input {
+  width: 20px;
+  height: 20px;
+  accent-color: var(--accent);
+}
+
+.review {
+  padding: 14px 0;
+  border-top: 1px solid var(--line);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.review-head {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px 10px;
+  font-size: 13px;
+}
+
+.review-author {
+  font-size: 14px;
+}
+
+.review-date {
+  margin-left: auto;
+  font-size: 12px;
+}
+
+.review-badge {
+  padding: 2px 8px;
+  border-radius: 99px;
+  background: var(--surface2);
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.review-badge.is-finished {
+  background: var(--ok-bg);
+  color: var(--ok-fg);
+}
+
+.review-badge.is-none {
+  background: transparent;
+  border: 1px solid var(--line2);
+  color: var(--faint);
+}
+
+.review-body {
+  margin: 0;
+  font-size: 14px;
+  line-height: 1.6;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+
+.review-actions .text-btn {
+  min-width: 44px;
+}
+
+.review-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.review-like {
+  min-height: 44px;
+  padding: 0 12px;
+  border: 0;
+  border-radius: 99px;
+  background: var(--surface2);
+  color: var(--text2);
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  text-decoration: none;
+}
+
+.review-like.is-on {
+  color: var(--accent);
+}
+
+.review-like:disabled {
+  opacity: 0.6;
+}
+
+@media (max-width: 767px) {
+  .community.info-card {
+    padding: 12px 16px;
+  }
+
+  .rating-dist {
+    min-width: 0;
+    width: 100%;
+  }
+
+  .dm-count {
+    display: none;
+  }
+
+  .dm-form:focus-within .dm-count {
+    display: inline;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .dm-item {
+    will-change: auto;
+  }
+}

@@ -95,40 +95,45 @@ func runCatalog(ctx context.Context, st *store.Store, registry *catalog.Registry
 	if !ok {
 		return errors.New("unknown catalog adapter: " + source.Adapter)
 	}
-	client := &http.Client{Timeout: 30 * time.Second}
-	index, err := catalog.FetchDocument(ctx, client, source.URL)
+	policy, exhausted, err := st.FetchPolicy(ctx, source.ID)
 	if err != nil {
-		_ = st.FailCheckpoint(ctx, store.CrawlCheckpoint{SourceID: source.ID, TaskType: "catalog_discovery", ParserVersion: adapter.Name()}, "index_fetch_failed")
 		return err
 	}
-	records, err := adapter.Discover(ctx, index)
-	if err != nil {
-		_ = st.FailCheckpoint(ctx, store.CrawlCheckpoint{SourceID: source.ID, TaskType: "catalog_discovery", ParserVersion: adapter.Name()}, "discover_failed")
-		return err
+	if exhausted {
+		log.Printf("source=%d daily request budget exhausted; skipping run", source.ID)
+		return nil
 	}
-	for _, discovered := range records {
-		doc, fetchErr := catalog.FetchDocument(ctx, client, discovered.URL)
-		if fetchErr != nil {
-			_ = st.FailCheckpoint(ctx, store.CrawlCheckpoint{SourceID: source.ID, TaskType: "catalog_detail", PartitionKey: discovered.SourceKey, ParserVersion: adapter.Name()}, "detail_fetch_failed")
-			return fetchErr
+	policy.MaxRetryWait = maxInlineRetryWait
+	fetcher := catalog.NewFetcher(&http.Client{Timeout: 30 * time.Second}, policy)
+	crawl := &catalog.Crawl{
+		SourceID:    source.ID,
+		StartURL:    source.URL,
+		Adapter:     adapter,
+		Fetcher:     fetcher,
+		Checkpoints: store.CatalogCheckpoints{S: st},
+		Sink:        st,
+	}
+	res, err := crawl.Run(ctx)
+	// Usage and block state are recorded even if the job context was cancelled.
+	bg, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	pages, bytes := fetcher.Usage()
+	if uerr := st.RecordCrawlUsage(bg, source.ID, pages, bytes); uerr != nil {
+		log.Printf("source=%d record usage: %v", source.ID, uerr)
+	}
+	if b, blocked := catalog.IsBlocked(err); blocked {
+		if berr := st.BlockSource(bg, source.ID, b.RetryAfter, b.Reason); berr != nil {
+			log.Printf("source=%d mark blocked: %v", source.ID, berr)
 		}
-		record, parseErr := adapter.Parse(ctx, doc, discovered.EntityType)
-		if parseErr != nil {
-			return parseErr
-		}
-		if record.SourceKey == "" {
-			record.SourceKey = discovered.SourceKey
-		}
-		if record.URL == "" {
-			record.URL = discovered.URL
-		}
-		if _, saveErr := st.SaveCatalogRecord(ctx, source.ID, adapter.Name(), record); saveErr != nil {
-			_ = st.FailCheckpoint(ctx, store.CrawlCheckpoint{SourceID: source.ID, TaskType: "catalog_detail", PartitionKey: discovered.SourceKey, ParserVersion: adapter.Name()}, "record_save_failed")
-			return saveErr
+	} else if err == nil {
+		if cerr := st.ClearSourceBlock(bg, source.ID); cerr != nil {
+			log.Printf("source=%d clear block: %v", source.ID, cerr)
 		}
 	}
-	if err := st.AdvanceCheckpoint(ctx, store.CrawlCheckpoint{SourceID: source.ID, TaskType: "catalog_discovery", ParserVersion: adapter.Name()}, source.URL, nil, 1); err != nil {
-		return err
-	}
-	return nil
+	log.Printf("source=%d catalog pages=%d records=%d stop=%s cursor=%q requests=%d bytes=%d err=%v", source.ID, res.Pages, res.Records, res.Stop, res.Cursor, pages, bytes, err)
+	return err
 }
+
+// maxInlineRetryWait is the longest 429 Retry-After a worker sleeps through
+// before parking the source as blocked.
+const maxInlineRetryWait = 30 * time.Second

@@ -1,14 +1,19 @@
 package store
 
 import (
+	"avxxx/internal/audit"
 	"avxxx/internal/catalog"
+	"avxxx/internal/i18n"
 	"avxxx/internal/model"
 	"avxxx/migrations"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -80,7 +85,10 @@ func (s *Store) IdentityCandidates(ctx context.Context, entityType string, limit
 	if limit <= 0 || limit > 100 {
 		limit = 50
 	}
-	r, err := s.Query(ctx, `SELECT id,entity_type,left_id,right_id,score,evidence,status FROM identity_candidates WHERE ($1='' OR entity_type=$1) AND status='pending' ORDER BY score DESC,id LIMIT $2`, entityType, limit)
+	r, err := s.Query(ctx, `SELECT id,entity_type,left_id,right_id,score,evidence,status FROM identity_candidates c WHERE ($1='' OR entity_type=$1) AND status='pending'
+		AND NOT EXISTS (SELECT 1 FROM performers p WHERE c.entity_type='performer' AND p.id IN (c.left_id,c.right_id) AND p.merged_into_id IS NOT NULL)
+		AND NOT EXISTS (SELECT 1 FROM releases r WHERE c.entity_type='release' AND r.id IN (c.left_id,c.right_id) AND r.merged_into_id IS NOT NULL)
+		ORDER BY score DESC,id LIMIT $2`, entityType, limit)
 	if err != nil {
 		return nil, err
 	}
@@ -168,7 +176,7 @@ func (s *Store) EnqueueDue(ctx context.Context) (int, error) {
 		return 0, err
 	}
 	defer tx.Rollback(ctx)
-	r, err := tx.Query(ctx, `SELECT s.id FROM sources s LEFT JOIN source_crawl_policies p ON p.source_id=s.id WHERE s.enabled AND (s.next_run_at IS NULL OR s.next_run_at<=now()) ORDER BY COALESCE(s.next_run_at,now()),s.id FOR UPDATE OF s SKIP LOCKED`)
+	r, err := tx.Query(ctx, `SELECT s.id FROM sources s LEFT JOIN source_crawl_policies p ON p.source_id=s.id WHERE s.enabled AND (s.blocked_until IS NULL OR s.blocked_until<=now()) AND (s.next_run_at IS NULL OR s.next_run_at<=now()) ORDER BY COALESCE(s.next_run_at,now()),s.id FOR UPDATE OF s SKIP LOCKED`)
 	if err != nil {
 		return 0, err
 	}
@@ -218,7 +226,7 @@ func (s *Store) Performers(ctx context.Context, q string, limit int) ([]model.Pe
 	if limit <= 0 || limit > 100 {
 		limit = 20
 	}
-	r, e := s.Query(ctx, `SELECT id,slug,canonical_name,COALESCE(canonical_name_ja,''),birth_date,
+	r, e := s.Query(ctx, `SELECT id,slug,canonical_name,COALESCE(canonical_name_ja,''),`+PublicBirthDate("performers")+`,
 		COALESCE(height_cm,0),COALESCE(bust_cm,0),COALESCE(waist_cm,0),COALESCE(hip_cm,0),status
 		FROM performers WHERE merged_into_id IS NULL AND status='active'
 		AND ($1='' OR canonical_name ILIKE '%'||$1||'%' OR canonical_name_ja ILIKE '%'||$1||'%'
@@ -241,7 +249,7 @@ func (s *Store) Performers(ctx context.Context, q string, limit int) ([]model.Pe
 
 func (s *Store) PerformerBySlug(ctx context.Context, slug string) (model.Performer, error) {
 	var x model.Performer
-	e := s.QueryRow(ctx, `SELECT id,slug,canonical_name,COALESCE(canonical_name_ja,''),birth_date,
+	e := s.QueryRow(ctx, `SELECT id,slug,canonical_name,COALESCE(canonical_name_ja,''),`+PublicBirthDate("performers")+`,
 		COALESCE(height_cm,0),COALESCE(bust_cm,0),COALESCE(waist_cm,0),COALESCE(hip_cm,0),status
 		FROM performers WHERE slug=$1 AND merged_into_id IS NULL AND status='active'`, slug).Scan(&x.ID, &x.Slug, &x.CanonicalName, &x.CanonicalNameJA, &x.BirthDate, &x.HeightCM, &x.BustCM, &x.WaistCM, &x.HipCM, &x.Status)
 	return x, e
@@ -249,7 +257,7 @@ func (s *Store) PerformerBySlug(ctx context.Context, slug string) (model.Perform
 
 func (s *Store) PerformerDetail(ctx context.Context, slug string) (map[string]any, error) {
 	var raw []byte
-	err := s.QueryRow(ctx, `SELECT row_to_json(x) FROM (SELECT p.id,p.slug,p.canonical_name,COALESCE(p.canonical_name_ja,sr.raw_data->>'name_ja') canonical_name_ja,COALESCE(p.birth_date::text,sr.raw_data->>'birth_date') birth_date,p.birth_place,COALESCE(p.debut_date::text,sr.raw_data->>'debut_date') debut_date,p.debut_age,p.blood_type,COALESCE(p.height_cm::text,sr.raw_data->>'height_cm') height_cm,p.bust_cm,p.waist_cm,p.hip_cm,COALESCE(p.cup_size,sr.raw_data->>'cup_size') cup_size,p.shoe_size,p.hair_color,p.hair_length,p.activity_start,p.activity_end,p.biography,p.status FROM performers p LEFT JOIN LATERAL (SELECT raw_data FROM source_records WHERE performer_id=p.id ORDER BY last_seen_at DESC LIMIT 1) sr ON true WHERE p.slug=$1 AND p.merged_into_id IS NULL AND p.status='active') x`, slug).Scan(&raw)
+	err := s.QueryRow(ctx, `SELECT row_to_json(x) FROM (SELECT p.id,p.slug,p.canonical_name,COALESCE(p.canonical_name_ja,sr.raw_data->>'name_ja') canonical_name_ja,CASE WHEN `+BirthHiddenSQL("p")+` THEN NULL ELSE COALESCE(p.birth_date::text,sr.raw_data->>'birth_date') END birth_date,`+BirthHiddenSQL("p")+` birth_date_hidden,p.birth_place,COALESCE(p.debut_date::text,sr.raw_data->>'debut_date') debut_date,`+publicDebutAge("p")+` debut_age,p.blood_type,COALESCE(p.height_cm::text,sr.raw_data->>'height_cm') height_cm,p.bust_cm,p.waist_cm,p.hip_cm,COALESCE(p.cup_size,sr.raw_data->>'cup_size') cup_size,p.shoe_size,p.hair_color,p.hair_length,p.activity_start,p.activity_end,p.biography,p.status FROM performers p LEFT JOIN LATERAL (SELECT raw_data FROM source_records WHERE performer_id=p.id ORDER BY last_seen_at DESC LIMIT 1) sr ON true WHERE p.slug=$1 AND p.merged_into_id IS NULL AND p.status='active') x`, slug).Scan(&raw)
 	if err != nil {
 		return nil, err
 	}
@@ -314,7 +322,7 @@ func (s *Store) PerformerReleases(ctx context.Context, slug string, limit int) (
 }
 
 func (s *Store) ReleasePerformers(ctx context.Context, slug string) ([]model.Performer, error) {
-	r, err := s.Query(ctx, `SELECT p.id,p.slug,p.canonical_name,COALESCE(p.canonical_name_ja,''),p.birth_date,COALESCE(p.height_cm,0),COALESCE(p.bust_cm,0),COALESCE(p.waist_cm,0),COALESCE(p.hip_cm,0),p.status FROM performers p JOIN release_performers rp ON rp.performer_id=p.id JOIN releases r ON r.id=rp.release_id WHERE r.slug=$1 AND p.status='active' AND p.merged_into_id IS NULL ORDER BY rp.billing_order NULLS LAST,p.id`, slug)
+	r, err := s.Query(ctx, `SELECT p.id,p.slug,p.canonical_name,COALESCE(p.canonical_name_ja,''),`+PublicBirthDate("p")+`,COALESCE(p.height_cm,0),COALESCE(p.bust_cm,0),COALESCE(p.waist_cm,0),COALESCE(p.hip_cm,0),p.status FROM performers p JOIN release_performers rp ON rp.performer_id=p.id JOIN releases r ON r.id=rp.release_id WHERE r.slug=$1 AND p.status='active' AND p.merged_into_id IS NULL ORDER BY rp.billing_order NULLS LAST,p.id`, slug)
 	if err != nil {
 		return nil, err
 	}
@@ -474,36 +482,153 @@ func (s *Store) PendingConflicts(ctx context.Context, limit int) ([]map[string]a
 	return out, r.Err()
 }
 
-func (s *Store) ResolveConflict(ctx context.Context, conflictID, sourceRecordID int64, value json.RawMessage, note string) error {
+// ConflictResolution is the outcome of ResolveConflict.
+type ConflictResolution struct {
+	ConflictID int64           `json:"conflict_id"`
+	EntityType string          `json:"entity_type"`
+	EntityID   int64           `json:"entity_id"`
+	Field      string          `json:"field"`
+	Column     string          `json:"column"`
+	Before     json.RawMessage `json:"before"`
+	After      json.RawMessage `json:"after"`
+	// Audit is the inbound R-AGE / R-META re-check of the affected releases,
+	// run when the resolved column feeds age at filming.
+	Audit []audit.InboundResult `json:"audit,omitempty"`
+}
+
+// ResolveConflict settles a pending field conflict. The conflict's field name
+// (a parser field such as "title" or "maker", or a column name) is mapped to
+// its canonical column by ConflictField and the value is typed for that
+// column. value is the JSON value to keep; when it is empty, the current
+// value of sourceRecordID ("采用来源值") is used. The column is updated, an
+// override is written so the next crawl does not revert it, reviewed
+// translations of the entity are marked stale, and a review_events row
+// records before / after and actor. Unknown conflict: pgx.ErrNoRows; already
+// resolved: *ConflictError; bad field or value: *ValidationError.
+func (s *Store) ResolveConflict(ctx context.Context, conflictID, sourceRecordID int64, value json.RawMessage, note, actor string) (ConflictResolution, error) {
+	res := ConflictResolution{ConflictID: conflictID}
+	if actor == "" {
+		actor = "admin"
+	}
 	tx, err := s.Begin(ctx)
 	if err != nil {
-		return err
+		return res, err
 	}
 	defer tx.Rollback(ctx)
-	var typ, field string
-	var entityID int64
-	var before []byte
-	if err = tx.QueryRow(ctx, `SELECT entity_type,entity_id,field_name,current_value FROM field_conflicts WHERE id=$1 AND status='pending' FOR UPDATE`, conflictID).Scan(&typ, &entityID, &field, &before); err != nil {
-		return err
+	var status string
+	if err = tx.QueryRow(ctx, `SELECT entity_type,entity_id,field_name,status FROM field_conflicts WHERE id=$1 FOR UPDATE`, conflictID).Scan(&res.EntityType, &res.EntityID, &res.Field, &status); err != nil {
+		return res, err
 	}
-	allowed := map[string]bool{"canonical_name": true, "canonical_name_ja": true, "birth_date": true, "height_cm": true, "title": true, "title_ja": true, "release_date": true, "maker_name": true, "director_name": true}
-	if !allowed[field] {
-		return fmt.Errorf("field is not reviewable: %s", field)
+	if status != "pending" {
+		return res, conflict("conflict is already %s", status)
+	}
+	spec, ok := ConflictField(res.EntityType, res.Field)
+	if !ok {
+		return res, &ValidationError{Msg: fmt.Sprintf("%s: %s", ErrNotReviewable, res.Field)}
+	}
+	res.Column = spec.Column
+	if sourceRecordID > 0 {
+		var belongs bool
+		if err = tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM source_records WHERE id=$1 AND entity_type=$2
+			AND (($2='release' AND release_id=$3) OR ($2='performer' AND performer_id=$3)))`, sourceRecordID, res.EntityType, res.EntityID).Scan(&belongs); err != nil {
+			return res, err
+		}
+		if !belongs {
+			return res, invalid("source_record_id is not a source of this %s", res.EntityType)
+		}
+		if len(value) == 0 {
+			var raw []byte
+			err = tx.QueryRow(ctx, `SELECT normalized_value FROM source_field_values WHERE source_record_id=$1 AND field_name=$2 AND is_current`, sourceRecordID, res.Field).Scan(&raw)
+			if errors.Is(err, pgx.ErrNoRows) {
+				return res, invalid("source record has no current value for %s", res.Field)
+			}
+			if err != nil {
+				return res, err
+			}
+			value = raw
+		}
+	}
+	if len(value) == 0 {
+		return res, invalid("value or source_record_id is required")
+	}
+	text, err := CoerceFieldValue(spec, value)
+	if err != nil {
+		return res, err
 	}
 	table := "performers"
-	if typ == "release" {
+	if res.EntityType == "release" {
 		table = "releases"
 	}
-	if _, err = tx.Exec(ctx, fmt.Sprintf("UPDATE %s SET %s=$1,updated_at=now() WHERE id=$2", table, field), string(value), entityID); err != nil {
-		return err
+	var before, after []byte
+	if err = tx.QueryRow(ctx, fmt.Sprintf(`SELECT to_jsonb(%s) FROM %s WHERE id=$1 FOR UPDATE`, spec.Column, table), res.EntityID).Scan(&before); err != nil {
+		return res, err
 	}
-	if _, err = tx.Exec(ctx, `UPDATE field_conflicts SET status='resolved',selected_source_record_id=NULLIF($2,0),resolution_note=$3,resolved_at=now(),updated_at=now() WHERE id=$1`, conflictID, sourceRecordID, note); err != nil {
-		return err
+	if err = tx.QueryRow(ctx, fmt.Sprintf(`UPDATE %[1]s SET %[2]s=$1::%[3]s,updated_at=now(),version=version+1 WHERE id=$2 RETURNING to_jsonb(%[2]s)`,
+		table, spec.Column, spec.Kind.sqlType()), text, res.EntityID).Scan(&after); err != nil {
+		return res, err
 	}
-	if _, err = tx.Exec(ctx, `INSERT INTO review_events(conflict_id,entity_type,entity_id,action,before_value,after_value,reason) VALUES($1,$2,$3,'resolve',$4::jsonb,$5::jsonb,$6)`, conflictID, typ, entityID, string(before), string(value), note); err != nil {
-		return err
+	// to_jsonb(NULL) is SQL NULL, not JSON null: never build ''::jsonb from it.
+	res.Before, res.After = rawOrNull(before), rawOrNull(after)
+	before, after = res.Before, res.After
+	if err = upsertOverride(ctx, tx, res.EntityType, res.EntityID, spec.Column, after, note, actor, conflictID); err != nil {
+		return res, err
 	}
-	return tx.Commit(ctx)
+	if err = markStale(ctx, tx, res.EntityType, strconv.FormatInt(res.EntityID, 10)); err != nil {
+		return res, err
+	}
+	if _, err = tx.Exec(ctx, `UPDATE field_conflicts SET status='resolved',current_value=$4::jsonb,selected_source_record_id=NULLIF($2,0),
+		resolution_note=$3,resolved_at=now(),updated_at=now() WHERE id=$1`, conflictID, sourceRecordID, note, string(after)); err != nil {
+		return res, err
+	}
+	if _, err = tx.Exec(ctx, `INSERT INTO review_events(conflict_id,entity_type,entity_id,action,before_value,after_value,reason,actor)
+		VALUES($1,$2,$3,'resolve',jsonb_build_object('field',$4::text,'value',$5::jsonb),
+		jsonb_build_object('field',$4::text,'value',$6::jsonb,'source_record_id',NULLIF($7::bigint,0)),NULLIF($8,''),$9)`,
+		conflictID, res.EntityType, res.EntityID, spec.Column, string(before), string(after), sourceRecordID, note, actor); err != nil {
+		return res, err
+	}
+	if err = tx.Commit(ctx); err != nil {
+		return res, err
+	}
+	res.Audit, err = s.recheckAfterEdit(ctx, res.EntityType, res.EntityID, spec.Column)
+	return res, err
+}
+
+// recheckAfterEdit re-runs the inbound audit (R-AGE + R-META) for the
+// releases whose age at filming depends on the edited column: the release
+// itself for release_date / shoot_year, every credited release for a
+// performer's birth_date. R-AGE may hold them.
+func (s *Store) recheckAfterEdit(ctx context.Context, entityType string, id int64, column string) ([]audit.InboundResult, error) {
+	var ids []int64
+	switch {
+	case entityType == "release" && (column == "release_date" || column == "shoot_year"):
+		ids = []int64{id}
+	case entityType == "performer" && column == "birth_date":
+		rows, err := s.Query(ctx, `SELECT DISTINCT release_id FROM release_performers WHERE performer_id=$1 ORDER BY 1`, id)
+		if err != nil {
+			return nil, err
+		}
+		for rows.Next() {
+			var rid int64
+			if err = rows.Scan(&rid); err != nil {
+				rows.Close()
+				return nil, err
+			}
+			ids = append(ids, rid)
+		}
+		rows.Close()
+		if err = rows.Err(); err != nil {
+			return nil, err
+		}
+	}
+	var out []audit.InboundResult
+	for _, rid := range ids {
+		r, err := audit.CheckRelease(ctx, s, rid, audit.DefaultAgeConfig, time.Now())
+		if err != nil {
+			return out, err
+		}
+		out = append(out, r)
+	}
+	return out, nil
 }
 
 // SaveCatalogRecord persists one parsed source record and its normalized entity
@@ -532,8 +657,14 @@ func (s *Store) SaveCatalogRecord(ctx context.Context, sourceID int64, parserVer
 		height, _ := rec.Fields["height_cm"].(any)
 		cup, _ := rec.Fields["cup_size"].(string)
 		err = tx.QueryRow(ctx, `INSERT INTO performers(slug,canonical_name,canonical_name_ja,birth_date,birth_place,debut_date,height_cm,cup_size) VALUES($1,$2,NULLIF($3,''),NULLIF($4,'')::date,NULLIF($5,''),NULLIF($6,'')::date,NULLIF($7,'')::numeric,NULLIF($8,''))
-			ON CONFLICT(slug) DO UPDATE SET canonical_name_ja=COALESCE(NULLIF(EXCLUDED.canonical_name_ja,''),performers.canonical_name_ja),birth_date=COALESCE(EXCLUDED.birth_date,performers.birth_date),birth_place=COALESCE(NULLIF(EXCLUDED.birth_place,''),performers.birth_place),debut_date=COALESCE(EXCLUDED.debut_date,performers.debut_date),height_cm=COALESCE(EXCLUDED.height_cm,performers.height_cm),cup_size=COALESCE(NULLIF(EXCLUDED.cup_size,''),performers.cup_size),updated_at=now() RETURNING id`, slug, name, nameJA, birthDate, birthPlace, debutDate, height, cup).Scan(&id)
+			ON CONFLICT(slug) DO UPDATE SET `+performerIngestUpdate+`,updated_at=now() RETURNING id`, slug, name, nameJA, birthDate, birthPlace, debutDate, height, cup).Scan(&id)
 		if err != nil {
+			return 0, err
+		}
+		if id, err = survivingID(ctx, tx, "performers", id); err != nil {
+			return 0, err
+		}
+		if err = markStale(ctx, tx, i18n.EntityPerformer, strconv.FormatInt(id, 10)); err != nil {
 			return 0, err
 		}
 		performerID = &id
@@ -552,9 +683,14 @@ func (s *Store) SaveCatalogRecord(ctx context.Context, sourceID int64, parserVer
 		maker, _ := rec.Fields["maker"].(string)
 		director, _ := rec.Fields["director"].(string)
 		err = tx.QueryRow(ctx, `INSERT INTO releases(slug,canonical_title,release_date,maker_name,director_name)
-			VALUES($1,$2,$3,$4,$5) ON CONFLICT(slug) DO UPDATE SET canonical_title=EXCLUDED.canonical_title,
-			maker_name=COALESCE(NULLIF(EXCLUDED.maker_name,''),releases.maker_name),updated_at=now() RETURNING id`, slug, title, date, maker, director).Scan(&id)
+			VALUES($1,$2,$3,$4,$5) ON CONFLICT(slug) DO UPDATE SET `+releaseIngestUpdate+`,updated_at=now() RETURNING id`, slug, title, date, maker, director).Scan(&id)
 		if err != nil {
+			return 0, err
+		}
+		if id, err = survivingID(ctx, tx, "releases", id); err != nil {
+			return 0, err
+		}
+		if err = markStale(ctx, tx, i18n.EntityRelease, strconv.FormatInt(id, 10)); err != nil {
 			return 0, err
 		}
 		releaseID = &id
@@ -577,6 +713,17 @@ func (s *Store) SaveCatalogRecord(ctx context.Context, sourceID int64, parserVer
 	} else {
 		return 0, fmt.Errorf("unsupported entity type %q", rec.EntityType)
 	}
+	entityID := performerID
+	if rec.EntityType == catalog.Release {
+		entityID = releaseID
+	}
+	// Manual overrides win over every source (FINAL_DATA_DESIGN 6): the
+	// upserts above already keep overridden columns; relations and conflicts
+	// below skip overridden fields. Source evidence is still recorded.
+	overridden, err := overriddenFields(ctx, tx, string(rec.EntityType), *entityID)
+	if err != nil {
+		return 0, err
+	}
 	var sourceRecordID int64
 	err = tx.QueryRow(ctx, `INSERT INTO source_records(source_id,entity_type,source_record_key,source_url,performer_id,release_id,raw_data,parser_version,resolution_status)
 		VALUES($1,$2,$3,$4,$5,$6,$7,$8,'resolved') ON CONFLICT(source_id,entity_type,source_record_key)
@@ -589,8 +736,8 @@ func (s *Store) SaveCatalogRecord(ctx context.Context, sourceID int64, parserVer
 		if names, ok := rec.Fields["performers"].([]string); ok {
 			for order, name := range names {
 				name = strings.TrimSpace(name)
-				if name == "" {
-					continue
+				if name == "" || catalog.BoilerplateName(name) != "" {
+					continue // never create a performer from site chrome text
 				}
 				slug := catalog.Slug(name)
 				if slug == "" {
@@ -600,8 +747,13 @@ func (s *Store) SaveCatalogRecord(ctx context.Context, sourceID int64, parserVer
 				if err = tx.QueryRow(ctx, `INSERT INTO performers(slug,canonical_name) VALUES($1,$2) ON CONFLICT(slug) DO UPDATE SET updated_at=now() RETURNING id`, slug, name).Scan(&performerID); err != nil {
 					return 0, err
 				}
-				if _, err = tx.Exec(ctx, `INSERT INTO release_performers(release_id,performer_id,billing_order,credited_name,is_primary) VALUES($1,$2,$3,$4,$5) ON CONFLICT(release_id,performer_id) DO UPDATE SET billing_order=EXCLUDED.billing_order,credited_name=EXCLUDED.credited_name`, *releaseID, performerID, order, name, order == 0); err != nil {
+				if performerID, err = survivingID(ctx, tx, "performers", performerID); err != nil {
 					return 0, err
+				}
+				if !overridden[OverridePerformers] {
+					if _, err = tx.Exec(ctx, `INSERT INTO release_performers(release_id,performer_id,billing_order,credited_name,is_primary) VALUES($1,$2,$3,$4,$5) ON CONFLICT(release_id,performer_id) DO UPDATE SET billing_order=EXCLUDED.billing_order,credited_name=EXCLUDED.credited_name`, *releaseID, performerID, order, name, order == 0); err != nil {
+						return 0, err
+					}
 				}
 				if _, err = tx.Exec(ctx, `INSERT INTO release_performer_sources(release_id,performer_id,source_record_id,billing_order,credited_name) VALUES($1,$2,$3,$4,$5) ON CONFLICT DO NOTHING`, *releaseID, performerID, sourceRecordID, order, name); err != nil {
 					return 0, err
@@ -615,10 +767,16 @@ func (s *Store) SaveCatalogRecord(ctx context.Context, sourceID int64, parserVer
 				if normalized == "" {
 					continue
 				}
+				if _, err = tx.Exec(ctx, `INSERT INTO release_tag_sources(release_id,normalized_tag,source_record_id,source_tag) VALUES($1,$2,$3,$4) ON CONFLICT DO NOTHING`, *releaseID, normalized, sourceRecordID, tag); err != nil {
+					return 0, err
+				}
+				if overridden[OverrideTags] {
+					continue
+				}
 				if _, err = tx.Exec(ctx, `INSERT INTO release_tags(release_id,tag,normalized_tag) VALUES($1,$2,$3) ON CONFLICT(release_id,normalized_tag) DO UPDATE SET tag=EXCLUDED.tag`, *releaseID, tag, normalized); err != nil {
 					return 0, err
 				}
-				if _, err = tx.Exec(ctx, `INSERT INTO release_tag_sources(release_id,normalized_tag,source_record_id,source_tag) VALUES($1,$2,$3,$4) ON CONFLICT DO NOTHING`, *releaseID, normalized, sourceRecordID, tag); err != nil {
+				if err = markStale(ctx, tx, i18n.EntityTag, normalized); err != nil {
 					return 0, err
 				}
 			}
@@ -635,9 +793,11 @@ func (s *Store) SaveCatalogRecord(ctx context.Context, sourceID int64, parserVer
 		if _, err = tx.Exec(ctx, `INSERT INTO source_field_values(source_record_id,field_name,raw_value,normalized_value,confidence,captured_at,is_current) VALUES($1,$2,$3::jsonb,$3::jsonb,'verified',now(),true)`, sourceRecordID, field, string(raw)); err != nil {
 			return 0, err
 		}
-		entityID := performerID
-		if rec.EntityType == catalog.Release {
-			entityID = releaseID
+		if fieldOverridden(string(rec.EntityType), field, overridden) {
+			continue // the admin's value stands; no new conflict for it
+		}
+		if field == catalog.FieldPageTitle {
+			continue // evidence for R-PERFORMER-NAME; differs per source by design
 		}
 		var distinct int
 		var candidates []byte
@@ -660,7 +820,7 @@ func (s *Store) SaveCatalogRecord(ctx context.Context, sourceID int64, parserVer
 	return sourceRecordID, nil
 }
 func (s *Store) Jobs(ctx context.Context) ([]model.Job, error) {
-	r, e := s.Query(ctx, "SELECT id,source_id,status,error,created_at,attempt,lease_until,execution_version FROM jobs ORDER BY id DESC LIMIT 100")
+	r, e := s.Query(ctx, "SELECT id,COALESCE(source_id,0),status,error,created_at,attempt,lease_until,execution_version FROM jobs ORDER BY id DESC LIMIT 100")
 	if e != nil {
 		return nil, e
 	}
@@ -679,7 +839,7 @@ func (s *Store) Claim(ctx context.Context) (int64, model.Source, error) {
 	var id int64
 	var x model.Source
 	worker := s.workerID
-	e := s.QueryRow(ctx, `WITH picked AS (SELECT j.id FROM jobs j JOIN sources s ON s.id=j.source_id WHERE j.status='pending' AND j.available_at<=now() AND s.enabled ORDER BY j.id FOR UPDATE OF j SKIP LOCKED LIMIT 1), claimed AS (UPDATE jobs j SET status='running',started_at=COALESCE(started_at,now()),attempt=attempt+1,worker_id=$1,lease_until=now()+interval '90 seconds',heartbeat_at=now(),execution_version=execution_version+1 WHERE j.id IN (SELECT id FROM picked) RETURNING j.id,j.source_id) SELECT c.id,s.id,s.name,s.url,s.enabled,s.version,s.adapter,s.source_kind,s.license_status,s.egress_policy FROM claimed c JOIN sources s ON s.id=c.source_id`, worker).Scan(&id, &x.ID, &x.Name, &x.URL, &x.Enabled, &x.Version, &x.Adapter, &x.SourceKind, &x.LicenseStatus, &x.EgressPolicy)
+	e := s.QueryRow(ctx, `WITH picked AS (SELECT j.id FROM jobs j JOIN sources s ON s.id=j.source_id WHERE j.status='pending' AND j.available_at<=now() AND s.enabled AND (s.blocked_until IS NULL OR s.blocked_until<=now()) ORDER BY j.id FOR UPDATE OF j SKIP LOCKED LIMIT 1), claimed AS (UPDATE jobs j SET status='running',started_at=COALESCE(started_at,now()),attempt=attempt+1,worker_id=$1,lease_until=now()+interval '90 seconds',heartbeat_at=now(),execution_version=execution_version+1 WHERE j.id IN (SELECT id FROM picked) RETURNING j.id,j.source_id) SELECT c.id,s.id,s.name,s.url,s.enabled,s.version,s.adapter,s.source_kind,s.license_status,s.egress_policy FROM claimed c JOIN sources s ON s.id=c.source_id`, worker).Scan(&id, &x.ID, &x.Name, &x.URL, &x.Enabled, &x.Version, &x.Adapter, &x.SourceKind, &x.LicenseStatus, &x.EgressPolicy)
 	return id, x, e
 }
 func (s *Store) Heartbeat(ctx context.Context, id int64, worker string, version int64) error {
@@ -694,6 +854,12 @@ func (s *Store) ReapExpired(ctx context.Context) error {
 	return e
 }
 func (s *Store) Finish(ctx context.Context, id int64, items []model.Item, cause error) error {
+	if b, blocked := catalog.IsBlocked(cause); blocked {
+		// A blocked source is not retried by the job queue: BlockSource parks
+		// the source and the scheduler creates a fresh job after Retry-After.
+		_, e := s.Exec(ctx, "UPDATE jobs SET status='failed',error=$2,error_code='source_blocked',finished_at=now(),worker_id=NULL,lease_until=NULL WHERE id=$1 AND status='running'", id, b.Error())
+		return e
+	}
 	if cause != nil {
 		_, e := s.Exec(ctx, "UPDATE jobs SET status=CASE WHEN attempt<max_attempts THEN 'pending' ELSE 'failed' END,error=$2,error_code='fetch_failed',available_at=now()+interval '5 seconds',finished_at=CASE WHEN attempt>=max_attempts THEN now() ELSE NULL END,worker_id=NULL,lease_until=NULL WHERE id=$1 AND status='running'", id, cause.Error())
 		return e
