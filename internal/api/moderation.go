@@ -29,6 +29,7 @@ type moderationStore interface {
 	AddModerationWord(ctx context.Context, word, category, actor string) (community.Keyword, error)
 	DeleteModerationWord(ctx context.Context, word, actor string) error
 	Unmute(ctx context.Context, userID int64, reason, actor string) error
+	CommentEdits(ctx context.Context, commentID int64) (store.CommentHistory, error)
 }
 
 const maxActorLen = 100
@@ -46,6 +47,7 @@ func (srv *Server) moderationRoutes() []route {
 		{"DELETE /api/admin/moderation/words/{word}", srv.admin(srv.deleteWord)},
 		{"DELETE /api/admin/moderation/mutes/{user_id}", srv.admin(srv.unmute)},
 		{"POST /api/admin/moderation/comments/{id}/action", srv.admin(srv.moderate("comment"))},
+		{"GET /api/admin/moderation/comments/{id}/edits", srv.admin(srv.commentEdits)},
 	}
 }
 
@@ -304,4 +306,19 @@ func (srv *Server) unmute(w http.ResponseWriter, r *http.Request) {
 	}
 	err = srv.moderation.Unmute(r.Context(), id, strings.TrimSpace(r.URL.Query().Get("reason")), actor)
 	reply(w, map[string]bool{"deleted": err == nil}, err)
+}
+
+// commentEdits: GET /api/admin/moderation/comments/{id}/edits — a comment's
+// current text and every earlier version (author edits, #102), oldest first.
+func (srv *Server) commentEdits(w http.ResponseWriter, r *http.Request) {
+	if _, ok := srv.withModeration(w, r); !ok {
+		return
+	}
+	id, err := pathInt64(r, "id")
+	if err != nil {
+		reply(w, nil, err)
+		return
+	}
+	v, err := srv.moderation.CommentEdits(r.Context(), id)
+	reply(w, v, err)
 }

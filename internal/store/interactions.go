@@ -86,6 +86,11 @@ type Comment struct {
 	ReplyCount int          `json:"reply_count"`
 	Replies    []Comment    `json:"replies,omitempty"` // top level: the first replies, oldest first
 	CreatedAt  time.Time    `json:"created_at"`
+	// EditedAt is the last edit (the 「已编辑」 marker); nil when never edited.
+	EditedAt *time.Time `json:"edited_at"`
+	// EditableUntil is set on the viewer's own comments: the end of the
+	// edit window (CommentEditWindow after posting).
+	EditableUntil *time.Time `json:"editable_until,omitempty"`
 }
 
 // CommentFilter selects a page of top-level comments.
@@ -126,12 +131,14 @@ const commentColumns = `c.id,c.parent_id,
 	CASE WHEN c.status='deleted' THEN '' ELSE u.display_name END,
 	CASE WHEN c.parent_id IS NOT NULL THEN 0 ELSE
 		(SELECT count(*) FROM comments r WHERE r.parent_id=c.id AND (r.status IN ('visible','folded') OR (r.status='shadow' AND r.user_id=$1))) END,
-	c.created_at`
+	c.created_at,
+	CASE WHEN c.status='deleted' THEN NULL ELSE c.edited_at END,
+	CASE WHEN c.status<>'deleted' AND c.user_id=$1 THEN c.created_at + interval '` + commentEditWindowSQL + `' END`
 
 func scanComment(r rowScanner) (Comment, error) {
 	var x Comment
 	err := r.Scan(&x.ID, &x.ParentID, &x.Body, &x.Spoiler, &x.Likes, &x.LikedByMe, &x.Mine, &x.Pending, &x.Deleted,
-		&x.Author.ID, &x.Author.DisplayName, &x.ReplyCount, &x.CreatedAt)
+		&x.Author.ID, &x.Author.DisplayName, &x.ReplyCount, &x.CreatedAt, &x.EditedAt, &x.EditableUntil)
 	return x, err
 }
 
@@ -377,6 +384,124 @@ func (s *Store) notifyReply(ctx context.Context, tx pgx.Tx, userID, releaseID, t
 			payload=jsonb_set(notifications.payload,'{count}',to_jsonb(COALESCE((notifications.payload->>'count')::int,0)+1)),
 			read_at=NULL,updated_at=now()`, userID, releaseID, threadID)
 	return err
+}
+
+// CommentEditWindow is how long after posting the author may edit a comment.
+const CommentEditWindow = 10 * time.Minute
+
+// commentEditWindowSQL is CommentEditWindow as an interval literal.
+const commentEditWindowSQL = "600 seconds"
+
+// MaxCommentEdits caps the stored versions of one comment.
+const MaxCommentEdits = 20
+
+// ErrEditWindow: the comment is older than CommentEditWindow.
+var ErrEditWindow = errors.New("comments can only be edited within 10 minutes of posting")
+
+// CommentEdit is the author's change. KeywordHit (the new body matched the
+// blocked-word list) shadows a visible comment until a moderator looks.
+type CommentEdit struct {
+	Body       string
+	Spoiler    *bool
+	KeywordHit bool
+}
+
+// EditComment changes the user's own comment within CommentEditWindow of
+// posting. The previous version goes to comment_edits (moderators see the
+// history) and edited_at is set. A shadowed comment stays shadowed and a
+// folded one stays folded; an unchanged edit is a no-op. Errors:
+// ErrNotOwner, pgx.ErrNoRows (missing or deleted), ErrEditWindow, and a
+// conflict after MaxCommentEdits edits.
+func (s *Store) EditComment(ctx context.Context, commentID, userID int64, e CommentEdit) (Comment, error) {
+	tx, err := s.Begin(ctx)
+	if err != nil {
+		return Comment{}, err
+	}
+	defer tx.Rollback(ctx)
+	var owner int64
+	var body, status string
+	var spoiler, open bool
+	if err = tx.QueryRow(ctx, `SELECT user_id,body,spoiler,status,created_at > now() - interval '`+commentEditWindowSQL+`'
+		FROM comments WHERE id=$1 AND status<>'deleted' FOR UPDATE`, commentID).Scan(&owner, &body, &spoiler, &status, &open); err != nil {
+		return Comment{}, err
+	}
+	if owner != userID {
+		return Comment{}, ErrNotOwner
+	}
+	if !open {
+		return Comment{}, ErrEditWindow
+	}
+	newSpoiler := spoiler
+	if e.Spoiler != nil {
+		newSpoiler = *e.Spoiler
+	}
+	if e.Body == body && newSpoiler == spoiler {
+		return s.commentByID(ctx, tx, commentID, userID)
+	}
+	var n int
+	if err = tx.QueryRow(ctx, `SELECT count(*) FROM comment_edits WHERE comment_id=$1`, commentID).Scan(&n); err != nil {
+		return Comment{}, err
+	}
+	if n >= MaxCommentEdits {
+		return Comment{}, conflict("a comment can be edited at most %d times", MaxCommentEdits)
+	}
+	if _, err = tx.Exec(ctx, `INSERT INTO comment_edits(comment_id,body,spoiler,status) VALUES($1,$2,$3,$4)`, commentID, body, spoiler, status); err != nil {
+		return Comment{}, err
+	}
+	if e.KeywordHit && status == community.StatusVisible {
+		status = community.StatusShadow
+	}
+	if _, err = tx.Exec(ctx, `UPDATE comments SET body=$2,spoiler=$3,status=$4,edited_at=now(),updated_at=now() WHERE id=$1`,
+		commentID, e.Body, newSpoiler, status); err != nil {
+		return Comment{}, err
+	}
+	if err = tx.Commit(ctx); err != nil {
+		return Comment{}, err
+	}
+	return s.commentByID(ctx, s, commentID, userID)
+}
+
+// CommentVersion is one earlier version of a comment (moderation only).
+type CommentVersion struct {
+	Body       string    `json:"body"`
+	Spoiler    bool      `json:"spoiler"`
+	Status     string    `json:"status"`
+	ReplacedAt time.Time `json:"replaced_at"`
+}
+
+// CommentHistory is a comment's current text and its earlier versions,
+// oldest first, for moderators (pgx.ErrNoRows when the comment is missing).
+type CommentHistory struct {
+	ID        int64            `json:"id"`
+	UserID    int64            `json:"user_id"`
+	Body      string           `json:"body"`
+	Spoiler   bool             `json:"spoiler"`
+	Status    string           `json:"status"`
+	CreatedAt time.Time        `json:"created_at"`
+	EditedAt  *time.Time       `json:"edited_at"`
+	Versions  []CommentVersion `json:"versions"`
+}
+
+// CommentEdits returns a comment with its edit history (moderators see
+// deleted comments' text too).
+func (s *Store) CommentEdits(ctx context.Context, commentID int64) (CommentHistory, error) {
+	var h CommentHistory
+	if err := s.QueryRow(ctx, `SELECT id,user_id,body,spoiler,status,created_at,edited_at FROM comments WHERE id=$1`, commentID).
+		Scan(&h.ID, &h.UserID, &h.Body, &h.Spoiler, &h.Status, &h.CreatedAt, &h.EditedAt); err != nil {
+		return h, err
+	}
+	rows, err := s.Query(ctx, `SELECT body,spoiler,status,created_at FROM comment_edits WHERE comment_id=$1 ORDER BY id`, commentID)
+	if err != nil {
+		return h, err
+	}
+	h.Versions, err = pgx.CollectRows(rows, func(r pgx.CollectableRow) (CommentVersion, error) {
+		var v CommentVersion
+		return v, r.Scan(&v.Body, &v.Spoiler, &v.Status, &v.ReplacedAt)
+	})
+	if h.Versions == nil {
+		h.Versions = []CommentVersion{}
+	}
+	return h, err
 }
 
 // DeleteComment soft-deletes the user's own comment (ErrNotOwner for

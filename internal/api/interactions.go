@@ -25,6 +25,7 @@ type interactionStore interface {
 	Comments(ctx context.Context, f store.CommentFilter) ([]store.Comment, string, error)
 	CommentReplies(ctx context.Context, parentID, viewerID int64, c *store.Cursor, limit int) ([]store.Comment, string, error)
 	CreateComment(ctx context.Context, n store.NewComment) (store.Comment, error)
+	EditComment(ctx context.Context, commentID, userID int64, e store.CommentEdit) (store.Comment, error)
 	DeleteComment(ctx context.Context, commentID, userID int64) error
 	SetCommentLike(ctx context.Context, commentID, userID int64, like bool) (int, error)
 }
@@ -38,6 +39,7 @@ func (srv *Server) interactionRoutes() []route {
 		{"GET /api/releases/{slug}/comments", srv.withComments(srv.listComments)},
 		{"POST /api/releases/{slug}/comments", srv.withComments(srv.user(srv.createComment))},
 		{"GET /api/comments/{id}/replies", srv.withComments(srv.listReplies)},
+		{"PATCH /api/comments/{id}", srv.withComments(srv.user(srv.editComment))},
 		{"DELETE /api/comments/{id}", srv.withComments(srv.user(srv.deleteComment))},
 		{"PUT /api/comments/{id}/like", srv.withComments(srv.user(srv.likeComment(true)))},
 		{"DELETE /api/comments/{id}/like", srv.withComments(srv.user(srv.likeComment(false)))},
@@ -251,6 +253,53 @@ func (srv *Server) createComment(w http.ResponseWriter, r *http.Request, uid int
 	}
 	// A shadowed comment looks posted to its author (it is shown to them).
 	replyStatus(w, http.StatusCreated, c)
+}
+
+// editComment: PATCH /api/comments/{id} {"body", "spoiler"?}: the author's
+// edit within store.CommentEditWindow of posting. The new body goes through
+// the same mute / rate-limit / blocked-word checks as a new comment (a hit
+// shadows it); the previous version is kept for moderators.
+func (srv *Server) editComment(w http.ResponseWriter, r *http.Request, uid int64) {
+	id, err := pathInt64(r, "id")
+	if err != nil {
+		reply(w, nil, err)
+		return
+	}
+	var in struct {
+		Body    *string `json:"body"`
+		Spoiler *bool   `json:"spoiler"`
+	}
+	if err := readJSON(r, &in, false); err != nil {
+		reply(w, nil, err)
+		return
+	}
+	if in.Body == nil {
+		reply(w, nil, badRequest("body is required", nil))
+		return
+	}
+	body, err := community.CleanBody(*in.Body, community.MaxCommentRunes, true)
+	if err != nil {
+		reply(w, nil, badRequest("body: "+err.Error()+" (1-"+strconv.Itoa(community.MaxCommentRunes)+" characters)", nil))
+		return
+	}
+	ctx := r.Context()
+	if _, err := srv.allowPost(ctx, "comment", uid); err != nil {
+		reply(w, nil, err)
+		return
+	}
+	status, err := srv.moderationStatus(ctx, body)
+	if err != nil {
+		reply(w, nil, err)
+		return
+	}
+	c, err := srv.interactions.EditComment(ctx, id, uid, store.CommentEdit{Body: body, Spoiler: in.Spoiler, KeywordHit: status == community.StatusShadow})
+	switch {
+	case errors.Is(err, store.ErrNotOwner):
+		err = &httpError{status: http.StatusForbidden, msg: "not your comment", err: err}
+	case errors.Is(err, store.ErrEditWindow):
+		err = conflict(store.ErrEditWindow.Error(), err)
+	}
+	reply(w, c, err)
 }
 
 // deleteComment: DELETE /api/comments/{id} (own comment, soft delete).

@@ -48,3 +48,20 @@ CREATE TABLE IF NOT EXISTS mail_outbox (
 );
 CREATE INDEX IF NOT EXISTS mail_outbox_due ON mail_outbox (send_after, id) WHERE status = 'pending';
 CREATE INDEX IF NOT EXISTS mail_outbox_takedown ON mail_outbox (takedown_id);
+
+-- 评论编辑 (#102): the author may edit a comment within 10 minutes of
+-- posting (store.CommentEditWindow); the edit re-runs the blocked-word
+-- filter (a hit shadows a visible comment). edited_at drives the 「已编辑」
+-- marker. comment_edits keeps every previous version for moderators
+-- (GET /api/admin/moderation/comments/{id}/edits); it is never public and
+-- goes with the comment (and so with the account).
+ALTER TABLE comments ADD COLUMN IF NOT EXISTS edited_at timestamptz;
+CREATE TABLE IF NOT EXISTS comment_edits (
+  id bigserial PRIMARY KEY,
+  comment_id bigint NOT NULL REFERENCES comments(id) ON DELETE CASCADE,
+  body text NOT NULL,
+  spoiler boolean NOT NULL,
+  status text NOT NULL,
+  created_at timestamptz NOT NULL DEFAULT now() -- when this version was replaced
+);
+CREATE INDEX IF NOT EXISTS comment_edits_comment ON comment_edits (comment_id, id);

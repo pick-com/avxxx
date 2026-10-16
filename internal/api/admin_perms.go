@@ -177,6 +177,7 @@ var adminRoutePerms = map[string]routePerm{
 	"POST /api/admin/moderation/reviews/{id}/action":  wr(gModeration),
 	"POST /api/admin/moderation/ratings/{id}/action":  wr(gModeration),
 	"POST /api/admin/moderation/comments/{id}/action": wr(gModeration),
+	"GET /api/admin/moderation/comments/{id}/edits":   rd(gModeration),
 	"POST /api/admin/moderation/reports/{id}/resolve": wr(gModeration),
 	"POST /api/admin/moderation/rating-floods/remove": dual(gModeration),
 	"GET /api/admin/moderation/words":                 rd(gModeration),

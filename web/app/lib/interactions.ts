@@ -44,6 +44,10 @@ export type Comment = {
   reply_count: number;
   replies?: Comment[] | null;
   created_at: string;
+  /** Last author edit (the 已编辑 marker); null when never edited. */
+  edited_at?: string | null;
+  /** Own comments: the end of the 10-minute edit window. */
+  editable_until?: string | null;
 };
 
 export type CommentPage = {items: Comment[]; nextCursor: string | null};
@@ -69,6 +73,9 @@ export const getReplies = (id: number, limit: number, cursor?: string | null, si
 
 export const postComment = (slug: string, body: string, spoiler: boolean, parentId?: number) =>
   api<Comment>(`releases/${enc(slug)}/comments`, {method: 'POST', body: {body, spoiler, parent_id: parentId || undefined}});
+/** PATCH /api/comments/{id}: the author's edit within 10 minutes of posting (409 after). */
+export const editComment = (id: number, body: string, spoiler: boolean) =>
+  api<Comment>(`comments/${id}`, {method: 'PATCH', body: {body, spoiler}});
 export const deleteComment = (id: number) => api<{deleted: boolean}>(`comments/${id}`, {method: 'DELETE'});
 export const likeComment = (id: number, like: boolean) =>
   api<{liked: boolean; likes: number}>(`comments/${id}/like`, {method: like ? 'PUT' : 'DELETE'});
