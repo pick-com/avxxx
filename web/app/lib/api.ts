@@ -227,6 +227,19 @@ export function isMissingEndpoint(error: unknown): boolean {
 
 // ---- Shapes (internal/model, internal/store) ----
 
+/**
+ * A stored catalog image (internal/images): url is the display size (720w
+ * when stored), width/height its pixels, srcset every variant narrowest
+ * first. url is relative (/api/images/...) in the API's default proxy mode,
+ * absolute with a CDN base or presigned URLs.
+ */
+export type ApiImage = {
+  url: string;
+  width: number;
+  height: number;
+  srcset?: {url: string; width: number; height: number}[] | null;
+};
+
 export type Release = {
   id: number;
   slug: string;
@@ -238,6 +251,8 @@ export type Release = {
   label_name?: string;
   series_name?: string;
   status: string;
+  /** Stored cover; absent when none is stored or it was taken down. */
+  cover?: ApiImage | null;
 };
 
 export type TagRef = {slug: string; name: string};
@@ -263,6 +278,8 @@ export type Performer = {
   waist_cm?: number;
   hip_cm?: number;
   status: string;
+  /** Stored portrait; absent when none is stored or it was removed. */
+  portrait?: ApiImage | null;
 };
 
 /** GET /api/performers item. works_count / latest_release_date come only from the catalog-filters backend. */
@@ -291,6 +308,7 @@ export type PerformerDetail = {
   /** True when the birth date is hidden (birth_date is then null). */
   birth_date_hidden?: boolean | null;
   status: string;
+  portrait?: ApiImage | null;
 };
 
 export type Tag = {slug: string; name: string; count: number};

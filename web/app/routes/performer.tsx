@@ -1,6 +1,6 @@
 import {useEffect, useState} from 'react';
 import {data, redirect, useLoaderData, useParams, type LoaderFunctionArgs, type MetaFunction} from 'react-router';
-import {Avatar, ReleaseCard, SectionHeader} from '../components/Cards';
+import {absoluteImageUrl, Avatar, ReleaseCard, SectionHeader} from '../components/Cards';
 import {LoadMore} from '../components/Paging';
 import {SimilarPerformers} from '../components/PerformerRecs';
 import {FollowButton} from '../components/SocialButtons';
@@ -74,6 +74,8 @@ export const meta: MetaFunction<typeof loader> = ({data: d, params, matches}) =>
   const works = count ? t('seo.performerWorks', {n: load?.works?.nextCursor ? `${count}+` : String(count)}) : '';
   const description = p.biography?.trim() ? clip(p.biography) : t('seo.performerDescription', {name: p.canonical_name, works});
   const {lang, origin} = rootMeta(matches);
+  // Stored portrait only (never a source's hotlinked image).
+  const image = p.portrait?.url ? absoluteImageUrl(origin, p.portrait.url) : null;
   // Person: public facts only. A hidden birthday (birth_date_hidden) is never stated.
   const person = compact({
     '@context': 'https://schema.org',
@@ -84,6 +86,7 @@ export const meta: MetaFunction<typeof loader> = ({data: d, params, matches}) =>
     url: pageUrl(origin, path, lang),
     birthDate: p.birth_date_hidden === false ? isoDate(p.birth_date) : undefined,
     birthPlace: p.birth_place || undefined,
+    image: image || undefined,
   });
   return seoMeta({
     matches,
@@ -91,6 +94,7 @@ export const meta: MetaFunction<typeof loader> = ({data: d, params, matches}) =>
     title: t('title.named', {name: p.canonical_name}),
     description,
     ogType: 'profile',
+    image,
     jsonLd: [
       person,
       breadcrumbs(matches, [
@@ -186,7 +190,7 @@ export default function PerformerPage() {
       ) : (
         <section className="performer-hero">
           <div className="performer-photo">
-            <Avatar seed={p.slug} name={p.canonical_name} size={120} />
+            <Avatar seed={p.slug} name={p.canonical_name} size={120} image={p.portrait} />
           </div>
           <div className="performer-head">
             <h1>{p.canonical_name}</h1>
@@ -239,6 +243,7 @@ export default function PerformerPage() {
                     key={r.id}
                     slug={r.slug}
                     title={r.canonical_title}
+                    cover={r.cover}
                     badge={r.runtime_minutes ? t('card.minutes', {n: r.runtime_minutes}) : undefined}
                     meta={[r.maker_name, formatDate(r.release_date)].filter(Boolean).join(' · ')}
                     sub={year && age !== null ? t('performer.workSub', {year, age}) : undefined}

@@ -415,7 +415,7 @@ function Actors() {
         <>
           <div className="avatar-grid">
             {list.items.map(p => (
-              <PerformerChip key={p.id} slug={p.slug} name={p.canonical_name} sub={performerSub(p, shown)} />
+              <PerformerChip key={p.id} slug={p.slug} name={p.canonical_name} sub={performerSub(p, shown)} portrait={p.portrait} />
             ))}
           </div>
           <LoadMore state={list} />

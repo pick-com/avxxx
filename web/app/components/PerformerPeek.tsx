@@ -83,7 +83,7 @@ function WorkTile({release, birth, compact}: {release: Release; birth?: string |
   const age = ageAt(birth, release.release_date);
   return (
     <Link to={`/releases/${encodeURIComponent(release.slug)}`} className={compact ? 'peek-work peek-work-compact' : 'peek-work'}>
-      <Thumb seed={release.slug} />
+      <Thumb seed={release.slug} image={release.cover} sizes="160px" />
       <span className="peek-work-title">{release.canonical_title}</span>
       {year && <span className="peek-work-sub">{age !== null ? t('peek.workAge', {year, age}) : t('common.year', {y: year})}</span>}
     </Link>
@@ -128,7 +128,7 @@ function PeekBody({performer, releaseDate, currentSlug, layout}: {
   return (
     <>
       <div className="peek-head">
-        <Avatar seed={performer.slug} name={performer.canonical_name} size={layout === 'card' ? 84 : 72} />
+        <Avatar seed={performer.slug} name={performer.canonical_name} size={layout === 'card' ? 84 : 72} image={performer.portrait} />
         <div className="peek-names">
           <span className="peek-name">{performer.canonical_name}</span>
           {performer.canonical_name_ja && performer.canonical_name_ja !== performer.canonical_name && (
