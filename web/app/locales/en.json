@@ -564,6 +564,7 @@
   "welcome.tagsSub": "Pick {n} or more so Home gets to know you. Only used for recommendations, never public.",
   "welcome.followTitle": "Follow a few performers",
   "welcome.followSub": "We'll let you know when they have a new release.",
+  "welcome.followByTags": "Suggested from the types you picked",
   "welcome.skipAll": "Skip setup",
   "welcome.step": "Step {n} of {total}",
   "welcome.prev": "Back",

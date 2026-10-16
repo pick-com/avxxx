@@ -564,6 +564,7 @@
   "welcome.tagsSub": "{n} 個以上選ぶと、ホームがあなた好みになります。選択はおすすめにのみ使用され、公開されません。",
   "welcome.followTitle": "出演者をフォロー",
   "welcome.followSub": "フォローすると、新作が配信されたときにお知らせします。",
+  "welcome.followByTags": "選んだジャンルからのおすすめ",
   "welcome.skipAll": "ガイドをスキップ",
   "welcome.step": "ステップ {n} / {total}",
   "welcome.prev": "戻る",

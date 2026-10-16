@@ -412,6 +412,7 @@ export const pagesZhCN = {
   'welcome.tagsSub': '选 {n} 个以上，首页会更懂你。选择只用于推荐，不公开。',
   'welcome.followTitle': '关注几位演员',
   'welcome.followSub': '关注后，有新作上线时会提醒你。',
+  'welcome.followByTags': '按你选的类型推荐',
   'welcome.skipAll': '跳过引导',
   'welcome.step': '第 {n} 步，共 {total} 步',
   'welcome.prev': '上一步',

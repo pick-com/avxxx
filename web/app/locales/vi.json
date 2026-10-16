@@ -564,6 +564,7 @@
   "welcome.tagsSub": "Chọn từ {n} mục trở lên để trang chủ hiểu bạn hơn. Lựa chọn chỉ dùng cho gợi ý, không công khai.",
   "welcome.followTitle": "Theo dõi vài diễn viên",
   "welcome.followSub": "Sau khi theo dõi, bạn sẽ được nhắc khi họ có tác phẩm mới.",
+  "welcome.followByTags": "Gợi ý theo thể loại bạn đã chọn",
   "welcome.skipAll": "Bỏ qua hướng dẫn",
   "welcome.step": "Bước {n} / {total}",
   "welcome.prev": "Quay lại",

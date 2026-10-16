@@ -564,6 +564,7 @@
   "welcome.tagsSub": "{n}개 이상 고르면 홈 화면이 취향에 더 잘 맞춰져요. 선택 내용은 추천에만 쓰이고 공개되지 않아요.",
   "welcome.followTitle": "배우 팔로우하기",
   "welcome.followSub": "팔로우하면 신작이 공개될 때 알려 드려요.",
+  "welcome.followByTags": "선택한 장르 기반 추천",
   "welcome.skipAll": "안내 건너뛰기",
   "welcome.step": "{total}단계 중 {n}단계",
   "welcome.prev": "이전",

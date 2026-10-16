@@ -564,6 +564,7 @@
   "welcome.tagsSub": "Elige {n} o más para que Inicio te conozca mejor. Solo se usa para recomendaciones y nunca es público.",
   "welcome.followTitle": "Sigue a algunos intérpretes",
   "welcome.followSub": "Te avisaremos cuando tengan un nuevo lanzamiento.",
+  "welcome.followByTags": "Sugerencias según los géneros que elegiste",
   "welcome.skipAll": "Omitir configuración",
   "welcome.step": "Paso {n} de {total}",
   "welcome.prev": "Atrás",
