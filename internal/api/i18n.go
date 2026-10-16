@@ -9,7 +9,8 @@ package api
 //   - "display_<field>" / "display_<field>_lang" for each translatable field:
 //     releases display_title (+ display_synopsis on detail), performers
 //     display_name (+ display_biography on detail), release-detail tags
-//     display_name, search items display_name.
+//     display_name, search items display_name, series display_name (series
+//     routes and the release-detail series).
 //
 // display_<field> follows lang -> zh-TW -> zh-CN -> en -> original (ja goes
 // straight to the original) using only reviewed (or stale, i.e. last
@@ -136,12 +137,19 @@ type localTag struct {
 
 type localReleaseDetail struct {
 	store.ReleaseDetail
-	Lang                string     `json:"lang"`
-	DisplayTitle        string     `json:"display_title,omitempty"`
-	DisplayTitleLang    string     `json:"display_title_lang,omitempty"`
-	DisplaySynopsis     string     `json:"display_synopsis,omitempty"`
-	DisplaySynopsisLang string     `json:"display_synopsis_lang,omitempty"`
-	Tags                []localTag `json:"tags"` // shadows ReleaseDetail.Tags
+	Lang                string          `json:"lang"`
+	DisplayTitle        string          `json:"display_title,omitempty"`
+	DisplayTitleLang    string          `json:"display_title_lang,omitempty"`
+	DisplaySynopsis     string          `json:"display_synopsis,omitempty"`
+	DisplaySynopsisLang string          `json:"display_synopsis_lang,omitempty"`
+	Tags                []localTag      `json:"tags"`             // shadows ReleaseDetail.Tags
+	Series              *localSeriesRef `json:"series,omitempty"` // shadows ReleaseDetail.Series
+}
+
+type localSeriesRef struct {
+	store.SeriesRef
+	DisplayName     string `json:"display_name,omitempty"`
+	DisplayNameLang string `json:"display_name_lang,omitempty"`
 }
 
 func releaseDetailRefs(d store.ReleaseDetail) func() []i18n.Ref {
@@ -150,6 +158,9 @@ func releaseDetailRefs(d store.ReleaseDetail) func() []i18n.Ref {
 		out := []i18n.Ref{ref(i18n.EntityRelease, id, "title"), ref(i18n.EntityRelease, id, "synopsis")}
 		for _, t := range d.Tags {
 			out = append(out, ref(i18n.EntityTag, t.Slug, "name"))
+		}
+		if d.Series != nil {
+			out = append(out, seriesRef(d.Series.ID))
 		}
 		return out
 	}
@@ -166,6 +177,10 @@ func localizeReleaseDetail(l *localizer, d store.ReleaseDetail) any {
 	for i, t := range d.Tags {
 		out.Tags[i].TagRef = t
 		out.Tags[i].DisplayName, out.Tags[i].DisplayNameLang = l.get(i18n.EntityTag, t.Slug, "name", t.Name)
+	}
+	if d.Series != nil {
+		out.Series = &localSeriesRef{SeriesRef: *d.Series}
+		out.Series.DisplayName, out.Series.DisplayNameLang = l.get(i18n.EntitySeries, idText(d.Series.ID), "name", d.Series.Name)
 	}
 	return out
 }

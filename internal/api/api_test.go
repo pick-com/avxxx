@@ -164,6 +164,12 @@ var expectedRoutes = []string{
 	"POST /api/admin/performer-requests/{id}/reject",
 	"POST /api/admin/similarity-weights/preview",
 	"POST /api/performer-requests",
+	"GET /api/series",
+	"GET /api/series/{slug}",
+	"GET /api/series/{slug}/releases",
+	"GET /api/releases/{slug}/evidence",
+	"GET /api/performers/{slug}/evidence",
+	"GET /api/admin/reports/completeness",
 }
 
 var (
