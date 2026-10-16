@@ -4,6 +4,7 @@ import (
 	"avxxx/internal/audit"
 	"avxxx/internal/completeness"
 	"avxxx/internal/crosscheck"
+	"avxxx/internal/images"
 	"avxxx/internal/obs"
 	"avxxx/internal/playcurve"
 	"avxxx/internal/recs"
@@ -97,6 +98,22 @@ func main() {
 			log.Fatalf("invalid CROSSCHECK_EVERY %q: want a duration of at least 1m", v)
 		}
 	}
+	// Catalog images (internal/images, run by cmd/audit): downloads from
+	// image-permitted sources once per MEDIA_FETCH_EVERY slot and the purge
+	// of suppressed / taken-down images once per MEDIA_PURGE_EVERY slot
+	// (default 1h each; the purge must run well within the 24 h policy).
+	mediaFetchEvery, mediaPurgeEvery := time.Hour, time.Hour
+	for _, e := range []struct {
+		name string
+		dst  *time.Duration
+		max  time.Duration
+	}{{"MEDIA_FETCH_EVERY", &mediaFetchEvery, 24 * time.Hour}, {"MEDIA_PURGE_EVERY", &mediaPurgeEvery, 6 * time.Hour}} {
+		if v := os.Getenv(e.name); v != "" {
+			if *e.dst, err = time.ParseDuration(v); err != nil || *e.dst < time.Minute || *e.dst > e.max {
+				log.Fatalf("invalid %s %q: want a duration between 1m and %s", e.name, v, e.max)
+			}
+		}
+	}
 	// Completeness snapshot (internal/completeness, run by cmd/audit): once
 	// per day at COMPLETENESS_NIGHTLY_AT (default 05:00, after the audit), the
 	// trend behind GET /api/admin/reports/completeness.
@@ -144,6 +161,12 @@ func main() {
 		}
 		if _, err := s.EnqueueKindSince(ctx, crosscheck.JobKind, time.Now().Truncate(crossCheckEvery)); err != nil {
 			log.Printf("enqueue crosscheck: %v", err)
+		}
+		if _, err := s.EnqueueKindSince(ctx, images.JobKindFetch, time.Now().Truncate(mediaFetchEvery)); err != nil {
+			log.Printf("enqueue media fetch: %v", err)
+		}
+		if _, err := s.EnqueueKindSince(ctx, images.JobKindPurge, time.Now().Truncate(mediaPurgeEvery)); err != nil {
+			log.Printf("enqueue media purge: %v", err)
 		}
 		n, err := s.EnqueueDue(ctx)
 		if err != nil {

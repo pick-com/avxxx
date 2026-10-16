@@ -54,6 +54,9 @@ type Performer struct {
 	WaistCM         float64    `json:"waist_cm,omitempty"`
 	HipCM           float64    `json:"hip_cm,omitempty"`
 	Status          string     `json:"status"`
+	// Portrait is the stored performer photo (internal/images); omitted
+	// when none is stored or it is suppressed.
+	Portrait *Image `json:"portrait,omitempty"`
 }
 
 type Release struct {
@@ -67,4 +70,25 @@ type Release struct {
 	LabelName      string     `json:"label_name,omitempty"`
 	SeriesName     string     `json:"series_name,omitempty"`
 	Status         string     `json:"status"`
+	// Cover is the stored cover image (internal/images); omitted when none
+	// is stored or it is suppressed.
+	Cover *Image `json:"cover,omitempty"`
+}
+
+// Image is a public catalog image: url is the display size (720w when
+// available), width/height its pixel size, srcset every stored variant
+// narrowest first. URLs are relative (/api/images/...) in the default proxy
+// mode, absolute with a CDN base or presigning.
+type Image struct {
+	URL    string         `json:"url"`
+	Width  int            `json:"width"`
+	Height int            `json:"height"`
+	Srcset []ImageVariant `json:"srcset,omitempty"`
+}
+
+// ImageVariant is one size of an Image.
+type ImageVariant struct {
+	URL    string `json:"url"`
+	Width  int    `json:"width"`
+	Height int    `json:"height"`
 }

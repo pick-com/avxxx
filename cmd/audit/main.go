@@ -46,6 +46,17 @@
 // 100) and CROSSCHECK_DAILY_CAP (default 1000) bound each run.
 //
 //	audit -crosscheck  run the cross-check job now, print the report, exit
+//
+// It also claims 'media_fetch' and 'media_purge' jobs (every
+// MEDIA_FETCH_EVERY / MEDIA_PURGE_EVERY, default 1h, cmd/scheduler; or POST
+// /api/admin/media/jobs): catalog images from image-permitted sources into
+// S3-compatible storage, and their removal after suppression or takedown
+// (internal/images, docs/DATA_RETENTION_AND_IMAGES.md). Storage is S3_*;
+// downloads need CATALOG_CONTACT like catalog crawls and are paced by
+// IMAGE_FETCH_MIN_INTERVAL (default 2s) and IMAGE_FETCH_MAX_PER_RUN.
+//
+//	audit -media-fetch   run the image fetch job now, print the report, exit
+//	audit -media-purge   run the image purge job now, print the report, exit
 package main
 
 import (
@@ -53,8 +64,10 @@ import (
 	"avxxx/internal/catalog"
 	"avxxx/internal/completeness"
 	"avxxx/internal/crosscheck"
+	"avxxx/internal/images"
 	"avxxx/internal/media"
 	"avxxx/internal/medialink"
+	"avxxx/internal/objstore"
 	"avxxx/internal/obs"
 	"avxxx/internal/playcurve"
 	"avxxx/internal/recs"
@@ -85,6 +98,8 @@ func main() {
 	mediaLinkNow := flag.Bool("media-link", false, "run the offline media link job once and exit")
 	completenessNow := flag.Bool("completeness", false, "store today's completeness snapshot and exit")
 	crossCheckNow := flag.Bool("crosscheck", false, "run the third-party cross-check job once and exit")
+	mediaFetchNow := flag.Bool("media-fetch", false, "run the image fetch job once and exit")
+	mediaPurgeNow := flag.Bool("media-purge", false, "run the image purge job once and exit")
 	flag.Parse()
 
 	obs.SetupLogging("audit")
@@ -145,6 +160,26 @@ func main() {
 		if err != nil {
 			obs.Fatal("run failed", err)
 		}
+	case *mediaFetchNow:
+		rn, err := mediaFetchRunner(ctx, s, 0)
+		if err != nil {
+			obs.Fatal("image storage", err)
+		}
+		rep, err := rn.Run(ctx)
+		printJSON(rep)
+		if err != nil {
+			obs.Fatal("run failed", err)
+		}
+	case *mediaPurgeNow:
+		rn, err := mediaPurgeRunner(ctx, s, 0)
+		if err != nil {
+			obs.Fatal("image storage", err)
+		}
+		rep, err := rn.Run(ctx)
+		printJSON(rep)
+		if err != nil {
+			obs.Fatal("run failed", err)
+		}
 	case *completenessNow:
 		rep, err := runCompleteness(ctx, s, 0)
 		printJSON(rep)
@@ -179,7 +214,7 @@ func work(ctx context.Context, s *store.Store) {
 			slog.Error("reap expired jobs", "err", err)
 		}
 		claimed := false
-		for _, kind := range []string{store.JobKindSourceHealth, store.JobKindRecsTrending, store.JobKindReleaseCurves, store.JobKindSearchStats, store.JobKindAudit, store.JobKindRecsSimilarity, store.JobKindMediaLink, store.JobKindCompletenessSnapshot, store.JobKindCrossCheck} {
+		for _, kind := range []string{store.JobKindSourceHealth, store.JobKindRecsTrending, store.JobKindReleaseCurves, store.JobKindSearchStats, store.JobKindAudit, store.JobKindRecsSimilarity, store.JobKindMediaLink, store.JobKindCompletenessSnapshot, store.JobKindCrossCheck, store.JobKindMediaPurge, store.JobKindMediaFetch} {
 			id, version, err := s.ClaimJob(ctx, kind)
 			if errors.Is(err, pgx.ErrNoRows) {
 				continue
@@ -247,6 +282,44 @@ func crossCheckRunner(s *store.Store, jobID int64) *crosscheck.Runner {
 		UserAgent: ua, Robots: catalog.NewRobots(&http.Client{Timeout: 20 * time.Second}, ua), JobID: jobID}
 }
 
+// imageStorage opens the S3_* object storage (nil when S3_ENDPOINT is
+// empty: the image jobs then report storage_not_configured). The bucket is
+// created, private, when missing; an unreachable store fails the job.
+func imageStorage(ctx context.Context) (objstore.Storage, error) {
+	return objstore.FromEnv(ctx, os.Getenv, true)
+}
+
+// mediaFetchRunner builds the media_fetch job: storage, the crawler
+// User-Agent (CATALOG_CONTACT; empty stops the job) and IMAGE_* limits.
+func mediaFetchRunner(ctx context.Context, s *store.Store, jobID int64) (*images.FetchRunner, error) {
+	objects, err := imageStorage(ctx)
+	if err != nil {
+		return nil, err
+	}
+	cfg, warn := images.FetchConfigFromEnv(os.Getenv)
+	for _, w := range warn {
+		slog.Warn("image fetch config", "warning", w)
+	}
+	ua, err := catalog.UserAgentFromEnv(os.Getenv)
+	if err != nil {
+		slog.Warn("image fetch disabled", "err", err)
+	}
+	return &images.FetchRunner{Store: s, Objects: objects, Config: cfg, UserAgent: ua, JobID: jobID}, nil
+}
+
+// mediaPurgeRunner builds the media_purge job (MEDIA_PURGE_AFTER, default 24h).
+func mediaPurgeRunner(ctx context.Context, s *store.Store, jobID int64) (*images.PurgeRunner, error) {
+	objects, err := imageStorage(ctx)
+	if err != nil {
+		return nil, err
+	}
+	cfg, warn := images.PurgeConfigFromEnv(os.Getenv)
+	for _, w := range warn {
+		slog.Warn("image purge config", "warning", w)
+	}
+	return &images.PurgeRunner{Store: s, Objects: objects, Config: cfg, JobID: jobID}, nil
+}
+
 // execute runs one job of kind and returns its result counts.
 func execute(ctx context.Context, s *store.Store, kind string, id int64) (any, error) {
 	switch kind {
@@ -260,6 +333,18 @@ func execute(ctx context.Context, s *store.Store, kind string, id int64) (any, e
 		return mediaLinkRunner(s, id).Run(ctx)
 	case store.JobKindCrossCheck:
 		return crossCheckRunner(s, id).Run(ctx)
+	case store.JobKindMediaFetch:
+		rn, err := mediaFetchRunner(ctx, s, id)
+		if err != nil {
+			return nil, err
+		}
+		return rn.Run(ctx)
+	case store.JobKindMediaPurge:
+		rn, err := mediaPurgeRunner(ctx, s, id)
+		if err != nil {
+			return nil, err
+		}
+		return rn.Run(ctx)
 	}
 	if kind == store.JobKindSourceHealth {
 		rep, err := (&audit.HealthRunner{Store: s, Config: healthConfig(), JobID: id}).Run(ctx)
