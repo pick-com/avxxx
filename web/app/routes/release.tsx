@@ -320,6 +320,7 @@ export default function ReleasePage() {
           onReplay={() => setEnded(false)}
           related={endItems}
           episodes={episodes}
+          poster={release?.cover?.url}
           overlay={
             ended && prefs.autoplay && next && release ? (
               <AutoplayNext

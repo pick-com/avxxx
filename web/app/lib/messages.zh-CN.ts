@@ -153,6 +153,7 @@ export const zhCN = {
   'player.goPartner': '前往 {provider} 观看',
   'player.unavailable': '暂时无法播放',
   'player.noSource': '这部作品还没有可用的片源。',
+  'player.noSourceTitle': '暂无视频资源',
   'player.regionBlocked': '这部作品在你所在的地区暂未获得授权播放。',
   'player.retry': '重试',
   'player.resolving': '正在加载播放地址…',
