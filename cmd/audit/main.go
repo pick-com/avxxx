@@ -11,11 +11,16 @@
 //	audit              worker loop
 //	audit -once        run every rule now, print the report, exit
 //	audit -health      run the source health job now, print the report, exit
+//	audit -curves      run the replay / retention curve job now, print the report, exit
 //	audit -release 42  inbound check (R-AGE + R-META) for one release
+//
+// The worker also claims 'release_curves' jobs (hourly, cmd/scheduler): the
+// PRD 14.3 replay peak and retention curves (internal/playcurve).
 package main
 
 import (
 	"avxxx/internal/audit"
+	"avxxx/internal/playcurve"
 	"avxxx/internal/store"
 	"context"
 	"encoding/json"
@@ -35,6 +40,7 @@ func main() {
 	once := flag.Bool("once", false, "run the full audit once and exit")
 	release := flag.Int64("release", 0, "run the inbound check for one release id and exit")
 	health := flag.Bool("health", false, "run the source health job once and exit")
+	curves := flag.Bool("curves", false, "run the replay / retention curve job once and exit")
 	flag.Parse()
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
@@ -54,6 +60,12 @@ func main() {
 		}
 	case *health:
 		rep, err := (&audit.HealthRunner{Store: s, Config: healthConfig()}).Run(ctx)
+		printJSON(rep)
+		if err != nil {
+			log.Fatal(err)
+		}
+	case *curves:
+		rep, err := (&playcurve.Runner{Store: s}).Run(ctx)
 		printJSON(rep)
 		if err != nil {
 			log.Fatal(err)
@@ -81,7 +93,7 @@ func work(ctx context.Context, s *store.Store) {
 			log.Printf("reap expired jobs: %v", err)
 		}
 		claimed := false
-		for _, kind := range []string{store.JobKindSourceHealth, store.JobKindAudit} {
+		for _, kind := range []string{store.JobKindSourceHealth, store.JobKindReleaseCurves, store.JobKindAudit} {
 			id, version, err := s.ClaimJob(ctx, kind)
 			if errors.Is(err, pgx.ErrNoRows) {
 				continue
@@ -119,6 +131,10 @@ func execute(ctx context.Context, s *store.Store, kind string, id int64) (any, e
 		rep, err := (&audit.HealthRunner{Store: s, Config: healthConfig(), JobID: id}).Run(ctx)
 		return map[string]any{"sources": rep.Sources, "recorded": rep.Recorded, "scored": rep.Scored,
 			"insufficient_data": rep.Insufficient, "status_changes": len(rep.Changes), "pruned": rep.Pruned}, err
+	}
+	if kind == store.JobKindReleaseCurves {
+		rep, err := (&playcurve.Runner{Store: s}).Run(ctx)
+		return rep, err
 	}
 	rep, err := (&audit.Runner{Store: s, JobID: id}).Run(ctx)
 	counts := map[string]any{}
