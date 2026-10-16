@@ -9,6 +9,8 @@ import (
 	"avxxx/internal/store"
 	"errors"
 	"net/http"
+
+	"github.com/jackc/pgx/v5"
 )
 
 func (srv *Server) consentRoutes() []route {
@@ -72,7 +74,7 @@ func (srv *Server) recordConsent(w http.ResponseWriter, r *http.Request) {
 }
 
 // myConsent: GET /api/me/consent, the user's latest choice on any device
-// (404 before the first one).
+// (204 No Content before the first one, so a fresh account logs no error).
 func (srv *Server) myConsent(w http.ResponseWriter, r *http.Request) {
 	if !srv.withCompliance(w) {
 		return
@@ -83,5 +85,9 @@ func (srv *Server) myConsent(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	v, err := srv.compliance.LatestConsent(r.Context(), uid)
+	if errors.Is(err, pgx.ErrNoRows) {
+		w.WriteHeader(http.StatusNoContent)
+		return
+	}
 	reply(w, v, err)
 }

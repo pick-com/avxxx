@@ -12,7 +12,7 @@
 | 只追加 | 触发器拒绝 UPDATE；行只随账号删除（`ON DELETE CASCADE`）消失 |
 | GPC | 浏览器 `navigator.globalPrivacyControl` 或请求头 `Sec-GPC: 1` → `personalized_ads` 强制关闭；数据库 CHECK 也拒绝 GPC 下的个性化广告 |
 | 设备标识 | 浏览器随机生成 `consent_device_id`（localStorage，必要类）；服务端只存 `obs.HashKeyed` 的 HMAC（`LOG_HASH_KEY`），不存原值、不存 IP |
-| 接口 | `POST /api/consent`（每地址 60 次/小时，全局 20000 次/小时）；`GET /api/me/consent` 返回登录用户最近一次选择 |
+| 接口 | `POST /api/consent`（每地址 60 次/小时，全局 20000 次/小时）；`GET /api/me/consent` 返回登录用户最近一次选择（尚无选择时 204）|
 | 跨设备 | 登录后取服务端最新记录：比本地新则采用（GPC 仍优先），本地更新则以 `sync` 上传 |
 
 **[法务]**

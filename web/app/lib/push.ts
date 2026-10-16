@@ -3,8 +3,9 @@ import {api, ApiError, tokens} from './api';
 
 // Web Push in the browser (PRD 17; internal/api/push.go, tech plan 3.7).
 //
-//   GET    /api/push/vapid-public-key     {public_key}; 404 = push not
-//                                         configured → the option is hidden.
+//   GET    /api/push/vapid-public-key     {enabled, public_key}; enabled
+//                                         false (or an older backend's 404) =
+//                                         push not configured → option hidden.
 //   POST   /api/me/push-subscriptions     PushSubscription.toJSON() (201).
 //   DELETE /api/me/push-subscriptions     {endpoint} (one device).
 //
@@ -31,8 +32,8 @@ let keyPromise: Promise<string | null> | null = null;
 
 /** VAPID public key (base64url), or null when push is not configured. */
 export function vapidPublicKey(): Promise<string | null> {
-  keyPromise ??= api<{public_key?: string}>('push/vapid-public-key').then(
-    d => (typeof d?.public_key === 'string' && d.public_key ? d.public_key : null),
+  keyPromise ??= api<{enabled?: boolean; public_key?: string}>('push/vapid-public-key').then(
+    d => (d?.enabled !== false && typeof d?.public_key === 'string' && d.public_key ? d.public_key : null),
     error => {
       // Only a definite "not configured" is cached; a network error retries next time.
       if (!(error instanceof ApiError && error.status === 404)) keyPromise = null;

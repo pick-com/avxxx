@@ -357,7 +357,7 @@ function NotifySection({s}: {s: UserSettings}) {
   const {save, pending} = useSettings();
   const push = usePush();
   const tz = browserTimezone();
-  // GET /api/push/vapid-public-key 404: push is not configured, so the push
+  // GET /api/push/vapid-public-key {enabled:false}: push is not configured, so the push
   // channel is not offered at all.
   const channels = push.availability === 'disabled' ? CHANNEL_LABELS.filter(([ch]) => ch !== 'push') : CHANNEL_LABELS;
   const setChannel = async (kind: NotifyKind, ch: NotifyChannel, on: boolean) => {
