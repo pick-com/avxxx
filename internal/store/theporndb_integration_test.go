@@ -188,7 +188,9 @@ func TestThePornDBCrossCheckIntegration(t *testing.T) {
 	rep, err = runner.Run(ctx)
 	must(err)
 	if ar := rep.Adapters[0]; ar.Checked != 2 || ar.Found != 2 || ar.Requests != 2 || ar.Stopped != "" {
-		t.Fatalf("run = %+v", ar)
+		// Name the per-release outcome (an Ambiguous count alone does not
+		// say which guard in crosscheck.Runner.check fired).
+		t.Fatalf("run = %+v\nattempts: %s", ar, text(`SELECT COALESCE(string_agg(release_id||':'||status||':'||COALESCE(last_error,'')||':'||candidates::text, E'\n'),'') FROM crosscheck_attempts WHERE source_id=$1`, tpdbID))
 	}
 	for _, id := range []int64{idB, idC} {
 		a, err := s.CrossCheckAttempt(ctx, id, tpdbID)

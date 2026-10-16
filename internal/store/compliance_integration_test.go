@@ -171,7 +171,7 @@ func TestComplianceIntegration(t *testing.T) {
 	receipt, err := s.CreateTakedown(ctx, TakedownInput{ClaimantName: "Claimant Name", ClaimantEmail: "Claim@Studio.example", RightsOwner: "Studio",
 		Relationship: "agent", WorkDescription: "Film", InfringingURLs: []string{"https://reel.example/releases/td-001"}, GoodFaith: true, Accuracy: true, Signature: "CN"}, now)
 	must(err)
-	if _, ok := NormalizeTicket(receipt.Ticket); !ok || (receipt.DueAt.Sub(now) - TakedownSLA).Abs() > time.Second {
+	if _, ok := NormalizeTicket(receipt.Ticket); !ok || (receipt.DueAt.Sub(now)-TakedownSLA).Abs() > time.Second {
 		t.Errorf("receipt = %+v", receipt)
 	}
 	if _, err = s.TakedownStatus(ctx, receipt.Ticket, "someone@else.example"); !errors.Is(err, pgx.ErrNoRows) {

@@ -1,8 +1,10 @@
 # AVXXX Roadmap 状态
 
-> 状态更新时间：2026-10-16（#92 之后；厂商目录 adapter、javinfo 评估）
+> 状态更新时间：2026-10-16（#109 之后；#97–#109 的用户功能、后台和合规已并入）
 >
-> 当前完成度约为 **93%**（按本页勾选项计算：84 项中 75 项已完成；DMM、ThePornDB 两项代码已完成、只差凭据实测，厂商目录 adapter 代码已完成、只差真实页面与条款审核，计入后 78/84 ≈ 93%）。基础架构、目录采集、调度、WebApp 浏览、Javtiful 播放映射、审核后台（含 checkpoint 页面，#88）、图片存储（#91）、部署/备份/恢复手册与恢复演练、全量验收套件（#92）已经完成。剩余项基本都需要外部输入：来源凭据（DMM、ThePornDB）、VPN/授权确认（XSList、JAVLibrary）、条款/法务结论（JavDB、IAFD、DMM 图片转存）、从线上保存的真实页面（每来源 20 演员 / 100 作品 fixture）和生产值班通道配置；不再有不依赖外部输入的开发项（厂商目录 adapter 已实现，javinfo 已评估为拒绝）。
+> 当前完成度约为 **86%**。计算方法：本页所有勾选项（`- [x]` / `- [ ]`，含「进行中」小节）计数；「代码已完成、只差外部凭据或真实页面」的 4 项（DMM、ThePornDB、厂商目录 adapter、Google/Apple 登录）计入完成。共 106 项：87 项已勾选 + 4 项待凭据 = 91/106 ≈ 85.8%（只算已勾选为 87/106 ≈ 82%）。比 #92 时的 93%（78/84）低，是因为本次把 PRD/设计稿的用户功能与后台（22 项，见「用户功能与后台」）纳入了统计口径，不是有功能退回。
+>
+> 基础架构、目录采集、调度、审核后台、图片存储、部署/备份/恢复与全量验收（#92 之前）已完成；#97–#109 又交付了统计重建规则 G、首页运营位与公告、收藏夹、账号与 OAuth、发现/搜索/演员统计、赞踩评论、合规、观看统计、后台个人账号与 2FA、服务令牌与夜间任务页、弹幕过滤与选集。剩余项分四类：外部输入、产品决策（广告与会员）、依赖媒体资产的功能，以及少量不依赖外部输入的代码工作（见文末「剩余事项」）。进站 18+ 自我声明正在实现（定位已定为成人站，不做青少年模式）。
 >
 > 注意：门禁上线后，`license_status` 未审核（`review_required` / `manual_only`）或缺少 `terms_reviewed_at` / `terms_url` 的目录来源不再自动抓取，只能手动创建 verify 任务；需管理员通过 `PUT /api/admin/sources/{id}/license` 记录条款审核后才恢复增量。爬虫必须配置 `CATALOG_CONTACT`（User-Agent 联系方式），否则目录任务以 `config_error` 失败。
 
@@ -102,6 +104,33 @@
 - [x] 管理后台任务和来源页面（`admin-pipeline`）
 - [x] 管理后台 checkpoint 页面（#88：`web/app/components/AdminSourceGovernance.tsx` 接入 `GET /api/admin/sources/{id}/checkpoints`，与许可审核、手动建任务同页）
 
+### 用户功能与后台（PRD / 设计稿画板）
+
+逐画板对照见 [DESIGN_ALIGNMENT.md](DESIGN_ALIGNMENT.md)，未实现画板功能见 [IMPLEMENTATION_GAPS.md](IMPLEMENTATION_GAPS.md)。
+
+- [x] 审计规则 G 统计重建 R-STATS（#97，`internal/audit/stats.go`）：`reviews.likes`、`danmaku_curves.valid_count`、保留期内的 `search_query_daily` 按原始数据重算并在有界事务内修复；热榜 plays、年榜、`release_curves` 只报告；第二次运行修复 0
+- [x] 首页运营（#98，迁移 038）：`home_slots` 主推横幅 / 编辑精选（语言、地区、时段、优先级）、`announcements` 公告条与关闭记录、`GET /api/home/top-rated-short` 高分短片；`/admin/ops` 两周排期、拖动排序、按时间/语言/地区预览，写入 `review_events`
+- [x] 收藏夹与观看记录（#99，迁移 036）：多收藏夹（私密 / 链接 / 公开，可轮换 `share_token`），旧收藏回填为默认收藏夹；`/playlists/:token` 公开页（链接可见 noindex）；历史筛选、单条删除、清空、暂停；稍后看「移到收藏夹」、看完 90% 自动移出；关注动态按演员筛选
+- [x] 账号（#100，迁移 037）：记住我（30 天 / 24 小时）、服务端登出、设备会话列表与撤销、改密撤销其他会话、忘记密码（只存 token 哈希、1 小时单次、统一 202、限流）、条款版本重新确认、数据导出（每天 3 次）、注销 30 天宽限后硬删除、预约提醒时机和每日上限
+- [ ] Google / Apple 登录 — **已实现，待凭据实测**（#100，`internal/oidc`）：OIDC code flow + state + PKCE S256 + nonce + 绑定 cookie，ID token 全量校验，不自动关联已有密码账号；未配置时隐藏，目前只对假 provider 测试过
+- [x] 发现与演员（#101，迁移 039）：`GET /api/upcoming`（按日分组、只看关注、可预约）、`GET /api/catalog/facets` 分面与类型方块、搜索类型 tab 计数、`user_search_history` 账号同步最近搜索、热门榜类型筛选；`performer_stats`（作品 / 主演 / 即将上线 / 播放 / 粉丝 / 30 天热度）每小时刷新，演员热度 / 粉丝 / 新晋排序与年代 / 类型 / 语言筛选，演员页别名、主演 / 客串筛选、随机播放全部（国籍筛选无数据未做）
+- [x] 互动（#102，迁移 040）：作品赞 / 踩（踩不公开，推荐过滤踩过的作品）、评论（一层回复、剧透折叠、限流、敏感词影子屏蔽、回复通知、`COMMENTS_ENABLED`）、后台评论审核 tab、分享面板（复制链接、Web Share、`?t=` 起播时间）
+- [x] 合规（#103，迁移 041；#104 修复其不稳定测试）：`consent_records` 服务端同意记录与跨设备同步（GPC 禁止个性化广告）、`legal_documents` 多语言版本化法律文本、反馈、版权投诉 / 编号查询 / 反通知、下架作品返回 451、`region_blocked` 播放状态，`/admin/legal`、`/admin/feedback`、`/admin/takedowns`；不存原始 IP（[COMPLIANCE.md](COMPLIANCE.md)）
+- [ ] 合规法务结论：[COMPLIANCE.md](COMPLIANCE.md) 与 [DATA_RETENTION_AND_IMAGES.md](DATA_RETENTION_AND_IMAGES.md) 中标 **[法务]** 的条目（法律文本定稿、反馈与投诉数据保存期限、反通知等待期、样图 / DMM 图片转存、演员肖像权、来源终止后 raw_data 清理）需律师答复（需外部输入）
+- [x] 观看统计（#105，迁移 043）：`user_watch_daily` 按用户本地日聚合（`watch_stats` 每小时、`watch_stats_nightly` 每晚，幂等），`GET /api/me/watch-stats?range=7d|30d|365d`，`/me/stats` 统计卡、日曲线、7×24 热力、常看演员 / 类型、连续天数；数据导出包含该表
+- [x] 后台个人账号（#107，迁移 042）：`admin_users`（argon2id、AES-GCM 加密 TOTP、恢复码、锁定退避、30 分钟空闲 / 12 小时绝对会话）、7 角色权限矩阵覆盖每条后台路由（未映射路由测试失败）、双人审批、`admin_audit_log`、前台用户封禁、`cmd/admin` 引导首个管理员；`ADMIN_TOKEN` 降为可关闭的 break-glass
+- [x] 服务令牌与后台补全（#108，迁移 044）：`svc_` 服务令牌（只存哈希、按路由范围、必须过期、可撤销、不能触达账号 / 审批类路由），SEO 检查改用 `SEO_REPORT_TOKEN`；`/admin/jobs` 夜间任务页（队列、重试、运行历史、13 类无来源任务立即运行）；AdminVideo 发布页「推荐位」与私有「版权凭证」；AdminSearch 无结果词「补片」「建预约页」
+- [x] 弹幕与选集（#109，迁移 045）：服务端按文字判定弹幕语言并回填，语言过滤、个人屏蔽词（账号同步 / 访客本地）、密度 35 / 70 / 100%；手机全屏「选集」抽屉、桌面「同系列」面板；修复全屏面板崩溃和搜索近似匹配误判
+- [x] 集成测试稳定性：#104（takedown `due_at` 微秒舍入）、#106（map 遍历顺序）、#109（`TestSearchIntegration` 隔离库）、本次（`TestDMMSourceSeedIntegration` 隔离库；ThePornDB 交叉验证测试的 `Ambiguous:2` 已由 #93/#95 修复，见该提交说明）；CI gofmt 改为失败
+- [ ] 进站 18+ 自我声明 — **进行中**：定位已定为成人站，进站自我声明 18+，不做青少年模式（PRD 第 15 节、DESIGN_ALIGNMENT 第 2 节 #8、COMPLIANCE.md 由另一分支更新）
+- [ ] 广告与会员 — **待产品决策**：没有任何 `ad_*` 表、广告位或会员逻辑；PRD 第 1、16、21 节对上线阶段自相矛盾（DESIGN_ALIGNMENT 第 2 节 #5、#7），成人站定位下还要选广告网络
+- [ ] 依赖媒体资产的功能：演员照片集、雪碧图预览、章节截屏、预告片段、字幕轨、跳过片头，以及审计规则 B 水印 / D 字幕 / F 截屏（仍为桩）——需要自营媒体或授权素材，见 [IMPLEMENTATION_GAPS.md](IMPLEMENTATION_GAPS.md)
+- [ ] AdminVideo「数据标签」tab：`GET /api/admin/releases/{id}/curves`（`internal/api/admin_curves.go`）已提供留存 / 重看 / 跳过曲线，`web/app/routes/admin-video.tsx` 没有该 tab
+- [ ] AdminDashboard 播放 / 日活 / 时长 / 完播 KPI：`POST /api/events` 已入库，缺聚合与接口（`web/app/routes/admin-dashboard.tsx` 注明未做）
+- [ ] 冷启动推荐：Onboarding 选的类型（`user_interests`，只在 `internal/store/account.go` 读写）和 Tonight 的「想要 / 和谁看」（`web/app/routes/tonight.tsx`，无后端字段）都没有进入 `internal/recs`
+- [ ] AdminDedupe 对比面板：候选只返回 id 与打分证据，缺双方实体摘要（标题、封面、作品）；视频「合并为新片源 / 合并为其他版本」后端只有一种合并（`web/app/routes/admin-dedupe.tsx`）
+- [ ] 机器翻译：`internal/i18n.Translator` 有意无实现，需选定翻译服务并提供凭据（需外部输入）
+
 ### 生产化
 
 - [x] 结构化日志、指标和告警（`internal/obs`、`deploy/monitoring`）
@@ -133,26 +162,48 @@ JAV Database adapter 已接入 scraper，可完成发现、详情抓取、解析
 
 ### 阶段 5：用户 WebApp 和生产化 — 进行中
 
-已完成目录首页、演员/作品详情、标签/厂商面板、搜索/筛选/游标分页、媒体搜索播放、Javtiful 播放映射、后台冲突/身份审核和任务/来源页面、checkpoint 页面（#88）、来源证据与系列页（#87）、来源记录自动关联（media_link）、图片存储（#91）、监控告警、部署/备份/恢复手册与全量验收（#92）；仍需在生产主机完成值班通道配置和首次许可审核后的正式环境验收。
+已完成目录首页、演员/作品详情、标签/厂商面板、搜索/筛选/游标分页、媒体搜索播放、Javtiful 播放映射、后台冲突/身份审核和任务/来源页面、checkpoint 页面（#88）、来源证据与系列页（#87）、来源记录自动关联（media_link）、图片存储（#91）、监控告警、部署/备份/恢复手册与全量验收（#92），以及首页运营（#98）、收藏夹（#99）、账号与 OAuth（#100）、发现与演员统计（#101）、赞踩评论（#102）、合规（#103）、观看统计（#105）、后台账号与权限（#107）、服务令牌与夜间任务页（#108）、弹幕过滤与选集（#109）；进行中：进站 18+ 自我声明；仍需外部输入完成正式环境验收，广告 / 会员待产品决策。
 
-## 下一步执行顺序
+## 剩余事项
 
-以下各项都在等外部输入：
+只列尚未完成的部分。
 
-1. 管理员为现有目录来源完成条款审核（`PUT /api/admin/sources/{id}/license`）并配置 `CATALOG_CONTACT`，否则目录来源只能运行 verify 任务。
-2. 为 JAV Database、XCITY、Jav.Guru 各保存 20 个演员、100 个作品页面作为 recorded fixture；`make fixturecheck` 达标后在 CI 中加 `-strict`。
-3. 拿到凭据后实测 DMM（`DMM_API_ID`/`DMM_AFFILIATE_ID`）和 ThePornDB（`THEPORNDB_API_TOKEN`）：dry-run → 条款审核 → 启用；DMM 图片转存等法务确认。
-4. 厂商目录（S1、IDEA POCKET）：按 `docs/MAKER_CATALOG.md` 保存真实页面、校准 profile、dry-run/verify、记录条款审核后启用；其他厂商按需新增 profile。
-5. XSList、JAVLibrary 等 VPN/授权条件确认后启用；JavDB、IAFD 等条款确认前保持人工 verify。
-6. 在生产主机配置值班通道（`ALERT_*`、`monitoring_enabled`、`backup_cron_enabled`），跑 `npm run seo:check`（带 `ADMIN_TOKEN`）让 R-SEO 拿到页面检查结果，并完成正式环境验收。
+### 进行中
+
+- 进站 18+ 自我声明（成人站定位已定；不做青少年模式）。
+
+### 需要外部输入
+
+1. **来源凭据**：DMM（`DMM_API_ID`/`DMM_AFFILIATE_ID`）、ThePornDB（`THEPORNDB_API_TOKEN`）拿到后 dry-run → 条款审核 → 启用；Google / Apple 登录（OIDC 客户端凭据）拿到后对真实 provider 实测。
+2. **VPN / 授权**：XSList、JAVLibrary 确认访问条件后启用；JavDB、IAFD 条款确认前保持人工 verify。
+3. **真实保存的页面**：JAV Database、XCITY、Jav.Guru 各 20 个演员、100 个作品页面作为 recorded fixture（`make fixturecheck` 达标后 CI 加 `-strict`）；厂商目录（S1、IDEA POCKET）按 `docs/MAKER_CATALOG.md` 保存真实页面、校准 profile、记录条款审核后启用。
+4. **法务答复**：[COMPLIANCE.md](COMPLIANCE.md) 与 [DATA_RETENTION_AND_IMAGES.md](DATA_RETENTION_AND_IMAGES.md) 中所有 **[法务]** 条目（含 DMM 图片转存、样图、肖像权、法律文本定稿、数据保存期限）。
+5. **生产环境**：配置值班通道（`ALERT_*`、`monitoring_enabled`、`backup_cron_enabled`），完成首次部署和目录来源条款审核（`PUT /api/admin/sources/{id}/license`、`CATALOG_CONTACT`），用 `SEO_REPORT_TOKEN` 跑 `npm run seo:check`，完成正式环境验收。
+6. **机器翻译服务**：选定 provider 并提供凭据后实现 `internal/i18n.Translator`。
+
+### 需要产品决策
+
+- 广告与会员：是否上广告、在哪个阶段（PRD 第 1、16 节与第 21 节矛盾）、成人站可用的广告网络，以及 4K「会员」标签是否保留（DESIGN_ALIGNMENT 第 2 节 #5、#7）。
+
+### 依赖媒体资产
+
+- 演员照片集、雪碧图预览、章节截屏、预告片段、字幕轨、跳过片头标注；审计规则 B / D / F。需要自营转码或授权素材，见 [IMPLEMENTATION_GAPS.md](IMPLEMENTATION_GAPS.md)。
+
+### 不依赖外部输入的代码工作
+
+- AdminVideo「数据标签」tab（接口已在，缺页面）。
+- AdminDashboard 播放 / 日活 / 时长 / 完播 KPI（事件已入库，缺聚合与接口）。
+- 冷启动推荐使用 Onboarding 兴趣与 Tonight 的「想要 / 和谁看」。
+- AdminDedupe 对比面板实体摘要，视频两种合并方式。
+- 设置页：默认片源；接上已有的清除搜索记录接口。
 
 ## 总体状态
 
 **基础工程：已完成**  
 **单来源目录采集：已完成**  
 **关系与冲突审核：已完成**  
-**多来源规模化采集：进行中**  
+**多来源规模化采集：代码已完成，待凭据 / 授权 / 真实页面**  
 **增量调度：分页 checkpoint、预算限速、阻断隔离、授权/robots 门禁和 baseline/增量隔离已完成**  
-**数据质量：字段优先级策略、fixture 验收工具和审计规则 R-AGE/META/TITLE/SOURCE/PERFORMER-NAME/SEO/STATS 已完成（水印、字幕、截屏仍缺数据，保持桩），录制 fixture 未达标（各来源 0/20、0/100）**  
-**WebApp 完整交付：已完成（浏览、审核、checkpoint 页面 #88、来源证据 #87、6 种界面语言内置译文）**  
-**生产化验收：图片存储（#91）、部署/备份/恢复手册、恢复演练和全量验收套件（#92）已完成；正式环境（生产主机值班通道、首次许可审核）验收未完成**
+**数据质量：字段优先级策略、fixture 验收工具和审计规则 R-AGE/META/TITLE/SOURCE/PERFORMER-NAME/SEO/STATS（#97）已完成（水印、字幕、截屏缺媒体数据，保持桩），录制 fixture 未达标（各来源 0/20、0/100）**  
+**WebApp 与后台：浏览、审核、运营、账号、收藏夹、互动、合规、观看统计、后台账号与权限已完成（#87–#109）；进站 18+ 进行中，广告 / 会员待决策，媒体相关功能待素材，另有 4 项后台 / 推荐代码工作**  
+**生产化验收：图片存储（#91）、部署/备份/恢复手册、恢复演练和全量验收套件（#92）已完成；正式环境（首次部署、值班通道、首次许可审核）验收未完成**
