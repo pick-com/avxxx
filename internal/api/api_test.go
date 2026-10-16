@@ -321,6 +321,10 @@ var expectedRoutes = []string{
 	"GET /api/admin/service-tokens",
 	"POST /api/admin/service-tokens",
 	"POST /api/admin/service-tokens/{id}/revoke",
+	"GET /api/admin/jobs/queue",
+	"GET /api/admin/jobs/runs",
+	"POST /api/admin/jobs/{id}/retry",
+	"POST /api/admin/jobs/run",
 }
 
 var (

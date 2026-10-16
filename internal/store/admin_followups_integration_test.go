@@ -11,6 +11,82 @@ import (
 	"github.com/jackc/pgx/v5"
 )
 
+// TestAdminJobsIntegration covers the 夜间任务 queue, history, retry and
+// run-now against an isolated database.
+func TestAdminJobsIntegration(t *testing.T) {
+	openIsolatedTestDB(t, "adminjobs")
+	ctx := context.Background()
+	s, err := Open(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+
+	id, enqueued, err := s.EnqueueKindNow(ctx, JobKindAudit)
+	if err != nil || !enqueued {
+		t.Fatalf("enqueue: %d %v %v", id, enqueued, err)
+	}
+	again, enqueued, err := s.EnqueueKindNow(ctx, JobKindAudit)
+	if err != nil || enqueued || again != id {
+		t.Fatalf("second enqueue: %d %v %v", again, enqueued, err)
+	}
+	// A failed job of another kind (attempts used up).
+	var failed int64
+	if err := s.QueryRow(ctx, `INSERT INTO jobs(kind,status,attempt,max_attempts,error,finished_at) VALUES($1,'failed',3,3,'boom',now()) RETURNING id`, JobKindWatchStats).Scan(&failed); err != nil {
+		t.Fatal(err)
+	}
+	kinds, items, err := s.AdminJobQueue(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	byKind := map[string]QueueKind{}
+	for _, k := range kinds {
+		byKind[k.Kind] = k
+	}
+	if byKind[JobKindAudit].Pending != 1 || byKind[JobKindWatchStats].Failed7d != 1 || len(items) != 2 {
+		t.Fatalf("queue %+v %+v", kinds, items)
+	}
+
+	// Retry: back to pending with one more attempt; not twice.
+	j, err := s.RetryJob(ctx, failed)
+	if err != nil || j.Status != "pending" || j.MaxAttempts != 4 || j.Error != "" || j.FinishedAt != nil {
+		t.Fatalf("retry %+v %v", j, err)
+	}
+	var ce *ConflictError
+	if _, err := s.RetryJob(ctx, failed); !errors.As(err, &ce) {
+		t.Errorf("retry of a pending job: %v", err)
+	}
+	if _, err := s.RetryJob(ctx, 99999999); !errors.Is(err, pgx.ErrNoRows) {
+		t.Errorf("retry unknown: %v", err)
+	}
+	// Retrying while another job of the kind is active is a conflict.
+	var failedAudit int64
+	if err := s.QueryRow(ctx, `INSERT INTO jobs(kind,status,attempt,finished_at) VALUES($1,'failed',3,now()) RETURNING id`, JobKindAudit).Scan(&failedAudit); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.RetryJob(ctx, failedAudit); !errors.As(err, &ce) {
+		t.Errorf("retry beside an active job: %v", err)
+	}
+
+	// History: grouped by job, newest first, bounded by days.
+	if _, err := s.Exec(ctx, `INSERT INTO nightly_runs(job,started_at,duration_ms,result) VALUES
+		('audit.R-AGE',now()-interval '1 day',1200,'ok'),('audit.R-AGE',now()-interval '2 days',900,'issues'),
+		('audit.R-AGE',now()-interval '40 days',10,'ok'),('recs.similarity',now()-interval '3 hours',5000,'failed')`); err != nil {
+		t.Fatal(err)
+	}
+	series, err := s.AdminJobRuns(ctx, 30, "")
+	if err != nil || len(series) != 2 || series[0].Job != "audit.R-AGE" || len(series[0].Runs) != 2 || series[0].Runs[0].DurationMS != 1200 {
+		t.Fatalf("runs %+v %v", series, err)
+	}
+	one, err := s.AdminJobRuns(ctx, 90, "audit.R-AGE")
+	if err != nil || len(one) != 1 || len(one[0].Runs) != 3 {
+		t.Fatalf("one job %+v %v", one, err)
+	}
+	if _, err := s.AdminJobRuns(ctx, 0, ""); err == nil {
+		t.Error("days 0 accepted")
+	}
+}
+
 // TestServiceTokensIntegration covers migration 044 (re-runnable), service
 // token storage (hash only, one live token per name, expiry, revocation,
 // last use) and the op log accepting auth 'service'.

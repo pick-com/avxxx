@@ -73,5 +73,6 @@ export default [
     route('admin/users', 'routes/admin-users.tsx'),
     route('admin/approvals', 'routes/admin-approvals.tsx'),
     route('admin/oplog', 'routes/admin-oplog.tsx'),
+    route('admin/jobs', 'routes/admin-jobs.tsx'),
   ]),
 ] satisfies RouteConfig;

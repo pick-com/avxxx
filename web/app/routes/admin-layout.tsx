@@ -40,6 +40,7 @@ const ICONS = {
   users: 'M9 11a4 4 0 100-8 4 4 0 000 8zM2 21c.8-3.5 3.5-5.5 7-5.5s6.2 2 7 5.5M17 3.5a4 4 0 010 7.5M22 21c-.5-2.6-2-4.4-4-5.2',
   approvals: 'M9 11l2 2 4-4M5 4h14v16H5zM9 17h6',
   oplog: 'M5 4h14v16H5zM8 8h8M8 12h8M8 16h5',
+  jobs: 'M12 21a9 9 0 100-18 9 9 0 000 18zM12 7v5l3 2',
 };
 
 type Badge = {n: number; tone: 'red' | 'amber' | 'plain'} | null;
@@ -191,6 +192,7 @@ export default function AdminLayout() {
           {to: '/admin/field-policies', label: '字段优先级', icon: 'priority', perm: 'ingest:read'},
           {to: '/admin/media-links', label: '片源映射', icon: 'links', perm: 'ingest:read'},
           {to: '/admin/reports/completeness', label: '完整性报告', icon: 'completeness', perm: 'dashboard:read'},
+          {to: '/admin/jobs', label: '夜间任务', icon: 'jobs', perm: 'ingest:read'},
         ],
       },
       {
