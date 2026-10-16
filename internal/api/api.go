@@ -120,6 +120,8 @@ type Server struct {
 	svcTokens serviceTokenStore
 	// rights backs 版权凭证 on the AdminVideo 发布 tab (admin_release_rights.go).
 	rights rightsStore
+	// stubs backs AdminSearch 补片 / 建预约页 (admin_search_release.go).
+	stubs releaseStubStore
 	// jobsAdm backs the 夜间任务 page (admin_jobs.go).
 	jobsAdm      jobsAdmin
 	approvalOnce sync.Once
@@ -175,6 +177,7 @@ func Register(mux *http.ServeMux, s *store.Store, mediaHandler *media.Handler) {
 		srv.svcTokens = s
 		srv.jobsAdm = s
 		srv.rights = s
+		srv.stubs = s
 		srv.push = s
 		srv.accounts = s
 		srv.identity = s
@@ -264,6 +267,7 @@ func (srv *Server) routes() []route {
 	rs = append(rs, srv.serviceTokenRoutes()...)
 	rs = append(rs, srv.adminJobRoutes()...)
 	rs = append(rs, srv.releaseRightsRoutes()...)
+	rs = append(rs, srv.releaseStubRoutes()...)
 	return srv.followMerges(rs)
 }
 

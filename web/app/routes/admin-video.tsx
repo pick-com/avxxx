@@ -534,6 +534,8 @@ const ACTION_LABELS: Record<string, string> = {
   resolve: '解决冲突',
   add_rights_proof: '添加版权凭证',
   remove_rights_proof: '移除版权凭证',
+  add_release: '从搜索词补片',
+  create_upcoming: '从搜索词建预约页',
 };
 
 function HistoryTab({r, onChanged}: {r: AdminRelease; onChanged: () => void}) {

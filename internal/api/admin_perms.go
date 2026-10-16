@@ -223,6 +223,8 @@ var adminRoutePerms = map[string]routePerm{
 	"DELETE /api/admin/search/blocklist/{id}":    wr(gSearch),
 	"POST /api/admin/search/terms/alias":         wr(gSearch),
 	"POST /api/admin/search/terms/english-title": wr(gSearch),
+	// 补片 / 建预约页 create a release: catalog data, so catalog write.
+	"POST /api/admin/search/terms/release": wr(gCatalog),
 
 	// 翻译管理
 	"GET /api/admin/i18n/translations":             rd(gI18n),

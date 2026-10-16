@@ -141,6 +141,46 @@ func TestReleaseRightsProofsIntegration(t *testing.T) {
 	}
 }
 
+// TestReleaseFromTermIntegration covers AdminSearch 补片 / 建预约页.
+func TestReleaseFromTermIntegration(t *testing.T) {
+	openIsolatedTestDB(t, "releasestub")
+	ctx := context.Background()
+	s, err := Open(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	draft, err := s.CreateReleaseFromTerm(ctx, ReleaseStubInput{Term: "abc-123", Title: "Some Title", Code: "ABC-123"}, "ed")
+	if err != nil || draft.Status != ReleaseDraft || draft.Action != "add_release" || draft.Slug != "abc-123" || draft.EntityID == 0 {
+		t.Fatalf("draft %+v %v", draft, err)
+	}
+	var ce *ConflictError
+	if _, err := s.CreateReleaseFromTerm(ctx, ReleaseStubInput{Term: "abc123", Title: "Again", Code: "abc 123"}, "ed"); !errors.As(err, &ce) {
+		t.Errorf("same code again: %v", err)
+	}
+	at := time.Now().Add(48 * time.Hour)
+	up, err := s.CreateReleaseFromTerm(ctx, ReleaseStubInput{Term: "新作", Title: "新作", ScheduledAt: &at, Reason: "zero results"}, "ed")
+	if err != nil || up.Status != ReleaseUpcoming || up.Action != "create_upcoming" || !strings.Contains(up.Slug, "-manual-") {
+		t.Fatalf("upcoming %+v %v", up, err)
+	}
+	var status string
+	var sched *time.Time
+	if err := s.QueryRow(ctx, `SELECT status,scheduled_at FROM releases WHERE id=$1`, up.EntityID).Scan(&status, &sched); err != nil || status != "upcoming" || sched == nil {
+		t.Fatalf("stored %q %v %v", status, sched, err)
+	}
+	past := time.Now().Add(-time.Hour)
+	if _, err := s.CreateReleaseFromTerm(ctx, ReleaseStubInput{Term: "x", Title: "x", ScheduledAt: &past}, "ed"); err == nil {
+		t.Error("past scheduled_at accepted")
+	}
+	var n int
+	if err := s.QueryRow(ctx, `SELECT count(*) FROM review_events WHERE entity_type='release' AND action IN ('add_release','create_upcoming') AND actor='ed'`).Scan(&n); err != nil || n != 2 {
+		t.Errorf("review events %d %v", n, err)
+	}
+	if err := s.QueryRow(ctx, `SELECT count(*) FROM release_identifiers WHERE release_id=$1 AND identifier_type='dvd_code'`, draft.EntityID).Scan(&n); err != nil || n != 1 {
+		t.Errorf("identifier %d %v", n, err)
+	}
+}
+
 // TestServiceTokensIntegration covers migration 044 (re-runnable), service
 // token storage (hash only, one live token per name, expiry, revocation,
 // last use) and the op log accepting auth 'service'.

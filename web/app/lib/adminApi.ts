@@ -607,6 +607,9 @@ export const aliasFromTerm = (b: {term: string; performer_id: number; alias?: st
   api<TermFix>('admin/search/terms/alias', {method: 'POST', body: b});
 export const englishTitleFromTerm = (b: {term: string; release_id: number; title?: string; reason?: string}) =>
   api<TermFix>('admin/search/terms/english-title', {method: 'POST', body: b});
+/** 补片 (draft) or 建预约页 (upcoming, with scheduled_at) from a zero-result term; needs catalog:write. */
+export const releaseFromTerm = (b: {term: string; title?: string; code?: string; scheduled_at?: string; reason?: string}) =>
+  api<TermFix & {slug: string; status: ReleaseStatus}>('admin/search/terms/release', {method: 'POST', body: b});
 
 // ---------------------------------------------------------------- AdminActors (admin_performer.go)
 
