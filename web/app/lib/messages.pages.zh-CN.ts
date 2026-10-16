@@ -605,8 +605,7 @@ export const pagesZhCN = {
   'reservations.backToMe': '← 返回我的',
 
   // history
-  'history.anonTitle': '登录后查看观看记录',
-  'history.anonBody': '登录后，看过的视频会出现在这里，换设备也能接着看。',
+  'history.guestNote': '这是本浏览器里的观看记录，保留最近 100 部、90 天。登录后可跨设备同步。',
   'history.emptyTitle': '还没有观看记录',
   'history.emptyBody': '看过的视频会出现在这里，下次可以从上次的位置接着看。',
   'history.watchedOf': '看到 {pos} / {total}',

@@ -5,6 +5,7 @@ import {CardGridSkeleton, EmptyState, ErrorBanner} from '../components/States';
 import {Switch} from '../components/Switch';
 import {clearWatchHistory, deleteWatchEntry, getWatchHistory, type WatchItem} from '../lib/api';
 import {useAuth} from '../lib/auth';
+import {clearGuestHistory, deleteGuestEntry, guestHistory} from '../lib/guestProgress';
 import {dayLabel, formatClock} from '../lib/format';
 import {t, useT} from '../lib/i18n';
 import type {MessageKey} from '../lib/messages.zh-CN';
@@ -18,6 +19,8 @@ export const meta = () => [{title: t('title.history')}];
 // 已看完, single-item delete (DELETE /api/me/watch-history/{slug}), 清除全部
 // (DELETE /api/me/watch-history) and the 记录观看历史 switch, which is
 // user_settings.history_paused (the same setting as 设置 → 隐私).
+// Signed out: the same list from this browser's guest history
+// (lib/guestProgress), with delete / clear and a sign-in hint; no pause switch.
 
 type Filter = 'all' | 'unfinished' | 'finished';
 const FILTERS: {key: Filter; label: MessageKey}[] = [
@@ -44,17 +47,14 @@ export default function History() {
   const [error, setError] = useState('');
   const [announce, setAnnounce] = useState('');
 
+  const guest = status === 'anon';
   useEffect(() => {
     if (history.data) setItems(history.data);
   }, [history.data]);
-
-  if (status === 'anon') {
-    return (
-      <div className="page">
-        <EmptyState icon="history" title={t('history.anonTitle')} body={t('history.anonBody')} actions={[{to: '/login?next=%2Fhistory', label: t('auth.login')}]} />
-      </div>
-    );
-  }
+  // Guest history lives in localStorage: read after mount.
+  useEffect(() => {
+    if (guest) setItems(guestHistory());
+  }, [guest]);
 
   const shown = items.filter(i => filter === 'all' || (filter === 'finished') === isFinished(i));
   const groups: [string, WatchItem[]][] = [];
@@ -73,7 +73,8 @@ export default function History() {
     setItems(before.filter(i => i.slug !== item.slug));
     setError('');
     try {
-      await deleteWatchEntry(item.slug);
+      if (guest) deleteGuestEntry(item.slug);
+      else await deleteWatchEntry(item.slug);
       setAnnounce(t('history.removed', {title: item.title}));
     } catch (cause) {
       setItems(before);
@@ -85,10 +86,10 @@ export default function History() {
     setBusy(true);
     setError('');
     try {
-      const r = await clearWatchHistory();
+      const n = guest ? clearGuestHistory() : (await clearWatchHistory())?.deleted ?? 0;
       setItems([]);
       setConfirming(false);
-      setAnnounce(t('history.cleared', {n: r?.deleted ?? 0}));
+      setAnnounce(t('history.cleared', {n}));
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : t('history.clearFailed'));
     } finally {
@@ -101,7 +102,7 @@ export default function History() {
       <div className="later-head">
         <h1 className="page-title">{t('nav.history')}</h1>
         <div className="action-row">
-          {settingsStatus === 'ready' && (
+          {!guest && settingsStatus === 'ready' && (
             <span className="lib-switch">
               <span className="lib-switch-label" aria-hidden="true">
                 {t('history.record')}
@@ -117,8 +118,17 @@ export default function History() {
           )}
         </div>
       </div>
+      {guest && (
+        <div className="banner" role="status">
+          <Icon name="history" size={18} />
+          <span className="banner-text">{t('history.guestNote')}</span>
+          <a className="btn btn-secondary btn-sm" href="/login?next=%2Fhistory">
+            {t('auth.login')}
+          </a>
+        </div>
+      )}
       {fieldErrors.history_paused && <ErrorBanner error={fieldErrors.history_paused} />}
-      {paused && (
+      {!guest && paused && (
         <div className="banner banner-warn" role="status">
           <Icon name="pause" size={18} />
           <span className="banner-text">{t('history.pausedBanner')}</span>
