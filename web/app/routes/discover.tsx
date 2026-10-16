@@ -144,7 +144,15 @@ export default function Discover() {
   const raw = params.get('tab');
   const recs = useRecsAvailable(true);
   const tab: Tab = raw === 'categories' || raw === 'actors' || (raw === 'trending' && recs !== 'no') ? raw : 'new';
-  const heading = t(tabs.find(x => x.key === tab)?.label ?? 'nav.new');
+  // Page heading (screen readers and crawlers): the tag or maker of a category page, else the tab.
+  const load = useDiscoverLoad();
+  const facet = tab === 'new' ? parseReleaseFilter(params) : null;
+  const tagName = facet?.tag ? load?.tags?.find(x => x.slug === facet.tag)?.name ?? facet.tag : undefined;
+  const heading = tagName
+    ? t('seo.discoverTagTitle', {tag: tagName})
+    : facet?.maker
+      ? t('seo.discoverMakerTitle', {maker: facet.maker})
+      : t(tabs.find(x => x.key === tab)?.label ?? 'nav.new');
 
   return (
     <div className="page discover">
