@@ -179,6 +179,11 @@ var expectedRoutes = []string{
 	"GET /api/releases/{slug}/evidence",
 	"GET /api/performers/{slug}/evidence",
 	"GET /api/admin/reports/completeness",
+	"GET /api/admin/performers/{id}/split-preview",
+	"POST /api/admin/performers/{id}/split",
+	"GET /api/admin/releases/{id}/split-preview",
+	"POST /api/admin/releases/{id}/split",
+	"POST /api/admin/splits/{event_id}/undo",
 }
 
 var (
