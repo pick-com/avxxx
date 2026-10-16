@@ -118,6 +118,7 @@ reel.example {
 - 客户端地址：在 `.env` 设置 `TRUSTED_PROXIES=127.0.0.1/32,::1/128`（Ansible 变量 `trusted_proxies`，`-e trusted_proxies=127.0.0.1/32,::1/128` 或写进 vault）。API 默认（变量为空）只信任 TCP 对端地址、不读 `X-Forwarded-For`，经 Caddy 后所有请求都来自代理，演员投稿的「每地址」限流退化为一个共享桶，只剩全局限流起作用。设置后，对端在这些网段内时 API 从 `X-Forwarded-For` 右往左取第一个不在可信网段内的地址作为客户端（`internal/clientip`），客户端自己伪造的左侧条目不会被采用；访问日志的 `client_ip` 也改用该地址（仍截断到 /24、/48）。Caddy 的 `reverse_proxy` 默认就会设置 `X-Forwarded-For`（不信任客户端传入的值），无需额外配置。
   - 只列 Caddy 实际连到 API 时使用的地址，不要放宽到整个 Docker 网段（web 容器等也在其中）。启用后看一条经 Caddy 的请求日志：`client_ip` 应是真实客户端网段；如果仍是 `172.x.x.0/24` 之类的 Docker 网桥地址（发布端口经 docker-proxy 转发时，API 看到的对端是网桥网关），把该网关地址（`docker network inspect avxxx_default` 的 `Gateway`）以 `/32` 加进 `TRUSTED_PROXIES`。
   - 值无法解析时 API 拒绝启动（`client ip config`）。
+- 访客地区（按地区投放的首页推荐位与公告、play-config 的 `region_allow` / `region_blocked`）：API 依次取 `?region=`、Cloudflare 的 `CF-IPCountry`、`GEOIP_HEADER` 指定的请求头（Ansible 变量 `geoip_header`，例如 `X-Country-Code`；只填由可信代理 / CDN 设置并覆盖的头）。web 的 SSR loader 经内网直连 API，收不到这些头，所以用同样的规则（`web/app/lib/region.server.ts`，读同一个 `GEOIP_HEADER`）取出国家后以 `?region=` 传给 API；浏览器请求经 Caddy 原样带着这些头到 API。**没有 CDN 国家头时地区功能不生效**：只出现不限地区的推荐位和公告，`region_allow` 限定地区的片源不提供。项目不带 GeoIP 数据库。地区只是展示规则，客户端可以自己传 `?region=`，不是访问控制。
 - `PUBLIC_BASE_URL` 必须等于对外域名（`https://reel.example`），否则 canonical、hreflang、站点地图指向错误的 origin。
 - 验证：`curl -sI https://reel.example/ | head -1`，`curl -s https://reel.example/api/health`，`curl -s https://reel.example/sitemap.xml | head`。
 

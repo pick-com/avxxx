@@ -1,0 +1,5 @@
+{{define "subject"}}Contraaviso recibido: {{.Ticket}}{{end}}
+{{define "text"}}Hola{{if .Name}}, {{.Name}}{{end}}:
+
+Hemos recibido tu contraaviso para el expediente {{.Ticket}}. Informaremos al reclamante de que se presentó un contraaviso y te escribiremos cuando cambie el estado. También puedes consultar el estado en {{.StatusURL}} con el número de expediente y esta dirección de correo.
+{{end}}

@@ -9,6 +9,7 @@ package api
 import (
 	"avxxx/internal/store"
 	"context"
+	"errors"
 	"net/http"
 )
 
@@ -23,6 +24,7 @@ type libraryStore interface {
 	PlaylistWithItems(ctx context.Context, userID, id int64) (store.Playlist, []store.PlaylistItem, error)
 	PublicPlaylist(ctx context.Context, token string) (store.Playlist, []store.PlaylistItem, error)
 	AddPlaylistItem(ctx context.Context, userID, id int64, releaseSlug string) error
+	ReorderPlaylist(ctx context.Context, userID, id int64, ordered []string) error
 	RemovePlaylistItem(ctx context.Context, userID, id int64, releaseSlug string) error
 	MoveWatchLaterToPlaylist(ctx context.Context, userID, id int64, releaseSlug string) error
 	LaterAutoRemove(ctx context.Context, userID int64, releaseSlug string, progress, duration int) (bool, error)
@@ -38,6 +40,7 @@ func (srv *Server) playlistRoutes() []route {
 		{"POST /api/me/playlists/{id}/share-token", srv.library(srv.rotatePlaylistToken)},
 		{"PUT /api/me/playlists/{id}/items/{release_slug}", srv.library(srv.addPlaylistItem)},
 		{"DELETE /api/me/playlists/{id}/items/{release_slug}", srv.library(srv.removePlaylistItem)},
+		{"POST /api/me/playlists/{id}/reorder", srv.library(srv.reorderPlaylist)},
 		{"POST /api/me/watch-later/{release_slug}/move", srv.library(srv.moveWatchLater)},
 		{"GET /api/playlists/{token}", srv.publicPlaylist},
 	}
@@ -132,6 +135,32 @@ func (srv *Server) removePlaylistItem(w http.ResponseWriter, r *http.Request, ui
 	}
 	e := srv.playlists.RemovePlaylistItem(r.Context(), uid, id, r.PathValue("release_slug"))
 	reply(w, map[string]bool{"deleted": e == nil}, e)
+}
+
+// reorderPlaylist saves a manual order: {"slugs":[...]} in the new order
+// (items left out keep their relative order after the listed ones).
+func (srv *Server) reorderPlaylist(w http.ResponseWriter, r *http.Request, uid int64) {
+	id, err := pathID(r)
+	if err != nil {
+		reply(w, nil, err)
+		return
+	}
+	var in struct {
+		Slugs []string `json:"slugs"`
+	}
+	if err := readJSON(r, &in, false); err != nil {
+		reply(w, nil, err)
+		return
+	}
+	if len(in.Slugs) == 0 || len(in.Slugs) > store.MaxPlaylistItems {
+		reply(w, nil, badRequest("slugs must be a non-empty array", nil))
+		return
+	}
+	e := srv.playlists.ReorderPlaylist(r.Context(), uid, id, in.Slugs)
+	if errors.Is(e, store.ErrInvalidOrder) {
+		e = badRequest(e.Error(), nil)
+	}
+	reply(w, map[string]bool{"saved": e == nil}, e)
 }
 
 func (srv *Server) moveWatchLater(w http.ResponseWriter, r *http.Request, uid int64) {

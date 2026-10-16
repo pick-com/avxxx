@@ -13,6 +13,7 @@ import {TopBar} from '../components/TopBar';
 import {useI18n, useT} from '../lib/i18n';
 import {isGated} from '../lib/ageGate.server';
 import {serverApi} from '../lib/api.server';
+import {withRegion} from '../lib/region.server';
 import {routeLang} from '../lib/langs';
 import type {Announcement} from '../lib/home';
 import {useRecsAvailable} from '../lib/recs';
@@ -27,7 +28,7 @@ type NavMode = 'auto' | 'open' | 'collapsed';
 
 // Announcement bar (AnnouncementBar): rendered on the server for the page
 // language so it never pushes the page down after hydration. The visitor's
-// country (CF-IPCountry behind the CDN) is forwarded as ?region= for
+// country (CF-IPCountry behind the CDN, or GEOIP_HEADER) is forwarded as ?region= for
 // region-targeted announcements. Kept across navigations within a language.
 type ShellLoad = {lang: string; announcements?: Announcement[]} | null;
 
@@ -36,9 +37,7 @@ export async function loader({params, request}: LoaderFunctionArgs): Promise<She
   if (!lang) return null;
   // 18+ gate: the shell is not rendered (root.tsx), nothing to fetch.
   if (isGated(request)) return {lang};
-  const region = (request.headers.get('cf-ipcountry') ?? '').trim().toUpperCase();
-  const q = new URLSearchParams({lang});
-  if (/^[A-Z]{2}$/.test(region) && region !== 'XX') q.set('region', region);
+  const q = withRegion(new URLSearchParams({lang}), request);
   const announcements = await serverApi<{items: Announcement[] | null}>(`announcements?${q}`, {signal: request.signal}).then(
     d => d?.items ?? [],
     () => undefined,

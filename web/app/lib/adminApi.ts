@@ -454,7 +454,22 @@ export type QueuedComment = {
   likes: number;
   open_reports: number;
   created_at: string;
+  /** Earlier versions kept from author edits (getCommentEdits). */
+  edits?: number;
+  edited_at?: string | null;
 };
+/** store.CommentHistory: the current text and every earlier version, oldest first. */
+export type CommentHistory = {
+  id: number;
+  user_id: number;
+  body: string;
+  spoiler: boolean;
+  status: string;
+  created_at: string;
+  edited_at: string | null;
+  versions: {body: string; spoiler: boolean; status: string; replaced_at: string}[];
+};
+export const getCommentEdits = (id: number) => api<CommentHistory>(`admin/moderation/comments/${id}/edits`);
 export type RatingFlood = {
   release_id: number;
   release_slug: string;

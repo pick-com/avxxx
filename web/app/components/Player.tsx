@@ -3,6 +3,7 @@ import type HlsType from 'hls.js';
 import {ApiError, getPlayConfig, getPlayback, resolvePlayback, saveWatchProgress} from '../lib/api';
 import {currentPage, entryFrom, track} from '../lib/analytics';
 import {useAuth} from '../lib/auth';
+import {useSocial} from '../lib/social';
 import {useT} from '../lib/i18n';
 import {formatClock} from '../lib/format';
 import {PlayTracker, takeEndReason, takeEntryOverride} from '../lib/playAnalytics';
@@ -126,6 +127,7 @@ export function Player({slug, releaseId, title, resumeAt, startAt, onBack, theat
 }) {
   const t = useT();
   const {status} = useAuth();
+  const {refreshLater} = useSocial();
   const prefs = usePlayerPrefs();
   const prefsRef = useRef(prefs);
   prefsRef.current = prefs;
@@ -323,11 +325,18 @@ export function Player({slug, releaseId, title, resumeAt, startAt, onBack, theat
       if (position === lastSaved.current.position) return;
       lastSaved.current = {at: Date.now(), position};
       const duration = Number.isFinite(video.duration) ? video.duration : 0;
-      saveWatchProgress(slug, position, duration, keepalive).catch(() => {
-        /* progress is best effort */
-      });
+      saveWatchProgress(slug, position, duration, keepalive).then(
+        // 看完自动移出: the server dropped it from 稍后观看; refresh the
+        // release page's button (and any list) from the server.
+        r => {
+          if (r?.later_removed) refreshLater();
+        },
+        () => {
+          /* progress is best effort */
+        },
+      );
     },
-    [slug, status],
+    [slug, status, refreshLater],
   );
 
   useEffect(() => {

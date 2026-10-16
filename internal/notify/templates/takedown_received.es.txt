@@ -1,0 +1,11 @@
+{{define "subject"}}Aviso de derechos de autor recibido: {{.Ticket}}{{end}}
+{{define "text"}}Hola{{if .Name}}, {{.Name}}{{end}}:
+
+Hemos recibido tu aviso de derechos de autor. Tu número de expediente es:
+
+  {{.Ticket}}
+
+Actuamos sobre los avisos en un plazo de {{.SLAHours}} horas y te escribiremos cuando cambie su estado. También puedes consultar el estado en cualquier momento en {{.StatusURL}} con el número de expediente y esta dirección de correo.
+
+Guarda el número de expediente: es la única referencia de tu aviso. Si no enviaste este aviso, puedes ignorar este correo.
+{{end}}

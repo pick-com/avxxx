@@ -5,7 +5,7 @@ import {Avatar} from '../components/Cards';
 import {Icon} from '../components/Icon';
 import {CardGridSkeleton, ErrorBanner} from '../components/States';
 import {Switch} from '../components/Switch';
-import {listPerformerPage, listTags, type LangCode, type NotifyMode} from '../lib/api';
+import {listPerformerPage, listPerformersFiltered, listTags, type LangCode, type NotifyMode, type PerformerListItem} from '../lib/api';
 import {useAuth} from '../lib/auth';
 import {getInterests, saveInterests} from '../lib/account';
 import {usePush, type PushState} from '../lib/push';
@@ -29,9 +29,11 @@ export const meta = () => [{title: t('title.welcome')}];
 //      browser's copy; finishing marks users.onboarded_at.
 //      Until the user has watched a few releases, home / tonight recs
 //      recall and boost releases with these tags (internal/recs prefs.go).
-//      TODO(recs): use the interests to suggest performers too.
-//   3. 关注演员 → PUT /api/me/follows/{slug}; suggestions are the performers
-//      with the most works (GET /api/performers?sort=works).
+//   3. 关注演员 → PUT /api/me/follows/{slug}; suggestions are performers whose
+//      top tags (performer_stats.top_tags) include the chosen types, ranked by
+//      how many chosen types they match, then by work count
+//      (GET /api/performers?tag=&sort=works per type), topped up with the
+//      performers with the most works (GET /api/performers?sort=works).
 
 const MIN_TAGS = 3;
 const TAGS_KEY = 'interest_tags';
@@ -124,7 +126,7 @@ export default function Welcome() {
         <div className="onboard-body">
           {step === 0 && current.body}
           {step === 1 && <TagStep picked={tags} onChange={setTags} />}
-          {step === 2 && <FollowStep />}
+          {step === 2 && <FollowStep tags={tags} />}
         </div>
       </main>
       <footer className="onboard-foot">
@@ -256,12 +258,45 @@ function TagStep({picked, onChange}: {picked: string[]; onChange: (tags: string[
   );
 }
 
-function FollowStep() {
+const SUGGESTED = 12;
+const MAX_TAG_QUERIES = 6;
+
+/**
+ * Onboarding performer suggestions: performers whose top tags include the
+ * chosen interest tags, most matched tags first, then most works; filled up
+ * to SUGGESTED with the overall most prolific performers. A failed tag query
+ * only drops that tag; with no tags (or no matches) it is the work-count list.
+ */
+async function suggestPerformers(tags: string[], signal: AbortSignal): Promise<{items: PerformerListItem[]; byTags: boolean}> {
+  const picked = tags.slice(0, MAX_TAG_QUERIES);
+  const [fallback, ...perTag] = await Promise.all([
+    listPerformerPage('works', SUGGESTED, null, undefined, signal),
+    ...picked.map(tag => listPerformersFiltered('works', {tag}, SUGGESTED, null, signal).catch(() => null)),
+  ]);
+  const score = new Map<string, {p: PerformerListItem; hits: number}>();
+  for (const page of perTag) {
+    for (const p of page?.items ?? []) {
+      const hit = score.get(p.slug);
+      if (hit) hit.hits++;
+      else score.set(p.slug, {p, hits: 1});
+    }
+  }
+  const matched = [...score.values()].sort((a, b) => b.hits - a.hits || (b.p.works_count ?? 0) - (a.p.works_count ?? 0)).map(x => x.p);
+  const items = matched.slice(0, SUGGESTED);
+  for (const p of fallback.items) {
+    if (items.length >= SUGGESTED) break;
+    if (!items.some(x => x.slug === p.slug)) items.push(p);
+  }
+  return {items, byTags: matched.length > 0};
+}
+
+function FollowStep({tags}: {tags: string[]}) {
   const t = useT();
   const {followMode, setFollow, available} = useSocial();
   const [notify, setNotify] = useState(true);
   const [error, setError] = useState('');
-  const performers = useAsync(signal => listPerformerPage('works', 12, null, undefined, signal), []);
+  const tagKey = tags.join('\n');
+  const performers = useAsync(signal => suggestPerformers(tags, signal), [tagKey]);
 
   if (available.follows === 'no') return <p className="muted">{t('welcome.followSoon')}</p>;
   if (performers.error) return <ErrorBanner error={performers.error} onRetry={performers.reload} />;
@@ -277,6 +312,7 @@ function FollowStep() {
 
   return (
     <>
+      {performers.data?.byTags && <p className="muted onboard-hint">{t('welcome.followByTags')}</p>}
       <div className="onboard-performers">
         {list.map(p => {
           const on = followMode(p.slug) !== null;

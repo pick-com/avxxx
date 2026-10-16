@@ -55,14 +55,22 @@
 | 记录 | 每一步写 `review_events`（entity_type `takedown`），事件里不放联系方式 |
 | 前台 | 被投诉下架的作品 `GET /api/releases/{slug}` 返回 451（正文不含标题），视频页服务端渲染 451 页面并链接反通知表单 |
 
-邮件通知：未实现。现有通知 outbox（`notification_outbox`）按 `user_id` 投递并读取用户设置，投诉人不是用户；需要一个按邮箱投递的 outbox 和模板后再接入。
+邮件通知（迁移 048）：投诉人与反通知人不是用户，`notification_outbox` 按 `user_id`（非空、随账号删除、按用户合并、读通知设置）投递，所以另建 `mail_outbox`，不改用户通知的路径。行里只记收件角色（`claimant` / `counter`）和要告知的状态，**不存邮箱**；`cmd/notifier` 认领时才从 `takedown_requests` 读取邮箱、称呼和语言（`internal/notify/claimant.go`）。邮件与编号变更在同一事务里入队：
+
+| 时机 | 收件人 | 模板 |
+| --- | --- | --- |
+| 提交投诉 | 投诉人 | `takedown_received`：编号、24 h 时限、查询入口 |
+| 状态变为审核中 / 已下架 / 驳回 / 已恢复 / 结案 | 投诉人；已有反通知时也发给反通知人 | `takedown_status` |
+| 收到反通知 | 反通知人（回执）；投诉人（「已收到反通知」，**不转交**反通知人的联系方式和陈述，见下方 [法务]） | `takedown_counter`；`takedown_status` |
+
+模板在 `internal/notify/templates/takedown_*.<lang>.txt`，纯文本，7 种语言（zh-CN、en、ja、ko、vi、es、th；zh-TW 回落 zh-CN），按提交时的语言发送（投诉用 `takedown_requests.lang`，反通知用新增的 `counter_lang`）。链接只带编号（`/copyright?tab=lookup&ticket=…`），邮箱从不进 URL，查询时仍在表单里填写并经请求头发送。日志只记行 id、类型和收件角色。保留：邮件行随投诉编号删除（`ON DELETE CASCADE`）；联系方式只在编号行里，保存期限跟随本节和数据保留文档的 **[法务]** 决定；若日后清空编号上的邮箱，未发出的邮件会以「cancelled」结束。未配置 SMTP 时这些行保持 pending，48 h 后作废。
 
 **[法务]**
 - 指定代理人（DMCA agent）信息与登记；版权政策文本。
 - 反通知后恢复的等待期（DMCA 为 10–14 个工作日）目前由管理员手动掌握，系统不计时。
-- 投诉人与反通知人个人信息的保存期限，以及是否、何时把反通知内容（含联系方式）转交投诉方。
+- 投诉人与反通知人个人信息的保存期限，以及是否、何时把反通知内容（含联系方式）转交投诉方（目前只通知投诉方「已收到反通知」，不附内容）。
 - 24 h 下架时限是否满足适用法律；CDN 模式下图片缓存最长 24 h（见数据保留文档第 4 节）。
-- 地区限制：play-config 支持 `region` 并在授权地区外返回 `region_blocked`，但前端尚未发送地区（无 GeoIP / CDN 国家头）；地区判定来源需要决定。
+- 地区限制：play-config 在授权地区外返回 `region_blocked`。地区取 `?region=`、`CF-IPCountry` 或 `GEOIP_HEADER`（部署文档 2.5）；没有 CDN 国家头时地区功能不生效，且客户端可自报地区，所以这只是展示规则，不是访问控制。是否需要更强的地区判定待定。
 
 ## 5. 隐私要点
 

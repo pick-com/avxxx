@@ -768,6 +768,14 @@ span.dm-form {
   font-size: 12px;
 }
 
+.comment-edited {
+  font-size: 12px;
+}
+
+.comment-edit-form {
+  margin: 4px 0 8px;
+}
+
 .review-badge {
   padding: 2px 8px;
   border-radius: 99px;

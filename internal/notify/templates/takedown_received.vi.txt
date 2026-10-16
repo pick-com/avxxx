@@ -1,0 +1,11 @@
+{{define "subject"}}Đã nhận thông báo bản quyền: {{.Ticket}}{{end}}
+{{define "text"}}Xin chào{{if .Name}} {{.Name}}{{end}},
+
+Chúng tôi đã nhận thông báo bản quyền của bạn. Mã yêu cầu của bạn là:
+
+  {{.Ticket}}
+
+Chúng tôi xử lý thông báo trong vòng {{.SLAHours}} giờ và sẽ gửi email khi trạng thái thay đổi. Bạn cũng có thể kiểm tra trạng thái bất cứ lúc nào tại {{.StatusURL}} bằng mã yêu cầu và địa chỉ email này.
+
+Hãy giữ mã yêu cầu: đây là cách duy nhất để tra cứu thông báo của bạn. Nếu bạn không gửi thông báo này, hãy bỏ qua email này.
+{{end}}

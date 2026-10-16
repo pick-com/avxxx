@@ -35,7 +35,7 @@ import {discoverHref} from '../lib/releaseFilter';
 import {useAsync} from '../lib/useAsync';
 import {useCanonicalSlug} from '../lib/useCanonicalSlug';
 import {useMediaQuery} from '../lib/useMediaQuery';
-import {QUEUE_LISTS, readQueue, type Queue} from '../lib/queue';
+import {isQueueList, readQueue, type Queue} from '../lib/queue';
 import {listSeriesEpisodes} from '../lib/series';
 import {parseStartTime} from '../lib/interactions';
 import {getRecs, performerName, reasonText, recTitle, inRelatedTab, type RecItem, type RelatedTab} from '../lib/recs';
@@ -167,7 +167,8 @@ export const meta: MetaFunction<typeof loader> = ({data: d, params, matches}) =>
 //
 // 赞 / 踩 and 分享 (with ?t= start time) sit in the action row; 评论 (PRD
 // V1.1, COMMENTS_ENABLED) follow the cast, apart from 短评 in <Community>.
-// 稍后观看 toggles here; ?list=later follows the 全部播放 / 随机播放 queue.
+// 稍后观看 toggles here; ?list=later (or performer, or playlist:<id> for a
+// 收藏夹) follows the 全部播放 / 随机播放 queue.
 // 自动连播 (PRD 5.4, settings.autoplay, default on): when a video ends, the
 // next one (the queue's next, else — also after the queue's last item — the
 // first 接下来播放 work) starts after a 10 s countdown that can be cancelled;
@@ -212,7 +213,7 @@ export default function ReleasePage() {
   const startAt = parseStartTime(params.get('t'));
   // The queue lives in this browser (sessionStorage): read after hydration.
   const [queue, setQueue] = useState<ReturnType<typeof readQueue>>(null);
-  useEffect(() => setQueue(listName && (QUEUE_LISTS as readonly string[]).includes(listName) ? readQueue(listName) : null), [listName]);
+  useEffect(() => setQueue(isQueueList(listName) ? readQueue(listName) : null), [listName]);
   const queueIndex = queue ? queue.slugs.indexOf(slug) : -1;
   const nextSlug = queue && queueIndex >= 0 ? queue.slugs[queueIndex + 1] : undefined;
   const prefs = usePlayerPrefs();
@@ -712,7 +713,7 @@ function AutoplayNext({fromId, next, onGo, onCancel}: {
   );
 }
 
-/** Play queue (稍后观看 or an actor's 随机播放全部): position, 下一个, and the rest of the list. */
+/** Play queue (稍后观看, a 收藏夹, or an actor's 随机播放全部): position, 下一个, and the rest of the list. */
 function QueuePanel({queue, index}: {queue: Queue; index: number}) {
   const t = useT();
   const {slugs} = queue;
@@ -735,6 +736,11 @@ function QueuePanel({queue, index}: {queue: Queue; index: number}) {
       {isLater && (
         <Link to="/later" className="text-btn">
           {t('release.queueManage')}
+        </Link>
+      )}
+      {!isLater && queue.manage?.startsWith('/') && !queue.manage.startsWith('//') && (
+        <Link to={queue.manage} className="text-btn">
+          {t('release.queuePlaylist')}
         </Link>
       )}
     </section>

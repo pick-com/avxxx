@@ -76,6 +76,14 @@ func (s *stubLibrary) RemovePlaylistItem(_ context.Context, _ int64, id int64, _
 	s.rec("Remove")
 	return s.owned(id)
 }
+func (s *stubLibrary) ReorderPlaylist(_ context.Context, _ int64, id int64, ordered []string) error {
+	s.rec("Reorder")
+	if err := s.owned(id); err != nil {
+		return err
+	}
+	_, err := store.ReorderPositions([]string{"abc-1", "abc-2"}, ordered)
+	return err
+}
 func (s *stubLibrary) MoveWatchLaterToPlaylist(_ context.Context, _ int64, id int64, _ string) error {
 	s.rec("Move")
 	return s.owned(id)
@@ -148,6 +156,11 @@ func TestPlaylistHandlerStatus(t *testing.T) {
 		{"add to other user's", "PUT", "/api/me/playlists/7/items/abc-1", "", 404},
 		{"remove item", "DELETE", "/api/me/playlists/1/items/abc-1", "", 200},
 		{"remove from other user's", "DELETE", "/api/me/playlists/7/items/abc-1", "", 404},
+		{"reorder", "POST", "/api/me/playlists/1/reorder", `{"slugs":["abc-2","abc-1"]}`, 200},
+		{"reorder other user's", "POST", "/api/me/playlists/7/reorder", `{"slugs":["abc-1"]}`, 404},
+		{"reorder unknown slug", "POST", "/api/me/playlists/1/reorder", `{"slugs":["zzz"]}`, 400},
+		{"reorder duplicate", "POST", "/api/me/playlists/1/reorder", `{"slugs":["abc-1","abc-1"]}`, 400},
+		{"reorder empty", "POST", "/api/me/playlists/1/reorder", `{"slugs":[]}`, 400},
 		{"move later", "POST", "/api/me/watch-later/abc-1/move", `{"playlist_id":1}`, 200},
 		{"move later other user's", "POST", "/api/me/watch-later/abc-1/move", `{"playlist_id":7}`, 404},
 		{"move later no playlist", "POST", "/api/me/watch-later/abc-1/move", `{}`, 400},

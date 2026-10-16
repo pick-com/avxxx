@@ -250,6 +250,7 @@ function CounterForm({initialTicket}: {initialTicket: string}) {
   const t = useT();
   const uid = useId();
   const id = (s: string) => `${uid}-${s}`;
+  const {uiLang} = useI18n();
   const [f, setF] = useState({ticket: initialTicket, name: '', email: '', address: '', statement: '', signature: ''});
   const [consent, setConsent] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -274,6 +275,7 @@ function CounterForm({initialTicket}: {initialTicket: string}) {
           statement: f.statement.trim(),
           consent,
           signature: f.signature.trim(),
+          lang: uiLang,
         }),
       );
     } catch (cause) {

@@ -1,0 +1,13 @@
+{{define "label"}}{{if eq .Status "received"}}已收到{{else if eq .Status "reviewing"}}审核中{{else if eq .Status "actioned"}}已下架{{else if eq .Status "rejected"}}未予下架{{else if eq .Status "counter_received"}}收到反通知{{else if eq .Status "restored"}}已恢复{{else if eq .Status "closed"}}已结案{{else}}{{.Status}}{{end}}{{end}}
+{{define "explain"}}{{if eq .Status "received"}}我们已收到这份投诉。{{else if eq .Status "reviewing"}}我们正在审核这份投诉。{{else if eq .Status "actioned"}}投诉中指出的内容已下架。{{else if eq .Status "rejected"}}经审核，我们没有下架投诉中指出的内容。{{else if eq .Status "counter_received"}}内容相关方提交了反通知，认为内容是被误下架的。内容目前保持下架。如果你已就此提起诉讼，请在投诉页面引用投诉编号告知我们；否则内容可能在等待期后恢复。{{else if eq .Status "restored"}}之前下架的内容已恢复。{{else if eq .Status "closed"}}这份投诉已结案。{{else}}{{.Status}}{{end}}{{end}}
+{{define "subject"}}版权投诉 {{.Ticket}}：{{template "label" .}}{{end}}
+{{define "text"}}你好{{if .Name}}，{{.Name}}{{end}}：
+
+{{if eq .Recipient "counter"}}你提交反通知的版权投诉 {{.Ticket}} 状态有更新：{{else}}你的版权投诉 {{.Ticket}} 状态有更新：{{end}}
+
+  {{template "label" .}}
+
+{{template "explain" .}}
+
+查询进度：{{.StatusURL}}
+{{end}}

@@ -43,7 +43,6 @@
 
 | 画板 | 缺什么 | 证据 |
 |---|---|---|
-| `Onboarding` | 用所选类型推荐演员（第 3 步仍按作品数） | `web/app/routes/welcome.tsx` 的 TODO |
 | `Tonight` | 「和谁看 · 家人 / 自己」不影响推荐：目录没有能对应的字段，只映射了「朋友」和四种「想要」 | `internal/recs/prefs.go` `TonightPreferences` |
 | `AdminDashboard` | 日活按 UTC 日；未同意分析 Cookie 的访客按会话计，会偏高 | `internal/sitemetrics/sitemetrics.go` |
 

@@ -6,6 +6,7 @@ import {
   addModerationWord,
   adminErrorText,
   deleteModerationWord,
+  getCommentEdits,
   getModerationOverview,
   getModerationQueue,
   getModerationWords,
@@ -13,6 +14,7 @@ import {
   removeRatingFlood,
   resolveReport,
   unmuteUser,
+  type CommentHistory,
   type ModerationAction,
   type ModerationTarget,
   type QueueKind,
@@ -336,7 +338,10 @@ export default function AdminModeration() {
                           </div>
                         )}
                       </td>
-                      <td className="wrap">{targetPreview(r.target)}</td>
+                      <td className="wrap">
+                        {targetPreview(r.target)}
+                        {r.target_type === 'comment' && Number(r.target?.edits ?? 0) > 0 && <CommentEdits id={r.target_id} count={Number(r.target?.edits)} />}
+                      </td>
                       <td className="wrap">
                         {r.reason}
                         {r.note && <div className="adm-source-meta">{r.note}</div>}
@@ -468,6 +473,7 @@ export default function AdminModeration() {
                   <tr key={c.id}>
                     <td className="wrap adm-mod-body">
                       {c.parent_id !== null && <Pill>回复 #{c.parent_id}</Pill>} {c.spoiler && <Pill tone="amber">剧透</Pill>} {c.body}
+                      {(c.edits ?? 0) > 0 && <CommentEdits id={c.id} count={c.edits ?? 0} />}
                     </td>
                     <td>
                       <Link to={`/releases/${c.release_slug}`} target="_blank">
@@ -589,5 +595,41 @@ export default function AdminModeration() {
         </section>
       </div>
     </>
+  );
+}
+
+/** 已编辑 N 次: the author's earlier versions of a comment (#102), loaded on demand. */
+function CommentEdits({id, count}: {id: number; count: number}) {
+  const [open, setOpen] = useState(false);
+  const [history, setHistory] = useState<CommentHistory | null>(null);
+  const [error, setError] = useState('');
+  const toggle = () => {
+    setOpen(o => !o);
+    if (history || open) return;
+    getCommentEdits(id).then(setHistory, e => setError(adminErrorText(e)));
+  };
+  return (
+    <div className="adm-source-meta">
+      <button type="button" className="adm-link" aria-expanded={open} onClick={toggle}>
+        已编辑 {count} 次 · {open ? '收起历史' : '查看历史'}
+      </button>
+      {open && error && <div className="field-error">{error}</div>}
+      {open && history && (
+        <ol className="adm-comment-history">
+          {history.versions.map((v, i) => (
+            <li key={i}>
+              <span className="muted">
+                第 {i + 1} 版（{fmtTime(v.replaced_at)} 被修改{v.spoiler ? ' · 剧透' : ''}
+                {v.status !== 'visible' ? ` · ${v.status}` : ''}）：
+              </span>{' '}
+              {v.body}
+            </li>
+          ))}
+          <li>
+            <span className="muted">当前{history.edited_at ? `（${fmtTime(history.edited_at)} 编辑）` : ''}：</span> {history.body}
+          </li>
+        </ol>
+      )}
+    </div>
   );
 }

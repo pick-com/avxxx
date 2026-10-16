@@ -122,6 +122,9 @@ type QueuedComment struct {
 	Likes       int       `json:"likes"`
 	OpenReports int       `json:"open_reports"`
 	CreatedAt   time.Time `json:"created_at"`
+	// Edits counts earlier versions (GET /api/admin/moderation/comments/{id}/edits).
+	Edits    int        `json:"edits"`
+	EditedAt *time.Time `json:"edited_at"`
 }
 
 // QueuedReview is a review in the moderation queue.
@@ -262,7 +265,7 @@ func (s *Store) ModerationQueue(ctx context.Context, f QueueFilter) (any, string
 		}
 		rows, err := s.Query(ctx, `SELECT c.id,c.release_id,r.slug,c.parent_id,c.user_id,c.body,c.spoiler,c.status,c.likes,
 				(SELECT count(*) FROM reports p WHERE p.target_type='comment' AND p.target_id=c.id AND p.status='open'),
-				c.created_at
+				c.created_at,(SELECT count(*) FROM comment_edits e WHERE e.comment_id=c.id)::int,c.edited_at
 			FROM comments c JOIN releases r ON r.id=c.release_id WHERE c.status=$1
 			ORDER BY c.created_at, c.id LIMIT $2 OFFSET $3`, status, limit+1, offset)
 		if err != nil {
@@ -270,7 +273,8 @@ func (s *Store) ModerationQueue(ctx context.Context, f QueueFilter) (any, string
 		}
 		items, err := pgx.CollectRows(rows, func(r pgx.CollectableRow) (QueuedComment, error) {
 			var x QueuedComment
-			return x, r.Scan(&x.ID, &x.ReleaseID, &x.ReleaseSlug, &x.ParentID, &x.UserID, &x.Body, &x.Spoiler, &x.Status, &x.Likes, &x.OpenReports, &x.CreatedAt)
+			return x, r.Scan(&x.ID, &x.ReleaseID, &x.ReleaseSlug, &x.ParentID, &x.UserID, &x.Body, &x.Spoiler, &x.Status, &x.Likes, &x.OpenReports, &x.CreatedAt,
+				&x.Edits, &x.EditedAt)
 		})
 		if err != nil {
 			return nil, "", err
@@ -328,7 +332,8 @@ func (s *Store) reportTarget(ctx context.Context, targetType string, id int64) a
 		q = `SELECT json_build_object('body',v.body,'status',v.status,'user_id',v.user_id,'spoiler',v.spoiler,'release_slug',r.slug)
 			FROM reviews v JOIN releases r ON r.id=v.release_id WHERE v.id=$1`
 	case "comment":
-		q = `SELECT json_build_object('body',c.body,'status',c.status,'user_id',c.user_id,'spoiler',c.spoiler,'parent_id',c.parent_id,'release_slug',r.slug)
+		q = `SELECT json_build_object('body',c.body,'status',c.status,'user_id',c.user_id,'spoiler',c.spoiler,'parent_id',c.parent_id,'release_slug',r.slug,
+				'edited_at',c.edited_at,'edits',(SELECT count(*) FROM comment_edits e WHERE e.comment_id=c.id))
 			FROM comments c JOIN releases r ON r.id=c.release_id WHERE c.id=$1`
 	case "rating":
 		q = `SELECT json_build_object('score',a.score,'status',a.status,'weight',a.weight,'release_slug',r.slug)

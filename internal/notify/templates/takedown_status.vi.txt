@@ -1,0 +1,13 @@
+{{define "label"}}{{if eq .Status "received"}}Đã nhận{{else if eq .Status "reviewing"}}Đang xem xét{{else if eq .Status "actioned"}}Đã gỡ xuống{{else if eq .Status "rejected"}}Không gỡ xuống{{else if eq .Status "counter_received"}}Đã nhận phản thông báo{{else if eq .Status "restored"}}Đã khôi phục{{else if eq .Status "closed"}}Đã đóng{{else}}{{.Status}}{{end}}{{end}}
+{{define "explain"}}{{if eq .Status "received"}}Chúng tôi đã nhận thông báo.{{else if eq .Status "reviewing"}}Chúng tôi đang xem xét thông báo.{{else if eq .Status "actioned"}}Nội dung được nêu trong thông báo đã bị gỡ xuống.{{else if eq .Status "rejected"}}Sau khi xem xét, chúng tôi không gỡ nội dung được nêu trong thông báo.{{else if eq .Status "counter_received"}}Đã có phản thông báo cho rằng nội dung bị gỡ do nhầm lẫn. Hiện nội dung vẫn bị gỡ. Nếu bạn đã khởi kiện về việc này, hãy báo cho chúng tôi qua trang bản quyền kèm mã yêu cầu; nếu không, nội dung có thể được khôi phục sau thời gian chờ.{{else if eq .Status "restored"}}Nội dung đã bị gỡ trước đó đã được khôi phục.{{else if eq .Status "closed"}}Yêu cầu đã được đóng.{{else}}{{.Status}}{{end}}{{end}}
+{{define "subject"}}Thông báo bản quyền {{.Ticket}}: {{template "label" .}}{{end}}
+{{define "text"}}Xin chào{{if .Name}} {{.Name}}{{end}},
+
+{{if eq .Recipient "counter"}}Thông báo bản quyền {{.Ticket}} mà bạn đã gửi phản thông báo có trạng thái mới:{{else}}Thông báo bản quyền {{.Ticket}} của bạn có trạng thái mới:{{end}}
+
+  {{template "label" .}}
+
+{{template "explain" .}}
+
+Kiểm tra trạng thái: {{.StatusURL}}
+{{end}}

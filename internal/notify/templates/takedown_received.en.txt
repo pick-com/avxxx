@@ -1,0 +1,11 @@
+{{define "subject"}}Copyright notice received: {{.Ticket}}{{end}}
+{{define "text"}}Hello{{if .Name}} {{.Name}}{{end}},
+
+We received your copyright notice. Your ticket number is:
+
+  {{.Ticket}}
+
+We act on notices within {{.SLAHours}} hours and will email you when its status changes. You can also check the status at any time on {{.StatusURL}} with the ticket number and this email address.
+
+Keep the ticket number: it is the only reference to your notice. If you did not file this notice, you can ignore this email.
+{{end}}

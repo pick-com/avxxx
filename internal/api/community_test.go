@@ -136,6 +136,12 @@ func (s *stubModeration) AddModerationWord(_ context.Context, w, c, _ string) (c
 }
 func (s *stubModeration) DeleteModerationWord(context.Context, string, string) error { return nil }
 func (s *stubModeration) Unmute(context.Context, int64, string, string) error        { return nil }
+func (s *stubModeration) CommentEdits(_ context.Context, id int64) (store.CommentHistory, error) {
+	if id != 5 {
+		return store.CommentHistory{}, pgx.ErrNoRows
+	}
+	return store.CommentHistory{ID: 5, Body: "now", Versions: []store.CommentVersion{{Body: "before"}}}, nil
+}
 
 func newCommunityServer(c *stubCommunity, m *stubModeration, lim community.Limiter) http.Handler {
 	srv := &Server{accounts: &stubAccounts{}, community: c, moderation: m, limiter: lim, adminToken: "admintok", adminAuth: newFakeAdmins()}
@@ -488,5 +494,20 @@ func TestPlayConfigCurve(t *testing.T) {
 	_, body = doPlayConfig(t, st, "/api/releases/juq-743/play-config", "")
 	if v, present := body["danmaku_curve"]; !present || v != nil {
 		t.Errorf("no curve must be null, got %v", v)
+	}
+}
+
+func TestAdminCommentEdits(t *testing.T) {
+	h := newCommunityServer(&stubCommunity{poster: oldPoster}, &stubModeration{}, nil)
+	admin := map[string]string{"Authorization": "Bearer admintok"}
+	rec := doH(h, "GET", "/api/admin/moderation/comments/5/edits", "", admin)
+	if rec.Code != 200 || !strings.Contains(rec.Body.String(), `"before"`) {
+		t.Errorf("edits: %d %s", rec.Code, rec.Body)
+	}
+	if rec := doH(h, "GET", "/api/admin/moderation/comments/6/edits", "", admin); rec.Code != 404 {
+		t.Errorf("missing comment: %d", rec.Code)
+	}
+	if rec := doH(h, "GET", "/api/admin/moderation/comments/5/edits", "", map[string]string{"Authorization": "Bearer good"}); rec.Code == 200 {
+		t.Error("a user token must not read the edit history")
 	}
 }

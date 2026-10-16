@@ -1,6 +1,6 @@
 import {useEffect, useState} from 'react';
 import {Link, useLocation} from '../lib/nav';
-import {isAbort} from '../lib/api';
+import {ApiError, isAbort} from '../lib/api';
 import {track} from '../lib/analytics';
 import {useAuth} from '../lib/auth';
 import {postErrorMessage, type ReportReason} from '../lib/community';
@@ -10,6 +10,7 @@ import {
   COMMENT_MAX,
   commentsDisabled,
   deleteComment,
+  editComment,
   getComments,
   getReplies,
   likeComment,
@@ -30,8 +31,10 @@ import {ErrorBanner} from './States';
 // number per person, up to 500 characters, threaded one level deep (a reply
 // to a reply joins the thread), sorted 最热 / 最新, liked once per person,
 // 含剧透 folded like short reviews, reported into the same moderation queue.
-// The author can delete their own; a deleted comment that has replies stays
-// as 「该评论已删除」. Keyword hits are shown only to their author (待审核).
+// The author can delete their own, and edit it within 10 minutes of posting
+// (「已编辑」 marker; the edit goes through the keyword check again and
+// moderators keep the earlier versions); a deleted comment that has replies
+// stays as 「该评论已删除」. Keyword hits are shown only to their author (待审核).
 // The whole section hides itself when the backend has comments turned off.
 
 const PAGE = 20;
@@ -149,6 +152,7 @@ function CommentItem({comment, onChange, onRemove, onReply}: {
   const [reported, setReported] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
+  const [editing, setEditing] = useState(false);
 
   if (comment.deleted) {
     return <p className="muted comment-deleted">{t('comment.deleted')}</p>;
@@ -191,14 +195,30 @@ function CommentItem({comment, onChange, onRemove, onReply}: {
     setReporting(false);
   };
 
+  const canEdit = comment.mine && !!comment.editable_until && Date.parse(comment.editable_until) > Date.now();
+
   return (
     <>
       <div className="review-head">
         <strong className="review-author">{comment.author?.display_name || t('review.anonymous')}</strong>
         {comment.pending && <span className="review-badge">{t('comment.pending')}</span>}
         <span className="muted review-date">{formatDate(comment.created_at)}</span>
+        {comment.edited_at && (
+          <span className="muted comment-edited" title={t('comment.editedAt', {date: formatDate(comment.edited_at)})}>
+            {t('comment.edited')}
+          </span>
+        )}
       </div>
-      {comment.spoiler && !open ? (
+      {editing ? (
+        <CommentEditor
+          comment={comment}
+          onSaved={c => {
+            onChange({...comment, ...c, replies: comment.replies, mine: true});
+            setEditing(false);
+          }}
+          onCancel={() => setEditing(false)}
+        />
+      ) : comment.spoiler && !open ? (
         <button type="button" className="review-spoiler" aria-expanded={false} onClick={() => setOpen(true)}>
           {t('review.spoilerFolded')}
         </button>
@@ -239,9 +259,16 @@ function CommentItem({comment, onChange, onRemove, onReply}: {
           ))}
         <span className="section-spacer" />
         {comment.mine ? (
-          <button type="button" className="text-btn" disabled={busy} onClick={() => void remove()}>
-            {t('review.delete')}
-          </button>
+          <>
+            {canEdit && !editing && (
+              <button type="button" className="text-btn" disabled={busy} onClick={() => setEditing(true)}>
+                {t('comment.edit')}
+              </button>
+            )}
+            <button type="button" className="text-btn" disabled={busy} onClick={() => void remove()}>
+              {t('review.delete')}
+            </button>
+          </>
         ) : (
           !reported &&
           !comment.pending && (
@@ -270,6 +297,79 @@ function CommentItem({comment, onChange, onRemove, onReply}: {
           </p>
         ))}
     </>
+  );
+}
+
+/** The author's edit box (within the 10-minute window). */
+function CommentEditor({comment, onSaved, onCancel}: {comment: Comment; onSaved: (c: Comment) => void; onCancel: () => void}) {
+  const t = useT();
+  const [body, setBody] = useState(comment.body);
+  const [spoiler, setSpoiler] = useState(comment.spoiler);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  const length = runeLength(body.trim());
+  const over = length > COMMENT_MAX;
+  const inputId = `comment-edit-${comment.id}`;
+
+  const save = async () => {
+    const text = body.trim();
+    if (!text || over || busy) return;
+    setBusy(true);
+    setError('');
+    try {
+      onSaved(await editComment(comment.id, text, spoiler));
+    } catch (cause) {
+      setError(cause instanceof ApiError && cause.status === 409 ? t('comment.editClosed') : postErrorMessage(cause));
+      setBusy(false);
+    }
+  };
+
+  return (
+    <form
+      className="review-composer comment-edit-form"
+      onSubmit={event => {
+        event.preventDefault();
+        void save();
+      }}
+    >
+      <label className="sr-only" htmlFor={inputId}>
+        {t('comment.editLabel')}
+      </label>
+      <textarea
+        id={inputId}
+        className="review-input"
+        rows={3}
+        value={body}
+        autoFocus
+        aria-invalid={over || !!error || undefined}
+        aria-describedby={`${inputId}-count`}
+        onChange={e => {
+          setBody(e.target.value);
+          if (error) setError('');
+        }}
+      />
+      <div className="review-composer-foot">
+        <label className="review-check">
+          <input type="checkbox" checked={spoiler} onChange={e => setSpoiler(e.target.checked)} />
+          <span>{t('review.markSpoiler')}</span>
+        </label>
+        <span className="section-spacer" />
+        <span id={`${inputId}-count`} className={over ? 'dm-count dm-count-over' : 'dm-count'} aria-live="polite">
+          {length}/{COMMENT_MAX}
+        </span>
+        <button type="button" className="text-btn" onClick={onCancel}>
+          {t('report.cancel')}
+        </button>
+        <button type="submit" className="btn btn-primary btn-sm" disabled={busy || length === 0 || over}>
+          {t('comment.save')}
+        </button>
+      </div>
+      {(error || over) && (
+        <p className="field-error" role="alert">
+          {over ? t('comment.tooLong', {n: COMMENT_MAX}) : error}
+        </p>
+      )}
+    </form>
   );
 }
 

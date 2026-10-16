@@ -1,0 +1,13 @@
+{{define "label"}}{{if eq .Status "received"}}접수됨{{else if eq .Status "reviewing"}}검토 중{{else if eq .Status "actioned"}}게시 중단됨{{else if eq .Status "rejected"}}게시 중단 안 함{{else if eq .Status "counter_received"}}이의 신청 접수됨{{else if eq .Status "restored"}}복원됨{{else if eq .Status "closed"}}종료됨{{else}}{{.Status}}{{end}}{{end}}
+{{define "explain"}}{{if eq .Status "received"}}신고가 접수되었습니다.{{else if eq .Status "reviewing"}}신고를 검토하고 있습니다.{{else if eq .Status "actioned"}}신고에서 지목한 콘텐츠의 게시를 중단했습니다.{{else if eq .Status "rejected"}}검토 결과, 신고에서 지목한 콘텐츠의 게시를 중단하지 않았습니다.{{else if eq .Status "counter_received"}}콘텐츠가 잘못 삭제되었다는 이의 신청이 제출되었습니다. 콘텐츠는 당분간 게시 중단 상태로 유지됩니다. 이 건으로 소송을 제기하셨다면 접수 번호와 함께 저작권 페이지를 통해 알려 주세요. 그렇지 않으면 대기 기간 후 콘텐츠가 복원될 수 있습니다.{{else if eq .Status "restored"}}게시 중단되었던 콘텐츠가 복원되었습니다.{{else if eq .Status "closed"}}신고 처리가 종료되었습니다.{{else}}{{.Status}}{{end}}{{end}}
+{{define "subject"}}저작권 신고 {{.Ticket}}: {{template "label" .}}{{end}}
+{{define "text"}}{{if .Name}}{{.Name}}님, {{end}}안녕하세요.
+
+{{if eq .Recipient "counter"}}이의 신청을 제출하신 저작권 신고 {{.Ticket}}의 상태가 변경되었습니다.{{else}}저작권 신고 {{.Ticket}}의 상태가 변경되었습니다.{{end}}
+
+  {{template "label" .}}
+
+{{template "explain" .}}
+
+진행 상황 확인: {{.StatusURL}}
+{{end}}

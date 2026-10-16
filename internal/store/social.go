@@ -690,6 +690,11 @@ func (s *Store) Reservations(ctx context.Context, userID int64) ([]map[string]an
 // first, then every other current entry in its current order. ordered must
 // not repeat a slug or name one that is not in current (ErrInvalidOrder).
 func ReorderPositions(current, ordered []string) ([]string, error) {
+	return reorderPositionsIn(current, ordered, "watch later")
+}
+
+// reorderPositionsIn is ReorderPositions with the list's name for errors.
+func reorderPositionsIn(current, ordered []string, list string) ([]string, error) {
 	inCurrent := make(map[string]bool, len(current))
 	for _, s := range current {
 		inCurrent[s] = true
@@ -698,7 +703,7 @@ func ReorderPositions(current, ordered []string) ([]string, error) {
 	out := make([]string, 0, len(current))
 	for _, s := range ordered {
 		if !inCurrent[s] {
-			return nil, fmt.Errorf("%w: %q is not in watch later", ErrInvalidOrder, s)
+			return nil, fmt.Errorf("%w: %q is not in %s", ErrInvalidOrder, s, list)
 		}
 		if seen[s] {
 			return nil, fmt.Errorf("%w: %q listed twice", ErrInvalidOrder, s)

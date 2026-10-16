@@ -15,6 +15,7 @@ import (
 
 // stubInteractions is an in-memory interactionStore.
 type stubInteractions struct {
+	edits    []store.CommentEdit
 	votes    []int
 	voters   []community.Voter
 	keys     []string // voter keys passed to ReactionSummary
@@ -52,6 +53,19 @@ func (s *stubInteractions) CreateComment(_ context.Context, n store.NewComment) 
 	}
 	s.comments = append(s.comments, n)
 	return store.Comment{ID: 9, Body: n.Body, Mine: true, Pending: n.Status == community.StatusShadow}, nil
+}
+func (s *stubInteractions) EditComment(_ context.Context, id, _ int64, e store.CommentEdit) (store.Comment, error) {
+	switch id {
+	case 403:
+		return store.Comment{}, store.ErrNotOwner
+	case 404:
+		return store.Comment{}, pgx.ErrNoRows
+	case 409:
+		return store.Comment{}, store.ErrEditWindow
+	}
+	s.edits = append(s.edits, e)
+	now := time.Now()
+	return store.Comment{ID: id, Body: e.Body, Mine: true, Pending: e.KeywordHit, EditedAt: &now}, nil
 }
 func (s *stubInteractions) DeleteComment(_ context.Context, id, _ int64) error {
 	switch id {
@@ -279,5 +293,41 @@ func TestCommentModerationRoute(t *testing.T) {
 	}
 	if rec := doH(mux, "GET", "/api/admin/moderation/queue?kind=comments", "", admin); rec.Code != 200 {
 		t.Errorf("comments queue: %d %s", rec.Code, rec.Body)
+	}
+}
+
+func TestEditCommentRoute(t *testing.T) {
+	i := &stubInteractions{}
+	c := &stubCommunity{poster: oldPoster, words: []community.Keyword{{Word: "加微信", Category: "ad"}}}
+	h := newInteractionServer(i, c, false)
+	auth := map[string]string{"Authorization": "Bearer good"}
+	if rec := doH(h, "PATCH", "/api/comments/5", `{"body":"fixed"}`, nil); rec.Code != 401 {
+		t.Errorf("anonymous edit: %d", rec.Code)
+	}
+	for _, tc := range []struct {
+		path, body string
+		want       int
+	}{
+		{"/api/comments/5", `{}`, 400},
+		{"/api/comments/5", `{"body":""}`, 400},
+		{"/api/comments/5", `{"body":"x","extra":1}`, 400},
+		{"/api/comments/x", `{"body":"x"}`, 400},
+		{"/api/comments/403", `{"body":"x"}`, 403},
+		{"/api/comments/404", `{"body":"x"}`, 404},
+		{"/api/comments/409", `{"body":"x"}`, 409},
+		{"/api/comments/5", `{"body":"fixed typo","spoiler":true}`, 200},
+		{"/api/comments/5", `{"body":"快来 加 微 信"}`, 200},
+	} {
+		if rec := doH(h, "PATCH", tc.path, tc.body, auth); rec.Code != tc.want {
+			t.Errorf("PATCH %s %s: %d, want %d (%s)", tc.path, tc.body, rec.Code, tc.want, rec.Body)
+		}
+	}
+	if len(i.edits) != 2 || i.edits[0].KeywordHit || i.edits[0].Spoiler == nil || !*i.edits[0].Spoiler || !i.edits[1].KeywordHit {
+		t.Errorf("edits %+v (the blocked-word filter must run on edit)", i.edits)
+	}
+	// Comments switched off: 404 like every public comment route.
+	off := newInteractionServer(&stubInteractions{}, c, true)
+	if rec := doH(off, "PATCH", "/api/comments/5", `{"body":"x"}`, auth); rec.Code != 404 {
+		t.Errorf("comments off: %d", rec.Code)
 	}
 }

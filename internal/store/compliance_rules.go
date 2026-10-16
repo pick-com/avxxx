@@ -518,6 +518,8 @@ type CounterNoticeInput struct {
 	Statement string `json:"statement"`
 	Consent   bool   `json:"consent"`
 	Signature string `json:"signature"`
+	// Lang is the form's language (the counter-notifier's mails use it).
+	Lang string `json:"lang"`
 }
 
 // Normalize validates a counter-notice: a statement that the material was
@@ -526,6 +528,7 @@ func (in *CounterNoticeInput) Normalize() error {
 	for _, p := range []*string{&in.Name, &in.Address, &in.Statement, &in.Signature} {
 		*p = strings.TrimSpace(*p)
 	}
+	in.Lang = i18n.Normalize(in.Lang)
 	var err error
 	if in.Email, err = requiredEmail(in.Email); err != nil {
 		return err

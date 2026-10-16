@@ -8,6 +8,8 @@
 //   tags        GET /api/sitemap/tags        tags of published releases (/discover?tag=)
 //   series      GET /api/series?sort=name    series with a published release (/series/{slug});
 //               lastmod is the series' latest release date
+//   playlists   GET /api/sitemap/playlists  public 收藏夹 with a published release (/playlists/{share_token});
+//               never link-only or private ones
 //   pages       static: home, discover, categories, actors, series list, legal documents
 // A backend without the sitemap routes (404) falls back to the public lists
 // (GET /api/releases, /api/performers, /api/tags) so the files still exist.
@@ -20,8 +22,8 @@ import {serverApi} from './api.server';
 import {DEFAULT_LANG, LANGS, localizePath} from './langs';
 import {LEGAL_DOCS} from './legal';
 
-export type SitemapType = 'pages' | 'releases' | 'performers' | 'tags' | 'series';
-export const SITEMAP_TYPES: SitemapType[] = ['pages', 'releases', 'performers', 'tags', 'series'];
+export type SitemapType = 'pages' | 'releases' | 'performers' | 'tags' | 'series' | 'playlists';
+export const SITEMAP_TYPES: SitemapType[] = ['pages', 'releases', 'performers', 'tags', 'series', 'playlists'];
 
 export type Entry = {path: string; lastmod?: string};
 
@@ -99,6 +101,15 @@ async function load(type: SitemapType, signal?: AbortSignal): Promise<Entry[]> {
         return rows.map(r => ({path: `/series/${encodeURIComponent(r.slug)}`, lastmod: day(r.latest_release_date)}));
       } catch (e) {
         // A backend without the series routes has no series pages either.
+        if (missingRoute(e)) return [];
+        throw e;
+      }
+    case 'playlists':
+      try {
+        const rows = await walk<SitemapRow>(c => `sitemap/playlists?limit=5000${q(c)}`, signal);
+        return rows.map(r => ({path: `/playlists/${encodeURIComponent(r.slug)}`, lastmod: day(r.updated_at)}));
+      } catch (e) {
+        // No fallback: only this route knows which playlists are public.
         if (missingRoute(e)) return [];
         throw e;
       }

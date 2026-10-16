@@ -7,6 +7,7 @@ package api
 //	GET /api/sitemap/releases?cursor=&limit=    published, playable releases
 //	GET /api/sitemap/performers?cursor=&limit=  active performers with a published release
 //	GET /api/sitemap/tags?cursor=&limit=        tags of published releases
+//	GET /api/sitemap/playlists?cursor=&limit=   public playlists (slug = share_token; never link-only)
 //	GET /api/sitemap/counts                     list sizes, for coverage checks
 //
 // Each list answers {"items":[{"slug","updated_at"}],"next_cursor"} with up
@@ -42,6 +43,7 @@ type sitemapStore interface {
 	SitemapReleases(ctx context.Context, cursor string, limit int) ([]store.SitemapEntry, string, error)
 	SitemapPerformers(ctx context.Context, cursor string, limit int) ([]store.SitemapEntry, string, error)
 	SitemapTags(ctx context.Context, cursor string, limit int) ([]store.SitemapEntry, string, error)
+	SitemapPlaylists(ctx context.Context, cursor string, limit int) ([]store.SitemapEntry, string, error)
 	SitemapCounts(ctx context.Context) (store.SitemapCounts, error)
 	RecordRun(ctx context.Context, r audit.Run) error
 	LatestRun(ctx context.Context, job string) (audit.Run, bool, error)
@@ -52,6 +54,7 @@ func (srv *Server) sitemapRoutes() []route {
 		{"GET /api/sitemap/releases", srv.sitemapList(func(s sitemapStore) sitemapLister { return s.SitemapReleases })},
 		{"GET /api/sitemap/performers", srv.sitemapList(func(s sitemapStore) sitemapLister { return s.SitemapPerformers })},
 		{"GET /api/sitemap/tags", srv.sitemapList(func(s sitemapStore) sitemapLister { return s.SitemapTags })},
+		{"GET /api/sitemap/playlists", srv.sitemapList(func(s sitemapStore) sitemapLister { return s.SitemapPlaylists })},
 		{"GET /api/sitemap/counts", srv.sitemapCounts},
 		{"POST /api/admin/seo/report", srv.admin(srv.recordSEOReport)},
 		{"GET /api/admin/seo/report", srv.admin(srv.latestSEOReport)},

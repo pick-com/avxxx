@@ -7,7 +7,8 @@ package store
 // to unpublished through the release status machine, an image is suppressed
 // like POST /api/admin/media/{id}/suppress (objects purged after 24 h).
 // Every change writes review_events (entity_type 'takedown'), next to the
-// release / media events the reused paths write.
+// release / media events the reused paths write, and queues the claimant /
+// counter-notifier mail in the same transaction (mail_outbox.go).
 
 import (
 	"avxxx/internal/images"
@@ -137,14 +138,28 @@ func (s *Store) CreateTakedown(ctx context.Context, in TakedownInput, now time.T
 			return TakedownReceipt{}, err
 		}
 		out := TakedownReceipt{Ticket: ticket}
-		err = s.QueryRow(ctx, `INSERT INTO takedown_requests(ticket,claimant_name,claimant_email,claimant_phone,claimant_address,rights_owner,relationship,
+		tx, err := s.Begin(ctx)
+		if err != nil {
+			return TakedownReceipt{}, err
+		}
+		var id int64
+		err = tx.QueryRow(ctx, `INSERT INTO takedown_requests(ticket,claimant_name,claimant_email,claimant_phone,claimant_address,rights_owner,relationship,
 			work_description,original_urls,infringing_urls,good_faith,accuracy,signature,lang,due_at)
-			VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,NULLIF($14,''),$15) ON CONFLICT (ticket) DO NOTHING RETURNING status,due_at,created_at`,
+			VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,NULLIF($14,''),$15) ON CONFLICT (ticket) DO NOTHING RETURNING id,status,due_at,created_at`,
 			ticket, in.ClaimantName, in.ClaimantEmail, in.ClaimantPhone, in.ClaimantAddress, in.RightsOwner, in.Relationship, in.WorkDescription,
-			in.OriginalURLs, in.InfringingURLs, in.GoodFaith, in.Accuracy, in.Signature, in.Lang, now.Add(TakedownSLA)).Scan(&out.Status, &out.DueAt, &out.CreatedAt)
+			in.OriginalURLs, in.InfringingURLs, in.GoodFaith, in.Accuracy, in.Signature, in.Lang, now.Add(TakedownSLA)).Scan(&id, &out.Status, &out.DueAt, &out.CreatedAt)
 		if errors.Is(err, pgx.ErrNoRows) {
+			tx.Rollback(ctx)
 			continue // 80-bit collision: draw again
 		}
+		// The receipt mail (ticket number) goes out with the notice.
+		if err == nil {
+			err = enqueueTakedownMail(ctx, tx, id, RecipientClaimant, MailTakedownReceived, out.Status)
+		}
+		if err == nil {
+			err = tx.Commit(ctx)
+		}
+		tx.Rollback(ctx)
 		return out, err
 	}
 	return TakedownReceipt{}, errors.New("could not allocate a ticket number")
@@ -193,9 +208,18 @@ func (s *Store) SubmitCounterNotice(ctx context.Context, ticket string, in Count
 		return out, conflict("a counter-notice can only be filed on a ticket whose content was taken down")
 	}
 	if err = tx.QueryRow(ctx, `UPDATE takedown_requests SET status='counter_received',counter_name=$2,counter_email=$3,counter_address=$4,
-		counter_statement=$5,counter_consent=$6,counter_signature=$7,counter_received_at=now(),updated_at=now()
-		WHERE id=$1 RETURNING ticket,status,created_at,updated_at`, id, in.Name, in.Email, in.Address, in.Statement, in.Consent, in.Signature).
+		counter_statement=$5,counter_consent=$6,counter_signature=$7,counter_lang=NULLIF($8,''),counter_received_at=now(),updated_at=now()
+		WHERE id=$1 RETURNING ticket,status,created_at,updated_at`, id, in.Name, in.Email, in.Address, in.Statement, in.Consent, in.Signature, in.Lang).
 		Scan(&out.Ticket, &out.Status, &out.ReceivedAt, &out.UpdatedAt); err != nil {
+		return out, err
+	}
+	// Receipt to the counter-notifier; the claimant hears that a
+	// counter-notice was filed (its contact details are not forwarded, see
+	// docs/COMPLIANCE.md 4 [法务]).
+	if err = enqueueTakedownMail(ctx, tx, id, RecipientCounter, MailTakedownCounter, TakedownCounter); err != nil {
+		return out, err
+	}
+	if err = enqueueTakedownStatusMail(ctx, tx, id, TakedownCounter); err != nil {
 		return out, err
 	}
 	// Contact details stay in the ticket row, not in the event.
@@ -307,6 +331,11 @@ func (s *Store) SetTakedownStatus(ctx context.Context, id int64, to, note, actor
 	if err = writeReviewEvent(ctx, tx, "takedown", id, "takedown_status", map[string]any{"status": from}, map[string]any{"status": to}, note, actor); err != nil {
 		return Takedown{}, err
 	}
+	if from != to {
+		if err = enqueueTakedownStatusMail(ctx, tx, id, to); err != nil {
+			return Takedown{}, err
+		}
+	}
 	if err = tx.Commit(ctx); err != nil {
 		return Takedown{}, err
 	}
@@ -404,6 +433,11 @@ func (s *Store) TakedownAction(ctx context.Context, id int64, in TakedownActionI
 	if err = writeReviewEvent(ctx, tx, "takedown", id, "takedown_"+action, map[string]any{"status": from}, after, in.Reason, actor); err != nil {
 		return Takedown{}, err
 	}
+	if from != TakedownActioned {
+		if err = enqueueTakedownStatusMail(ctx, tx, id, TakedownActioned); err != nil {
+			return Takedown{}, err
+		}
+	}
 	if err = tx.Commit(ctx); err != nil {
 		return Takedown{}, err
 	}
@@ -465,6 +499,9 @@ func (s *Store) RestoreTakedown(ctx context.Context, id int64, reason, actor str
 	}
 	if err = writeReviewEvent(ctx, tx, "takedown", id, "takedown_restore", map[string]any{"status": from},
 		map[string]any{"status": TakedownRestored, "targets": restored}, reason, actor); err != nil {
+		return Takedown{}, err
+	}
+	if err = enqueueTakedownStatusMail(ctx, tx, id, TakedownRestored); err != nil {
 		return Takedown{}, err
 	}
 	if err = tx.Commit(ctx); err != nil {

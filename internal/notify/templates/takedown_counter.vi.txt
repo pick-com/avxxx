@@ -1,0 +1,5 @@
+{{define "subject"}}Đã nhận phản thông báo: {{.Ticket}}{{end}}
+{{define "text"}}Xin chào{{if .Name}} {{.Name}}{{end}},
+
+Chúng tôi đã nhận phản thông báo của bạn cho mã yêu cầu {{.Ticket}}. Chúng tôi sẽ thông báo cho bên khiếu nại rằng có phản thông báo và gửi email cho bạn khi trạng thái thay đổi. Bạn cũng có thể kiểm tra trạng thái tại {{.StatusURL}} bằng mã yêu cầu và địa chỉ email này.
+{{end}}

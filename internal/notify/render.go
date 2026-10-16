@@ -162,14 +162,21 @@ func NewRenderer(baseURL string) (*Renderer, error) {
 		if err != nil {
 			return nil, err
 		}
-		for _, part := range []string{"subject", "push_title", "push_body", "text"} {
+		kind, _, _ := strings.Cut(key, ".")
+		parts := []string{"subject", "push_title", "push_body", "text"}
+		if mailOnlyKinds[kind] {
+			parts = []string{"subject", "text"}
+		}
+		for _, part := range parts {
 			if t.Lookup(part) == nil {
 				return nil, fmt.Errorf("template %s: missing %q", n, part)
 			}
 		}
-		h, err := htmltemplate.ParseFS(templateFS, "templates/"+key+".html")
-		if err != nil {
-			return nil, err
+		var h *htmltemplate.Template
+		if !mailOnlyKinds[kind] { // mail-only kinds are plain text
+			if h, err = htmltemplate.ParseFS(templateFS, "templates/"+key+".html"); err != nil {
+				return nil, err
+			}
 		}
 		r.tmpl[key] = langTemplates{text: t, html: h}
 	}

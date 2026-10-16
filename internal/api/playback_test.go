@@ -7,6 +7,7 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/jackc/pgx/v5"
@@ -205,5 +206,45 @@ func TestPlayConfigPreferredProvider(t *testing.T) {
 	}
 	if id := first("Bearer bad"); id != 12.0 {
 		t.Errorf("invalid token first %v", id)
+	}
+}
+
+func TestPlayConfigRegionFromHeaders(t *testing.T) {
+	defer setGeoIPHeader("")
+	do := func(header, value string) []any {
+		t.Helper()
+		mux := http.NewServeMux()
+		ps := newStub()
+		mux.HandleFunc("GET /api/releases/{slug}/play-config", func(w http.ResponseWriter, r *http.Request) { servePlayConfig(w, r, ps) })
+		req := httptest.NewRequest("GET", "/api/releases/juq-743/play-config", nil)
+		if header != "" {
+			req.Header.Set(header, value)
+		}
+		rec := httptest.NewRecorder()
+		mux.ServeHTTP(rec, req)
+		if !strings.Contains(strings.Join(rec.Header().Values("Vary"), ","), "CF-IPCountry") {
+			t.Errorf("Vary %v lacks CF-IPCountry", rec.Header().Values("Vary"))
+		}
+		var body map[string]any
+		_ = json.Unmarshal(rec.Body.Bytes(), &body)
+		return body["sources"].([]any)
+	}
+	if n := len(do("CF-IPCountry", "jp")); n != 3 {
+		t.Errorf("CF-IPCountry JP: %d sources, want 3", n)
+	}
+	for _, v := range []string{"XX", "T1", "garbage"} {
+		if n := len(do("CF-IPCountry", v)); n != 2 {
+			t.Errorf("CF-IPCountry %s: %d sources, want 2 (unknown region)", v, n)
+		}
+	}
+	if n := len(do("X-Country-Code", "JP")); n != 2 {
+		t.Errorf("unconfigured header used: %d sources", n)
+	}
+	setGeoIPHeader("x-country-code")
+	if n := len(do("X-Country-Code", "JP")); n != 3 {
+		t.Errorf("GEOIP_HEADER JP: %d sources, want 3", n)
+	}
+	if n := len(do("", "")); n != 2 {
+		t.Errorf("no header: %d sources, want 2", n)
 	}
 }

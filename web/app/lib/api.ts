@@ -629,8 +629,9 @@ export const register = (email: string, password: string, displayName: string) =
   api<AuthResult>('auth/register', {method: 'POST', body: {email, password, display_name: displayName}});
 export const getMe = (signal?: AbortSignal) => api<User>('auth/me', {signal});
 export const getWatchHistory = (signal?: AbortSignal) => api<Items<WatchItem>>('me/watch-history', {signal}).then(items);
+/** later_removed: the save reached 90 % and the server dropped the release from 稍后观看. */
 export const saveWatchProgress = (slug: string, progressSeconds: number, durationSeconds: number, keepalive = false) =>
-  api<{saved: boolean}>('me/watch-history', {
+  api<{saved: boolean; later_removed?: boolean}>('me/watch-history', {
     method: 'POST',
     keepalive,
     body: {slug, progress_seconds: Math.floor(progressSeconds), duration_seconds: Math.floor(durationSeconds || 0)},
@@ -678,6 +679,7 @@ export const rotatePlaylistToken = (id: number) => api<Playlist>(`me/playlists/$
 export const addToPlaylist = (id: number, slug: string) => api<{saved: boolean}>(`me/playlists/${id}/items/${enc(slug)}`, {method: 'PUT'});
 export const removeFromPlaylist = (id: number, slug: string) =>
   api<{deleted: boolean}>(`me/playlists/${id}/items/${enc(slug)}`, {method: 'DELETE'});
+export const reorderPlaylist = (id: number, slugs: string[]) => api<{saved: boolean}>(`me/playlists/${id}/reorder`, {method: 'POST', body: {slugs}});
 export const moveLaterToPlaylist = (slug: string, playlistId: number) =>
   api<{moved: boolean}>(`me/watch-later/${enc(slug)}/move`, {method: 'POST', body: {playlist_id: playlistId}});
 /** Unprefixed path of the public page for a share token. */
