@@ -49,8 +49,9 @@ function useVideoClock(videoRef: RefObject<HTMLVideoElement | null>) {
  * - long press: 2× while held
  * - horizontal drag: seek, with a time preview; applied on release
  * - single tap: show / hide controls; lock button freezes all gestures
+ * - 选集 (onOpenEpisodes, when the release is part of a series): the episodes drawer
  */
-export function PlayerTouchLayer({videoRef, title, rate, qualityLabel, onExit, onOpenSettings, reducedMotion}: {
+export function PlayerTouchLayer({videoRef, title, rate, qualityLabel, onExit, onOpenSettings, reducedMotion, onOpenEpisodes}: {
   videoRef: RefObject<HTMLVideoElement | null>;
   title: string;
   rate: number;
@@ -58,6 +59,8 @@ export function PlayerTouchLayer({videoRef, title, rate, qualityLabel, onExit, o
   onExit: () => void;
   onOpenSettings: (tab: 'quality' | 'rate' | 'source') => void;
   reducedMotion: boolean;
+  /** Opens the 选集 drawer; no button without it. */
+  onOpenEpisodes?: () => void;
 }) {
   const t = useT();
   const clock = useVideoClock(videoRef);
@@ -296,6 +299,11 @@ export function PlayerTouchLayer({videoRef, title, rate, qualityLabel, onExit, o
                 {formatClock(clock.time)} / {formatClock(clock.duration)}
               </span>
               <span className="section-spacer" />
+              {onOpenEpisodes && (
+                <button type="button" className="touch-text-btn" aria-haspopup="dialog" onClick={onOpenEpisodes}>
+                  {t('series.episodes')}
+                </button>
+              )}
               <button type="button" className="touch-text-btn" onClick={() => onOpenSettings('rate')}>
                 {rate === 1 ? t('player.rate') : `${rate}×`}
               </button>

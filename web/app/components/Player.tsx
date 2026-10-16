@@ -14,6 +14,7 @@ import {useDanmakuPrefs} from '../lib/danmakuPrefs';
 import {useOnline} from '../lib/useOnline';
 import {applyVolume, writeVolume} from '../lib/volumePrefs';
 import {DanmakuBar, DanmakuLayer, DanmakuListSheet, DanmakuSettings, useDanmakuFeed, type DanmakuLayerHandle} from './Danmaku';
+import {EpisodesSheet, type PlayerEpisodes} from './Episodes';
 import {Icon} from './Icon';
 import {PeakCurve} from './PeakCurve';
 import {PlayerControls, useVideoClock, type Chapter} from './PlayerControls';
@@ -88,10 +89,14 @@ type LockableOrientation = ScreenOrientation & {lock?: (orientation: string) => 
  * ?quality= and picks the starting hls.js level; on cellular (or Save-Data)
  * hls.js ABR is capped at 720p, 480p with data_saver; remember_rate restores
  * the last rate used for this release. autoplay is handled by the page.
+ *
+ * 选集 (MobilePlayerFull): with `episodes` (the release's series, 2+ works)
+ * the fullscreen touch controls get a 选集 button that opens EpisodesSheet;
+ * picking one is the page's navigation (Episodes.tsx).
  */
 export type PlayerProps = Parameters<typeof Player>[0];
 
-export function Player({slug, releaseId, title, resumeAt, startAt, onBack, theater = false, onToggleTheater, onEnded, autoStart = false, overlay, entryReason, related = [], onReplay, mini = false}: {
+export function Player({slug, releaseId, title, resumeAt, startAt, onBack, theater = false, onToggleTheater, onEnded, autoStart = false, overlay, entryReason, related = [], onReplay, mini = false, episodes}: {
   slug: string;
   /** releases.id for analytics (play_request / progress); no tracking without it. */
   releaseId?: number;
@@ -116,6 +121,8 @@ export function Player({slug, releaseId, title, resumeAt, startAt, onBack, theat
   onReplay?: () => void;
   /** Mobile mini player: only the video, no chrome or keyboard. */
   mini?: boolean;
+  /** The release's series in episode order: 选集 in the fullscreen touch controls. */
+  episodes?: PlayerEpisodes;
 }) {
   const t = useT();
   const {status} = useAuth();
@@ -178,6 +185,9 @@ export function Player({slug, releaseId, title, resumeAt, startAt, onBack, theat
   const [pip, setPip] = useState(false);
   const [pipSupported, setPipSupported] = useState(false);
   const [settings, setSettings] = useState<{open: boolean; tab: SettingsTab}>({open: false, tab: 'quality'});
+  const [episodesOpen, setEpisodesOpen] = useState(false);
+  const hasEpisodes = !!episodes && episodes.items.length > 1;
+  useEffect(() => setEpisodesOpen(false), [slug]);
   const rateRef = useRef(rate);
   rateRef.current = rate;
   fullscreenRef.current = fullscreen;
@@ -1080,7 +1090,9 @@ export function Player({slug, releaseId, title, resumeAt, startAt, onBack, theat
 
           {touchMode && stream && (
             <PlayerTouchLayer
-              key={stream.key}
+              // Not stream.key: the <video> sibling uses it, and duplicate
+              // sibling keys remount the video (render loop once a sheet opens).
+              key={`touch-${stream.key}`}
               videoRef={videoRef}
               title={title}
               rate={rate}
@@ -1088,6 +1100,7 @@ export function Player({slug, releaseId, title, resumeAt, startAt, onBack, theat
               onExit={() => void toggleFullscreen()}
               onOpenSettings={openSettings}
               reducedMotion={reducedMotion}
+              onOpenEpisodes={hasEpisodes ? () => setEpisodesOpen(true) : undefined}
             />
           )}
 
@@ -1237,6 +1250,10 @@ export function Player({slug, releaseId, title, resumeAt, startAt, onBack, theat
               audio={{options: audioOptions, value: audioTrack, onChange: chooseAudio}}
               danmaku={stream ? <DanmakuSettings /> : undefined}
             />
+
+            {episodes && hasEpisodes && (
+              <EpisodesSheet open={episodesOpen} onClose={() => setEpisodesOpen(false)} episodes={episodes} container={fullscreen ? shellRef.current : null} />
+            )}
           </>
         )}
       </div>

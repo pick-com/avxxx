@@ -96,6 +96,7 @@ const detached = (props: PlayerProps): PlayerProps => ({
   onReplay: undefined,
   overlay: null,
   related: [],
+  episodes: undefined,
   theater: false,
   autoStart: false,
 });

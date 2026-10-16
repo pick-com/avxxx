@@ -43,6 +43,11 @@ export const seriesZhCN = {
   'series.moreReleases': '更多作品',
   'series.noReleases': '这个系列暂时没有作品',
   'series.viewAll': '查看系列全部作品',
+  'series.episodes': '选集',
+  'series.episodesTitle': '选集 · {name}',
+  'series.episodePosition': '第 {i} / {n} 部',
+  'series.nowPlaying': '正在播放',
+  'series.sameSeries': '同系列',
   'series.allSeries': '全部系列',
   // SEO
   'seo.seriesListTitle': '系列',
