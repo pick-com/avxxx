@@ -23,10 +23,20 @@
 // hot-search board (internal/search).
 //
 //	audit -search      run the search statistics job now, print the report, exit
+//
+// It also claims 'media_link' jobs (every MEDIA_LINK_EVERY, default 1h,
+// cmd/scheduler; or POST /api/admin/media-links/run): offline release ->
+// playback provider linking (internal/medialink). Politeness is set by
+// MEDIA_LINK_MIN_INTERVAL (default 2s, never lower), MEDIA_LINK_MAX_PER_RUN
+// (default 200) and MEDIA_LINK_DAILY_CAP (default 2000).
+//
+//	audit -media-link  run the media link job now, print the report, exit
 package main
 
 import (
 	"avxxx/internal/audit"
+	"avxxx/internal/media"
+	"avxxx/internal/medialink"
 	"avxxx/internal/playcurve"
 	"avxxx/internal/recs"
 	"avxxx/internal/search"
@@ -52,6 +62,7 @@ func main() {
 	curves := flag.Bool("curves", false, "run the replay / retention curve job once and exit")
 	recsNow := flag.Bool("recs", false, "run the recommendation similarity and trending jobs once and exit")
 	searchNow := flag.Bool("search", false, "run the search statistics job once and exit")
+	mediaLinkNow := flag.Bool("media-link", false, "run the offline media link job once and exit")
 	flag.Parse()
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
@@ -99,6 +110,12 @@ func main() {
 		if err != nil {
 			log.Fatal(err)
 		}
+	case *mediaLinkNow:
+		rep, err := mediaLinkRunner(s, 0).Run(ctx)
+		printJSON(rep)
+		if err != nil {
+			log.Fatal(err)
+		}
 	case *once:
 		rep, err := (&audit.Runner{Store: s}).Run(ctx)
 		printJSON(rep)
@@ -122,7 +139,7 @@ func work(ctx context.Context, s *store.Store) {
 			log.Printf("reap expired jobs: %v", err)
 		}
 		claimed := false
-		for _, kind := range []string{store.JobKindSourceHealth, store.JobKindRecsTrending, store.JobKindReleaseCurves, store.JobKindSearchStats, store.JobKindAudit, store.JobKindRecsSimilarity} {
+		for _, kind := range []string{store.JobKindSourceHealth, store.JobKindRecsTrending, store.JobKindReleaseCurves, store.JobKindSearchStats, store.JobKindAudit, store.JobKindRecsSimilarity, store.JobKindMediaLink} {
 			id, version, err := s.ClaimJob(ctx, kind)
 			if errors.Is(err, pgx.ErrNoRows) {
 				continue
@@ -154,6 +171,18 @@ func healthConfig() audit.HealthConfig {
 	return c
 }
 
+// mediaLinkRunner builds the media_link job with the providers it links
+// (medialink.Providers) and the MEDIA_LINK_* politeness settings.
+func mediaLinkRunner(s *store.Store, jobID int64) *medialink.Runner {
+	reg := media.NewRegistry()
+	reg.Register(media.NewJavtifulAdapter())
+	cfg, warn := medialink.ConfigFromEnv(os.Getenv)
+	for _, w := range warn {
+		log.Print(w)
+	}
+	return &medialink.Runner{Store: s, Search: media.NewService(reg), Config: cfg, JobID: jobID}
+}
+
 // execute runs one job of kind and returns its result counts.
 func execute(ctx context.Context, s *store.Store, kind string, id int64) (any, error) {
 	switch kind {
@@ -163,6 +192,8 @@ func execute(ctx context.Context, s *store.Store, kind string, id int64) (any, e
 		return (&recs.Runner{Store: s, JobID: id}).RunTrending(ctx)
 	case store.JobKindSearchStats:
 		return (&search.Runner{Store: s, JobID: id}).Run(ctx)
+	case store.JobKindMediaLink:
+		return mediaLinkRunner(s, id).Run(ctx)
 	}
 	if kind == store.JobKindSourceHealth {
 		rep, err := (&audit.HealthRunner{Store: s, Config: healthConfig(), JobID: id}).Run(ctx)

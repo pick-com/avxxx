@@ -4,6 +4,7 @@ package api
 import (
 	"avxxx/internal/community"
 	"avxxx/internal/media"
+	"avxxx/internal/medialink"
 	"avxxx/internal/store"
 	"crypto/subtle"
 	"encoding/json"
@@ -54,6 +55,14 @@ type Server struct {
 	// performers backs the admin performer editor, performer requests and
 	// the similarity weights preview (admin_performer.go).
 	performerEd performerAdmin
+	// playback backs GET /api/releases/{slug}/playback; linker searches a
+	// provider for a missing mapping on demand (MEDIA_LINK_ON_DEMAND,
+	// default true) and linkAdmin backs /api/admin/media-links (media.go,
+	// admin_media_links.go).
+	playback     playbackLinks
+	linker       *medialink.Linker
+	linkOnDemand bool
+	linkAdmin    mediaLinkAdmin
 	// adminToken is ADMIN_TOKEN, read once at construction. Empty disables
 	// every admin route (they all return 401).
 	adminToken string
@@ -88,7 +97,17 @@ func Register(mux *http.ServeMux, s *store.Store, mediaHandler *media.Handler) {
 		srv.recsAdmin = s
 		srv.search = s
 		srv.performerEd = s
+		srv.playback = s
+		srv.linkAdmin = s
+		if svc := mediaHandler.Service(); svc != nil {
+			cfg, warn := medialink.ConfigFromEnv(os.Getenv)
+			for _, w := range warn {
+				log.Print(w)
+			}
+			srv.linker = &medialink.Linker{Store: s, Search: svc, Pacer: medialink.NewPacer(cfg.MinInterval), MaxWait: onDemandMaxWait}
+		}
 	}
+	srv.linkOnDemand = medialink.OnDemandFromEnv(os.Getenv("MEDIA_LINK_ON_DEMAND"))
 	for _, rt := range srv.routes() {
 		mux.HandleFunc(rt.pattern, rt.handler)
 	}
@@ -116,6 +135,7 @@ func (srv *Server) routes() []route {
 	rs = append(rs, srv.recsRoutes()...)
 	rs = append(rs, srv.searchRoutes()...)
 	rs = append(rs, srv.adminPerformerRoutes()...)
+	rs = append(rs, srv.adminMediaLinkRoutes()...)
 	return srv.followMerges(rs)
 }
 
