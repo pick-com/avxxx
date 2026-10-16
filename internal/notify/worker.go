@@ -1,5 +1,7 @@
 // Package notify delivers notification_outbox rows (written by
-// store.NotifyFanout) over Web Push and email. cmd/notifier runs Worker.
+// store.NotifyFanout) over Web Push and email, and mail_outbox rows
+// (takedown claimant / counter-notifier mail, claimant.go) over email.
+// cmd/notifier runs Worker.
 //
 // Each tick the worker returns rows whose lease expired to 'pending', claims
 // up to Batch due pending rows of the configured channels (FOR UPDATE SKIP
@@ -172,7 +174,9 @@ func (w *Worker) Tick(ctx context.Context) (int, error) {
 		}(it)
 	}
 	wg.Wait()
-	return len(items), nil
+	// Transactional mail to non-users (claimant.go).
+	n, err := w.tickMail(ctx)
+	return len(items) + n, err
 }
 
 // process delivers one claimed row and records the result.

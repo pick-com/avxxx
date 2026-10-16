@@ -1,0 +1,13 @@
+{{define "label"}}{{if eq .Status "received"}}ได้รับแล้ว{{else if eq .Status "reviewing"}}กำลังตรวจสอบ{{else if eq .Status "actioned"}}นำออกแล้ว{{else if eq .Status "rejected"}}ไม่นำออก{{else if eq .Status "counter_received"}}ได้รับคำโต้แย้ง{{else if eq .Status "restored"}}คืนสภาพแล้ว{{else if eq .Status "closed"}}ปิดแล้ว{{else}}{{.Status}}{{end}}{{end}}
+{{define "explain"}}{{if eq .Status "received"}}เราได้รับคำร้องแล้ว{{else if eq .Status "reviewing"}}เรากำลังตรวจสอบคำร้อง{{else if eq .Status "actioned"}}เนื้อหาที่ระบุในคำร้องถูกนำออกแล้ว{{else if eq .Status "rejected"}}หลังจากตรวจสอบ เราไม่ได้นำเนื้อหาที่ระบุในคำร้องออก{{else if eq .Status "counter_received"}}มีการยื่นคำโต้แย้งว่าเนื้อหาถูกนำออกโดยผิดพลาด ขณะนี้เนื้อหายังคงถูกนำออก หากคุณได้ยื่นฟ้องต่อศาลในเรื่องนี้ โปรดแจ้งเราผ่านหน้าลิขสิทธิ์พร้อมหมายเลขคำร้อง มิฉะนั้นเนื้อหาอาจถูกคืนสภาพหลังระยะเวลารอ{{else if eq .Status "restored"}}เนื้อหาที่ถูกนำออกได้รับการคืนสภาพแล้ว{{else if eq .Status "closed"}}คำร้องนี้ปิดแล้ว{{else}}{{.Status}}{{end}}{{end}}
+{{define "subject"}}การแจ้งละเมิดลิขสิทธิ์ {{.Ticket}}: {{template "label" .}}{{end}}
+{{define "text"}}สวัสดี{{if .Name}}คุณ {{.Name}}{{end}}
+
+{{if eq .Recipient "counter"}}การแจ้งละเมิดลิขสิทธิ์ {{.Ticket}} ที่คุณยื่นคำโต้แย้งไว้มีสถานะใหม่:{{else}}การแจ้งละเมิดลิขสิทธิ์ {{.Ticket}} ของคุณมีสถานะใหม่:{{end}}
+
+  {{template "label" .}}
+
+{{template "explain" .}}
+
+ตรวจสอบสถานะ: {{.StatusURL}}
+{{end}}

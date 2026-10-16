@@ -1,0 +1,13 @@
+{{define "label"}}{{if eq .Status "received"}}受付済み{{else if eq .Status "reviewing"}}審査中{{else if eq .Status "actioned"}}削除済み{{else if eq .Status "rejected"}}削除せず{{else if eq .Status "counter_received"}}異議申し立て受付{{else if eq .Status "restored"}}復元済み{{else if eq .Status "closed"}}完了{{else}}{{.Status}}{{end}}{{end}}
+{{define "explain"}}{{if eq .Status "received"}}申し立てを受け付けました。{{else if eq .Status "reviewing"}}申し立てを審査しています。{{else if eq .Status "actioned"}}申し立てで指摘されたコンテンツを削除しました。{{else if eq .Status "rejected"}}審査の結果、申し立てで指摘されたコンテンツは削除しませんでした。{{else if eq .Status "counter_received"}}コンテンツが誤って削除されたとする異議申し立てが提出されました。コンテンツは現在も削除されたままです。この件で訴訟を提起している場合は、受付番号を添えて著作権ページからお知らせください。そうでない場合、待機期間の後にコンテンツが復元されることがあります。{{else if eq .Status "restored"}}削除されていたコンテンツを復元しました。{{else if eq .Status "closed"}}この申し立ては完了しました。{{else}}{{.Status}}{{end}}{{end}}
+{{define "subject"}}著作権侵害の申し立て {{.Ticket}}：{{template "label" .}}{{end}}
+{{define "text"}}{{if .Name}}{{.Name}} 様{{else}}ご担当者様{{end}}
+
+{{if eq .Recipient "counter"}}異議申し立てを提出された著作権侵害の申し立て {{.Ticket}} の状況が更新されました。{{else}}著作権侵害の申し立て {{.Ticket}} の状況が更新されました。{{end}}
+
+  {{template "label" .}}
+
+{{template "explain" .}}
+
+状況の確認：{{.StatusURL}}
+{{end}}

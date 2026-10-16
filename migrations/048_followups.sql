@@ -19,3 +19,32 @@ UPDATE playlist_items i SET position = u.rn - u.k - 1 + COALESCE(b.lo, u.k + 1)
 FROM unordered u LEFT JOIN base b ON b.playlist_id = u.playlist_id
 WHERE i.playlist_id = u.playlist_id AND i.release_id = u.release_id;
 CREATE INDEX IF NOT EXISTS playlist_items_order ON playlist_items (playlist_id, position);
+
+-- Takedown mail (#103; docs/COMPLIANCE.md 4): receipts and status mail for
+-- claimants and counter-notifiers, who are not users. notification_outbox is
+-- keyed by user_id (NOT NULL, cascades with the account, merged per user and
+-- day, filtered by user_settings notify prefs), so a nullable user_id there
+-- would touch every claim and fan-out query. This separate table keeps that
+-- path unchanged and stores no address: the recipient is a role on the
+-- ticket, resolved from takedown_requests when the mail is sent, so the
+-- contact details exist only in the ticket row and follow its retention
+-- (rows cascade with the ticket; a blanked address cancels the mail).
+-- cmd/notifier delivers it with the email channel (internal/notify/claimant.go).
+ALTER TABLE takedown_requests ADD COLUMN IF NOT EXISTS counter_lang text;
+CREATE TABLE IF NOT EXISTS mail_outbox (
+  id bigserial PRIMARY KEY,
+  takedown_id bigint REFERENCES takedown_requests(id) ON DELETE CASCADE,
+  recipient text NOT NULL CHECK (recipient IN ('claimant', 'counter')),
+  kind text NOT NULL CHECK (kind IN ('takedown_received', 'takedown_status', 'takedown_counter')),
+  payload jsonb NOT NULL DEFAULT '{}'::jsonb, -- {"status": ...}: the status the mail reports
+  send_after timestamptz NOT NULL DEFAULT now(),
+  status text NOT NULL DEFAULT 'pending' CHECK (status IN ('pending','sending','sent','failed','cancelled')),
+  attempt integer NOT NULL DEFAULT 0,
+  last_error text NOT NULL DEFAULT '',
+  claimed_at timestamptz,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  sent_at timestamptz,
+  CONSTRAINT mail_outbox_source CHECK (takedown_id IS NOT NULL)
+);
+CREATE INDEX IF NOT EXISTS mail_outbox_due ON mail_outbox (send_after, id) WHERE status = 'pending';
+CREATE INDEX IF NOT EXISTS mail_outbox_takedown ON mail_outbox (takedown_id);

@@ -1,0 +1,13 @@
+{{define "label"}}{{if eq .Status "received"}}Received{{else if eq .Status "reviewing"}}Under review{{else if eq .Status "actioned"}}Taken down{{else if eq .Status "rejected"}}Not taken down{{else if eq .Status "counter_received"}}Counter-notice received{{else if eq .Status "restored"}}Restored{{else if eq .Status "closed"}}Closed{{else}}{{.Status}}{{end}}{{end}}
+{{define "explain"}}{{if eq .Status "received"}}We received the notice.{{else if eq .Status "reviewing"}}We are reviewing the notice.{{else if eq .Status "actioned"}}The material identified in the notice has been taken down.{{else if eq .Status "rejected"}}After review, we did not take down the material identified in the notice.{{else if eq .Status "counter_received"}}A counter-notice was filed stating that the material was removed by mistake. The material stays down for now. If you have filed a court action about it, tell us through the copyright page quoting your ticket number; otherwise the material may be restored after the waiting period.{{else if eq .Status "restored"}}The material that was taken down has been restored.{{else if eq .Status "closed"}}The ticket is closed.{{else}}{{.Status}}{{end}}{{end}}
+{{define "subject"}}Copyright notice {{.Ticket}}: {{template "label" .}}{{end}}
+{{define "text"}}Hello{{if .Name}} {{.Name}}{{end}},
+
+{{if eq .Recipient "counter"}}The copyright notice {{.Ticket}} that you filed a counter-notice for has a new status:{{else}}Your copyright notice {{.Ticket}} has a new status:{{end}}
+
+  {{template "label" .}}
+
+{{template "explain" .}}
+
+Check the status: {{.StatusURL}}
+{{end}}

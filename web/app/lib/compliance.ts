@@ -105,7 +105,8 @@ export type TakedownNotice = {
 };
 export type TakedownReceipt = {ticket: string; status: string; due_at: string; created_at: string};
 export type TakedownPublicStatus = {ticket: string; status: string; received_at: string; updated_at: string; counter_allowed: boolean};
-export type CounterNotice = {name: string; email: string; address: string; statement: string; consent: boolean; signature: string};
+/** lang: the form's language; the counter-notifier's mails use it. */
+export type CounterNotice = {name: string; email: string; address: string; statement: string; consent: boolean; signature: string; lang?: string};
 
 export const postTakedown = (body: TakedownNotice) => api<TakedownReceipt>('takedowns', {method: 'POST', body});
 /** The email travels in a header so it never lands in URLs or access logs. */

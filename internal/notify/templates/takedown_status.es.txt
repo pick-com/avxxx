@@ -1,0 +1,13 @@
+{{define "label"}}{{if eq .Status "received"}}Recibido{{else if eq .Status "reviewing"}}En revisión{{else if eq .Status "actioned"}}Retirado{{else if eq .Status "rejected"}}No retirado{{else if eq .Status "counter_received"}}Contraaviso recibido{{else if eq .Status "restored"}}Restablecido{{else if eq .Status "closed"}}Cerrado{{else}}{{.Status}}{{end}}{{end}}
+{{define "explain"}}{{if eq .Status "received"}}Hemos recibido el aviso.{{else if eq .Status "reviewing"}}Estamos revisando el aviso.{{else if eq .Status "actioned"}}El material indicado en el aviso ha sido retirado.{{else if eq .Status "rejected"}}Tras revisarlo, no hemos retirado el material indicado en el aviso.{{else if eq .Status "counter_received"}}Se presentó un contraaviso que afirma que el material se retiró por error. Por ahora el material sigue retirado. Si has iniciado una acción judicial al respecto, avísanos a través de la página de derechos de autor indicando tu número de expediente; de lo contrario, el material puede restablecerse tras el periodo de espera.{{else if eq .Status "restored"}}El material retirado ha sido restablecido.{{else if eq .Status "closed"}}El expediente está cerrado.{{else}}{{.Status}}{{end}}{{end}}
+{{define "subject"}}Aviso de derechos de autor {{.Ticket}}: {{template "label" .}}{{end}}
+{{define "text"}}Hola{{if .Name}}, {{.Name}}{{end}}:
+
+{{if eq .Recipient "counter"}}El aviso de derechos de autor {{.Ticket}} al que respondiste con un contraaviso tiene un nuevo estado:{{else}}Tu aviso de derechos de autor {{.Ticket}} tiene un nuevo estado:{{end}}
+
+  {{template "label" .}}
+
+{{template "explain" .}}
+
+Consulta el estado: {{.StatusURL}}
+{{end}}

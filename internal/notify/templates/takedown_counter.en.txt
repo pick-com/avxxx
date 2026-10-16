@@ -1,0 +1,5 @@
+{{define "subject"}}Counter-notice received: {{.Ticket}}{{end}}
+{{define "text"}}Hello{{if .Name}} {{.Name}}{{end}},
+
+We received your counter-notice for ticket {{.Ticket}}. We will let the claimant know that a counter-notice was filed and email you when the ticket's status changes. You can also check the status on {{.StatusURL}} with the ticket number and this email address.
+{{end}}

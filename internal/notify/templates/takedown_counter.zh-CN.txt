@@ -1,0 +1,5 @@
+{{define "subject"}}已收到反通知：{{.Ticket}}{{end}}
+{{define "text"}}你好{{if .Name}}，{{.Name}}{{end}}：
+
+我们已收到你对投诉 {{.Ticket}} 提交的反通知。我们会告知投诉方已收到反通知，投诉状态变化时会发邮件通知你。你也可以在 {{.StatusURL}} 用投诉编号和本邮箱查询进度。
+{{end}}
