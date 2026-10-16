@@ -65,7 +65,9 @@ func TestIdentityMergeIntegration(t *testing.T) {
 	exec(`INSERT INTO release_tags(release_id,tag,normalized_tag) VALUES(10,'Drama','drama'),(11,'drama','drama'),(11,'VR','vr')`)
 	exec(`INSERT INTO favorites(user_id,release_id) VALUES(1,10),(1,11)`)
 	exec(`INSERT INTO source_records(id,source_id,entity_type,source_record_key,source_url,release_id,parser_version) VALUES(500,1,'release','k11','https://example.test/11',11,'v1')`)
-	exec(`SELECT setval('performers_id_seq',100); SELECT setval('releases_id_seq',100); SELECT setval('source_records_id_seq',1000)`)
+	// Advance every sequence behind an explicit id so later tests sharing this
+	// database (e.g. TestSocialIntegration) can insert without pkey collisions.
+	exec(`SELECT setval('performers_id_seq',100); SELECT setval('releases_id_seq',100); SELECT setval('source_records_id_seq',1000); SELECT setval('users_id_seq',100); SELECT setval('sources_id_seq',100)`)
 	// Performers 3 and 4 share a name but were already ruled different.
 	exec(`INSERT INTO not_duplicate_pairs(entity_type,a_id,b_id) VALUES('performer',3,4)`)
 
