@@ -2,9 +2,10 @@ import {useCallback, useEffect, useMemo, useState, type FormEvent} from 'react';
 import {Link, NavLink, Outlet} from 'react-router';
 import {ThemeToggle} from '../components/TopBar';
 import {tokens, validAdminActor} from '../lib/api';
-import {getDashboard, getModerationOverview, type Dashboard, type QueueCounts} from '../lib/adminApi';
+import {getDashboard, getModerationOverview, getPerformerRequests, type Dashboard, type QueueCounts} from '../lib/adminApi';
 import {AdminContext} from '../lib/adminContext';
 import '../styles/admin.css';
+import '../styles/admin-intel.css';
 
 export const meta = () => [{title: 'REEL · 后台'}];
 
@@ -22,6 +23,8 @@ const ICONS = {
   audit: 'M9 12l2 2 4-4M12 3l8 3v6c0 5-3.5 8-8 9-4.5-1-8-4-8-9V6z',
   reports: 'M5 21V4h11l-1.5 4L16 12H5',
   i18n: 'M12 21a9 9 0 100-18 9 9 0 000 18zM3 12h18M12 3c3 3 3 15 0 18M12 3c-3 3-3 15 0 18',
+  actors: 'M12 12a4 4 0 100-8 4 4 0 000 8zM4 21c1-4 4-6 8-6s7 2 8 6',
+  search: 'M11 18a7 7 0 100-14 7 7 0 000 14zM20 20l-4-4',
 };
 
 type Badge = {n: number; tone: 'red' | 'amber' | 'plain'} | null;
@@ -45,6 +48,7 @@ export default function AdminLayout() {
   const [dash, setDash] = useState<Dashboard | null>(null);
   const [counts, setCounts] = useState<QueueCounts | null>(null);
   const [badgeTick, setBadgeTick] = useState(0);
+  const [openRequests, setOpenRequests] = useState<number | null>(null);
 
   // Read storage after mount: route modules avoid browser globals during render.
   useEffect(() => {
@@ -65,6 +69,10 @@ export default function AdminLayout() {
     getModerationOverview(1)
       .then(m => live && setCounts(m.counts))
       .catch(() => live && setCounts(null));
+    // 更正与隐藏申请 (admin-performers backend; absent → no badge).
+    getPerformerRequests({status: 'open', limit: 100})
+      .then(p => live && setOpenRequests(p.items.length))
+      .catch(() => live && setOpenRequests(null));
     return () => {
       live = false;
     };
@@ -108,6 +116,7 @@ export default function AdminLayout() {
         title: '内容',
         items: [
           {to: '/admin/videos', label: '视频', icon: 'videos'},
+          {to: '/admin/actors', label: '演员', icon: 'actors', badge: badge(openRequests ?? undefined, 'amber')},
           {to: '/admin/pipeline', label: '入库流水线', icon: 'pipeline', badge: badge(failedJobs(dash), 'red')},
           {to: '/admin/dedupe', label: '重复与归并', icon: 'dedupe', badge: badge(dash?.identity_candidates_open, 'amber')},
           {to: '/admin/review', label: '字段冲突', icon: 'conflicts', badge: badge(dash?.conflicts_open, 'amber')},
@@ -123,10 +132,16 @@ export default function AdminLayout() {
         title: '社区',
         items: [{to: '/admin/moderation', label: '举报与审核', icon: 'reports', badge: badge(moderation, counts?.reports_overdue ? 'red' : 'amber')}],
       },
-      {title: '系统', items: [{to: '/admin/i18n', label: '翻译管理', icon: 'i18n'}]},
+      {
+        title: '系统',
+        items: [
+          {to: '/admin/search', label: '搜索词情报', icon: 'search'},
+          {to: '/admin/i18n', label: '翻译管理', icon: 'i18n'},
+        ],
+      },
     ];
     return g;
-  }, [dash, counts]);
+  }, [dash, counts, openRequests]);
 
   const session = useMemo(() => ({hasToken, epoch, refreshBadges}), [hasToken, epoch, refreshBadges]);
 

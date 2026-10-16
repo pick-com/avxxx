@@ -774,3 +774,50 @@
     grid-column: 1 / -1;
   }
 }
+
+/* ---- 热搜词 / 大家都在搜 (GET /api/search/hot) ---- */
+
+.trending-layout:not(:has(> .trending-aside > *)) {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.trending-aside:empty {
+  display: none;
+}
+
+.hot-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 0 24px;
+}
+
+.hot-list-list {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.hot-row {
+  min-height: 44px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  color: var(--text);
+  font-size: 14px;
+}
+
+.hot-row:hover .hot-q {
+  color: var(--accent);
+}
+
+.hot-q {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.hot-shelf {
+  margin-top: 8px;
+}

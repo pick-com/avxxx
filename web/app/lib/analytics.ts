@@ -66,7 +66,8 @@ export type EventProps = {
   autoplay_next: {from_release_id: number; to_release_id: number; cancelled: boolean; countdown_left_s: number};
   actor_card_open: {performer_id: number; source: 'hover' | 'half_sheet' | 'search'};
   follow_actor: {performer_id: number; source: string};
-  search: {query: string; result_count: number; is_retry: boolean; clicked_rank?: number};
+  // rescued: the results came from the server's modifier-stripped retry (PRD 4.5).
+  search: {query: string; result_count: number; is_retry: boolean; clicked_rank?: number; rescued?: boolean};
   subtitle_change: {lang: string; from?: string};
   audio_change: {lang: string; from?: string};
   theme_change: {theme: 'system' | 'dark' | 'light'};

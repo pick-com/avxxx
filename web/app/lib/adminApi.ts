@@ -6,6 +6,10 @@
 //   admin_release.go release editor (PR #61; may 404 on older backends)
 //   moderation.go    moderation queue, actions, words, mutes
 //   admin_i18n.go    translations, stats, glossary, UI strings
+//   search.go        AdminSearch: stats, zero-result terms, synonyms,
+//                    redirects, blocklist, term fixes (search PR; may 404)
+//   admin_performer.go AdminActors: performer list / editor, requests,
+//                    similarity preview (admin-performers PR; may 404)
 
 import {ApiError, api, isMissingEndpoint} from './api';
 
@@ -527,6 +531,265 @@ export const getUIStrings = (f: {lang?: string; status?: string; prefix?: string
   api<ItemsBody<UIString>>(`admin/i18n/ui${qs(f)}`).then(itemsOf);
 export const putUIString = (lang: string, key: string, value: string, status: 'draft' | 'reviewed') =>
   api<UIString>(`admin/i18n/ui/${enc(lang)}/${enc(key)}`, {method: 'PUT', body: {value, status}});
+
+// ---------------------------------------------------------------- AdminSearch (search.go)
+
+export type SearchTotals = {
+  searches: number;
+  zero_results: number;
+  clicks: number;
+  first_page_clicks: number;
+  rescued: number;
+  zero_result_rate: number;
+  zero_result_target: number;
+  meets_target: boolean;
+  ctr: number;
+  first_page_ctr: number;
+  rescue_rate: number;
+};
+export type SearchStats = {days: number; totals: SearchTotals; daily: (SearchTotals & {day: string})[] | null; trgm: boolean};
+export type NearMatch = {type: 'release' | 'performer' | string; id: number; name: string; field: string; status: string; similarity: number};
+export type ZeroClass = 'not_in_library' | 'in_library_missed' | 'not_video';
+export type ZeroResultTerm = {
+  term: string;
+  searches: number;
+  zero_results: number;
+  rescued: number;
+  last_seen: string;
+  stripped?: string;
+  would_rescue: boolean;
+  resolved: boolean;
+  near_matches: NearMatch[] | null;
+  class: ZeroClass | string;
+  class_label: string;
+  actions: string[] | null;
+};
+export type SearchSynonym = {id: number; term: string; canonical: string; created_by: string; created_at: string; updated_at: string};
+export type SearchRedirectRule = {id: number; term: string; target_url: string; reason: string; created_by: string; created_at: string; updated_at: string};
+export type SearchBlockedTerm = {id: number; term: string; reason: string; created_by: string; created_at: string};
+export type TermFix = {entity_type: string; entity_id: number; action: string; value: string; term: string};
+
+export const getSearchStats = (days: number) => api<SearchStats>(`admin/search/stats${qs({days})}`);
+export const getZeroResultTerms = (f: {days: number; min: number; limit?: number}) =>
+  api<{days: number; min: number; items: ZeroResultTerm[] | null}>(`admin/search/zero-results${qs(f)}`).then(itemsOf);
+export const getSynonyms = (q = '') => api<ItemsBody<SearchSynonym>>(`admin/search/synonyms${qs({q})}`).then(itemsOf);
+export const createSynonym = (term: string, canonical: string) =>
+  api<SearchSynonym>('admin/search/synonyms', {method: 'POST', body: {term, canonical}});
+export const updateSynonym = (id: number, term: string, canonical: string) =>
+  api<SearchSynonym>(`admin/search/synonyms/${id}`, {method: 'PUT', body: {term, canonical}});
+export const deleteSynonym = (id: number) => api<null>(`admin/search/synonyms/${id}`, {method: 'DELETE'});
+export const getRedirects = (q = '') => api<ItemsBody<SearchRedirectRule>>(`admin/search/redirects${qs({q})}`).then(itemsOf);
+export const createRedirect = (term: string, target_url: string, reason: string) =>
+  api<SearchRedirectRule>('admin/search/redirects', {method: 'POST', body: {term, target_url, reason}});
+export const updateRedirect = (id: number, term: string, target_url: string, reason: string) =>
+  api<SearchRedirectRule>(`admin/search/redirects/${id}`, {method: 'PUT', body: {term, target_url, reason}});
+export const deleteRedirect = (id: number) => api<null>(`admin/search/redirects/${id}`, {method: 'DELETE'});
+export const getBlocklist = () => api<ItemsBody<SearchBlockedTerm>>('admin/search/blocklist').then(itemsOf);
+export const blockTerm = (term: string, reason: string) => api<SearchBlockedTerm>('admin/search/blocklist', {method: 'POST', body: {term, reason}});
+export const unblockTerm = (id: number) => api<null>(`admin/search/blocklist/${id}`, {method: 'DELETE'});
+export const aliasFromTerm = (b: {term: string; performer_id: number; alias?: string; reason?: string}) =>
+  api<TermFix>('admin/search/terms/alias', {method: 'POST', body: b});
+export const englishTitleFromTerm = (b: {term: string; release_id: number; title?: string; reason?: string}) =>
+  api<TermFix>('admin/search/terms/english-title', {method: 'POST', body: b});
+
+// ---------------------------------------------------------------- AdminActors (admin_performer.go)
+
+export type PerformerFilter =
+  | 'incomplete'
+  | 'missing_birth'
+  | 'missing_photo'
+  | 'upcoming'
+  | 'birth_hidden'
+  | 'suspected_duplicate'
+  | 'hidden'
+  | 'name_issue';
+export const PERFORMER_FILTERS: {v: PerformerFilter; t: string}[] = [
+  {v: 'incomplete', t: '信息不全'},
+  {v: 'missing_birth', t: '缺生日'},
+  {v: 'missing_photo', t: '缺照片'},
+  {v: 'upcoming', t: '有即将上线作品'},
+  {v: 'birth_hidden', t: '生日已隐藏'},
+  {v: 'suspected_duplicate', t: '疑似重复'},
+  {v: 'hidden', t: '已隐藏'},
+  {v: 'name_issue', t: '名称可疑'},
+];
+export const COMPLETENESS_LABELS: Record<string, string> = {
+  canonical_name_ja: '日文名',
+  birth_date: '生日',
+  birth_place: '出生地',
+  debut_date: '出道日期',
+  height_cm: '身高',
+  photo: '照片',
+};
+
+export type AdminPerformerSummary = {
+  id: number;
+  slug: string;
+  name: string;
+  name_ja: string | null;
+  status: 'active' | 'hidden' | string;
+  hidden_reason: string | null;
+  birth_date: string | null;
+  birth_date_hidden: boolean;
+  works: number;
+  published_works: number;
+  upcoming_works: number;
+  has_photo: boolean;
+  completeness: number;
+  missing: string[] | null;
+  open_issues: number;
+  open_requests: number;
+  duplicate_candidates: number;
+  version: number;
+  updated_at: string;
+};
+export type PerformerAlias = {id: number; name: string; language: string | null; alias_type: string};
+export const ALIAS_TYPES = ['stage', 'birth', 'romanized', 'former', 'other'] as const;
+export const ALIAS_TYPE_LABELS: Record<string, string> = {
+  stage: '艺名',
+  birth: '本名',
+  romanized: '罗马字',
+  former: '曾用名',
+  other: '其他',
+  merged: '合并带入',
+  translation: '译名',
+  search: '搜索词',
+};
+export type AdminPerformerWork = {
+  release_id: number;
+  slug: string;
+  title: string;
+  status: string;
+  release_date: string | null;
+  scheduled_at: string | null;
+  role: 'lead' | 'guest' | string;
+  is_primary: boolean;
+  billing_order: number | null;
+  credited_name: string | null;
+  upcoming: boolean;
+  age_at_filming: FilmingAge | null;
+};
+export type SimilarEvidence = {
+  metadata: number;
+  co_star: number;
+  co_star_score: number;
+  co_watch: number;
+  shared_tags?: string[] | null;
+  shared_makers?: string[] | null;
+};
+export type AdminSimilarPerformer = {
+  id: number;
+  slug: string;
+  name: string;
+  status: string;
+  score: number;
+  match_percent: number;
+  reason: string;
+  evidence: SimilarEvidence;
+};
+export type PerformerRequestKind = 'correct_field' | 'hide_birth_date' | 'remove_photo' | 'other';
+export const REQUEST_KIND_LABELS: Record<string, string> = {
+  correct_field: '更正资料',
+  hide_birth_date: '隐藏生日',
+  remove_photo: '删除照片',
+  other: '其他',
+};
+export const REQUEST_STATUS_LABELS: Record<string, string> = {open: '待处理', approved: '已批准', rejected: '已驳回'};
+export const REQUESTER_ROLE_LABELS: Record<string, string> = {self: '本人', agency: '经纪方', other: '其他'};
+export type PerformerRequest = {
+  id: number;
+  performer_id: number;
+  performer_slug: string;
+  performer_name: string;
+  kind: PerformerRequestKind | string;
+  field_name: string | null;
+  proposed_value: unknown;
+  requester_contact: string;
+  evidence: {role?: string; message?: string; links?: string[] | null} | null;
+  status: 'open' | 'approved' | 'rejected' | string;
+  due_at: string;
+  overdue: boolean;
+  resolved_by: string | null;
+  resolution_note: string | null;
+  created_at: string;
+  resolved_at: string | null;
+};
+export type AdminPerformer = {
+  id: number;
+  slug: string;
+  name: string;
+  name_ja: string | null;
+  birth_date: string | null;
+  birth_date_hidden: boolean;
+  birth_place: string | null;
+  debut_date: string | null;
+  debut_age: number | null;
+  height_cm: number | null;
+  bust_cm: number | null;
+  waist_cm: number | null;
+  hip_cm: number | null;
+  cup_size: string | null;
+  shoe_size: number | null;
+  biography: string | null;
+  status: string;
+  hidden_reason: string | null;
+  merged_into_id: number | null;
+  version: number;
+  created_at: string;
+  updated_at: string;
+  photos: number;
+  completeness: number;
+  missing: string[] | null;
+  overrides: Override[] | null;
+  aliases: PerformerAlias[] | null;
+  works: AdminPerformerWork[] | null;
+  upcoming: AdminPerformerWork[] | null;
+  similar: AdminSimilarPerformer[] | null;
+  duplicate_candidates: Record<string, unknown>[] | null;
+  audit_issues: AuditIssue[] | null;
+  requests: PerformerRequest[] | null;
+  review_events: ReviewEvent[] | null;
+};
+export type AgeRecheck = {releases: number; flagged: number; held: number; status_changed: number; still_held: number};
+export type PerformerPatchResult = {performer_id: number; version: number; changed: string[] | null; age_recheck?: AgeRecheck};
+export type PerformerStatusResult = {performer_id: number; from: string; to: string; hidden_reason: string | null; version: number; resolved_issues?: number};
+export type RequestDecisionResult = {request: PerformerRequest; applied?: Record<string, unknown> | null; age_recheck?: AgeRecheck};
+export type Weights = {metadata: number; co_star: number; co_watch: number; visual: number};
+export type WeightsView = Weights & {updated_by?: string; updated_at: string; effective_from: string};
+export type PreviewMatch = {id: number; slug: string; name: string; score: number; match_percent: number; rank: number; stored_rank: number; reason: string};
+export type PreviewSample = {
+  performer: {id: number; slug: string; name: string};
+  current: PreviewMatch[] | null;
+  proposed: PreviewMatch[] | null;
+  changed: boolean;
+  overlap: number;
+};
+export type SimilarityPreview = {weights: Weights; current_weights: Weights; saved: false; effective_from: string; samples: PreviewSample[] | null; note: string};
+
+export const getAdminPerformers = (f: {q?: string; status?: string; filter?: string; cursor?: string | null; limit?: number}) =>
+  api<{items: AdminPerformerSummary[] | null; next_cursor: string | null; counts: Record<string, number> | null}>(`admin/performers${qs(f)}`).then(d => ({
+    ...pageOf(d),
+    counts: d?.counts ?? {},
+  }));
+export const getAdminPerformer = (id: number) => api<AdminPerformer>(`admin/performers/${id}`);
+export const patchAdminPerformer = (id: number, body: Record<string, unknown>) =>
+  api<PerformerPatchResult>(`admin/performers/${id}`, {method: 'PATCH', body});
+export const clearPerformerOverride = (id: number, field: string, reason: string) =>
+  api<{ok: boolean}>(`admin/performers/${id}/overrides/${enc(field)}`, {method: 'DELETE', body: reason ? {reason} : undefined});
+export const addPerformerAlias = (id: number, b: {name: string; language?: string; alias_type?: string; reason?: string}) =>
+  api<PerformerAlias>(`admin/performers/${id}/aliases`, {method: 'POST', body: b});
+export const removePerformerAlias = (id: number, aliasId: number, reason: string) =>
+  api<{ok: boolean}>(`admin/performers/${id}/aliases/${aliasId}`, {method: 'DELETE', body: reason ? {reason} : undefined});
+export const setPerformerStatus = (id: number, b: {status: 'active' | 'hidden'; reason?: string; version?: number}) =>
+  api<PerformerStatusResult>(`admin/performers/${id}/status`, {method: 'POST', body: b});
+export const getPerformerRequests = (f: {status?: string; kind?: string; performer_id?: number; cursor?: string | null; limit?: number}) =>
+  api<{items: PerformerRequest[] | null; next_cursor: string | null}>(`admin/performer-requests${qs(f)}`).then(pageOf);
+export const decidePerformerRequest = (id: number, to: 'approve' | 'reject', b: {note?: string; value?: unknown}) =>
+  api<RequestDecisionResult>(`admin/performer-requests/${id}/${to}`, {method: 'POST', body: b});
+export const getSimilarityWeights = () => api<WeightsView>('admin/similarity-weights');
+export const putSimilarityWeights = (w: Weights) => api<WeightsView>('admin/similarity-weights', {method: 'PUT', body: w});
+export const previewSimilarityWeights = (b: Partial<Weights> & {performer_ids?: number[]; sample?: number; top?: number}) =>
+  api<SimilarityPreview>('admin/similarity-weights/preview', {method: 'POST', body: b});
 
 // ---------------------------------------------------------------- labels
 
