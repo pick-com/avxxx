@@ -1,5 +1,5 @@
 import {useEffect, useRef, useState, type ReactNode} from 'react';
-import {data, redirect, useLoaderData, useParams, useSearchParams, type LoaderFunctionArgs, type MetaFunction} from 'react-router';
+import {data, redirect, useLoaderData, useParams, useRouteLoaderData, useSearchParams, type LoaderFunctionArgs, type MetaFunction} from 'react-router';
 import {Link, useLocation, useNavigate} from '../lib/nav';
 import {absoluteImageUrl, Avatar, CatalogImage, ReleaseRow, SectionHeader} from '../components/Cards';
 import {PerformerHoverCard, PerformerSheet} from '../components/PerformerPeek';
@@ -41,6 +41,8 @@ import {adjacentTracks, artistLine, type TrackTarget} from '../lib/mediaSession'
 import {parseStartTime} from '../lib/interactions';
 import {getRecs, performerName, reasonText, recTitle, inRelatedTab, type RecItem, type RelatedTab} from '../lib/recs';
 import type {ShellHandle} from './shell';
+import type {RootData} from '../root';
+import {deferResolve} from '../lib/playbackMode';
 
 export const handle: ShellHandle & SeoHandle = {immersive: true, seo: true};
 
@@ -221,6 +223,10 @@ export default function ReleasePage() {
   const location = useLocation();
   const linkState = location.state as {autoplay?: unknown; reason?: unknown} | null;
   const autoStart = linkState?.autoplay === true;
+  // PLAYBACK_RESOLVE_ON=play: a plain page view waits for the play button
+  // before resolving the provider stream; autoplay-next and queues do not.
+  const resolveOn = useRouteLoaderData<RootData>('root')?.resolveOn ?? 'load';
+  const holdResolve = deferResolve(resolveOn, {autoplay: autoStart, queued: !!listName});
   const entryReason = typeof linkState?.reason === 'string' ? linkState.reason : undefined;
   const [ended, setEnded] = useState(false);
   const [related, setRelated] = useState<NextUp | null>(null);
@@ -325,6 +331,7 @@ export default function ReleasePage() {
           // Load the first playable source as soon as the release page opens.
           // Browsers may still require a click for audible playback.
           autoStart={true}
+          deferResolve={holdResolve}
           entryReason={entryReason}
           onEnded={() => setEnded(true)}
           onReplay={() => setEnded(false)}

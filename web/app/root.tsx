@@ -26,6 +26,7 @@ import {AuthProvider} from './lib/auth';
 import {I18nProvider, LangBoundary, loadUiDict, primeLang, t, type Messages} from './lib/i18n';
 import {ConsentProvider} from './lib/consent';
 import {DEFAULT_LANG, isAdminPath, isPrefixable, localizePath, parseLangParam, readLangCookie} from './lib/langs';
+import {parseResolveOn, type ResolveOn} from './lib/playbackMode';
 import {Link, useLocation} from './lib/nav';
 import type {SeoHandle} from './lib/seo';
 import {SettingsProvider} from './lib/settings';
@@ -72,11 +73,15 @@ export type RootData = {
   gate: GateState;
   /** End of the 24-hour lock when gate is denied (ISO time). */
   gateUntil?: string;
+  /** PLAYBACK_RESOLVE_ON: when release pages resolve provider streams (lib/playbackMode.ts). */
+  resolveOn: ResolveOn;
 };
 
 // The verdict only changes through the gate form, which reloads the page;
 // client-side root loads (a language switch) keep the server's answer.
 let knownGate: Pick<RootData, 'gate' | 'gateUntil'> = {gate: 'none'};
+// Server configuration, kept across client-side root loads the same way.
+let knownResolveOn: ResolveOn = 'load';
 
 /** Path after the raw :lang segment (/zh-tw/releases/x -> /releases/x). */
 const afterLang = (pathname: string, raw: string) => pathname.slice(raw.length + 1) || '/';
@@ -106,6 +111,7 @@ export async function loader({request, params}: LoaderFunctionArgs) {
     notFound: p.kind === 'bad',
     gate: gate.state,
     gateUntil: gate.until,
+    resolveOn: parseResolveOn(process.env.PLAYBACK_RESOLVE_ON),
   };
   return data(body, p.kind === 'bad' ? {status: 404} : undefined);
 }
@@ -117,7 +123,7 @@ export async function clientLoader({request, params}: ClientLoaderFunctionArgs):
   const lang = p.kind === 'ok' ? p.lang : DEFAULT_LANG;
   const dict = await loadUiDict(lang);
   primeLang(lang, dict);
-  return {lang, dict, hadChoice: !!readLangCookie(document.cookie), origin: window.location.origin, notFound: p.kind === 'bad', ...knownGate};
+  return {lang, dict, hadChoice: !!readLangCookie(document.cookie), origin: window.location.origin, notFound: p.kind === 'bad', ...knownGate, resolveOn: knownResolveOn};
 }
 
 // The language is the only thing the root loads: keep it across navigations
@@ -178,6 +184,7 @@ export default function App() {
   const root = useLoaderData<RootData>();
   const location = useLocation();
   knownGate = {gate: root.gate, gateUntil: root.gateUntil};
+  knownResolveOn = root.resolveOn ?? 'load';
   // 18+ gate: no app (player, page data fetches, analytics, banners) until
   // the visitor is confirmed. The document head (title, description,
   // canonical, JSON-LD) stays the page's own, and crawlers get exactly what

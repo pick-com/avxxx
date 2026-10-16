@@ -236,6 +236,7 @@ docker compose exec alertmanager amtool --alertmanager.url=http://127.0.0.1:9093
 - `MEDIA_LINK_ON_DEMAND`（API，默认 `true`）：播放页缺映射时按同一张尝试表即时搜索一次（同样遵守退避和进程内限速）；设为 `false` 则只依赖离线任务，未映射作品的播放接口返回 404。
 - `MEDIA_RESOLVE_TTL`（API，默认 5m，0 关闭）：`POST /api/resolve/{source}/{id}` 成功结果的缓存时间，滑动续期（每次命中延长到 now + TTL）；流地址带过期令牌，缓存不会超过最早的 `expires_at` 前 30 秒（适配器未给出时从签名 URL 的 `expires=` / `exp=` / `e=` / `validto=`、SigV4、Akamai token 中解析，含义不明确则不解析），错误从不缓存。
 - `MEDIA_RESOLVE_MAX_AGE`（API，默认 30m）：流过期时间未知时，结果自解析起最多复用这么久。结果在进程内缓存之外还写入 Postgres `media_resolve_cache`（单行 ≤ 64 KiB；带 Cookie / Authorization 头的结果不落库），重启和多个 API 实例共用；过期行由 API 每 10 分钟顺带清理。播放器在缓存地址播放失败时以 `?refresh=1` 重新解析，同一 (source, id) 每个实例每 60 秒最多强制刷新一次。
+- `PLAYBACK_RESOLVE_ON`（Web，默认 `load`）：`load` 打开播放页即解析播放地址（#115 的行为）；`play` 只加载 play-config / 播放映射（仅查库），显示封面和播放按钮，点击播放时才调用 `/api/resolve`，自动连播和队列（`?list=`）仍立即开始。
 
 ## Web 前端（SSR）与反向代理
 

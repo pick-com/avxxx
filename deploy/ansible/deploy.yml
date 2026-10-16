@@ -67,6 +67,8 @@
           # Resolve cache (api): sliding TTL, and the max age when a stream's expiry is unknown.
           MEDIA_RESOLVE_TTL={{ media_resolve_ttl | default('5m') }}
           MEDIA_RESOLVE_MAX_AGE={{ media_resolve_max_age | default('30m') }}
+          # Web: resolve provider streams on page load (load) or on the play click (play).
+          PLAYBACK_RESOLVE_ON={{ playback_resolve_on | default('load') }}
           # Proxies whose X-Forwarded-For the API trusts; empty = TCP peer only.
           TRUSTED_PROXIES={{ trusted_proxies | default('') }}
           # Country header a trusted proxy / CDN sets besides CF-IPCountry; empty = none.
