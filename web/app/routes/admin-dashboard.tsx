@@ -15,6 +15,7 @@ import {
 } from '../lib/adminApi';
 import {adminErrorText} from '../lib/adminApi';
 import {useAdminLoad} from '../lib/adminContext';
+import {SEOReportPanel} from '../components/AdminSEOReport';
 
 export const meta = () => [{title: 'REEL · 后台总览'}];
 
@@ -51,6 +52,7 @@ export default function AdminDashboard() {
   const [health, setHealth] = useState<{items: SourceHealthItem[]; next: string | null} | null>(null);
   const [healthErr, setHealthErr] = useState('');
   const [healthBusy, setHealthBusy] = useState(false);
+  const [seoOpen, setSeoOpen] = useState(false);
 
   const loadHealth = async (b: string, cursor: string | null) => {
     setHealthBusy(true);
@@ -124,7 +126,13 @@ export default function AdminDashboard() {
               : ''}
           </span>
         </div>
-        <div className="adm-kpi" title="PRD 13：服务端渲染通过率 × 0.6 + 站点地图覆盖率 × 0.4（npm run seo:check，任务 seo.check）">
+        <button
+          type="button"
+          className="adm-kpi"
+          aria-expanded={seoOpen}
+          onClick={() => setSeoOpen(v => !v)}
+          title="PRD 13：服务端渲染通过率 × 0.6 + 站点地图覆盖率 × 0.4（npm run seo:check，任务 seo.check）。点击查看详情"
+        >
           <span className="adm-kpi-label">收录健康分</span>
           {seo ? (
             <>
@@ -142,7 +150,8 @@ export default function AdminDashboard() {
           <span className="adm-kpi-sub">
             {d ? `数据完整 ${d.catalog_health.score ?? '—'} · 已上线 ${fmtNum(d.catalog_health.published)} · 有问题 ${fmtNum(d.catalog_health.with_open_issues)}` : ''}
           </span>
-        </div>
+          <span className="adm-kpi-sub adm-link">{seoOpen ? '收起详情' : '查看详情 →'}</span>
+        </button>
         <Link to="/admin/videos" className="adm-kpi">
           <span className="adm-kpi-label">视频</span>
           <span className="adm-kpi-value">{fmtNum(d?.releases.total)}</span>
@@ -168,6 +177,7 @@ export default function AdminDashboard() {
           </span>
         </div>
       </section>
+      {seoOpen && <SEOReportPanel onClose={() => setSeoOpen(false)} />}
 
       <div className="adm-grid-2">
         <section className="adm-card">

@@ -6,6 +6,7 @@ import {getDashboard, getModerationOverview, getPerformerRequests, type Dashboar
 import {AdminContext} from '../lib/adminContext';
 import '../styles/admin.css';
 import '../styles/admin-intel.css';
+import '../styles/admin-gov.css';
 
 export const meta = () => [{title: 'REEL · 后台'}];
 
@@ -25,6 +26,9 @@ const ICONS = {
   i18n: 'M12 21a9 9 0 100-18 9 9 0 000 18zM3 12h18M12 3c3 3 3 15 0 18M12 3c-3 3-3 15 0 18',
   actors: 'M12 12a4 4 0 100-8 4 4 0 000 8zM4 21c1-4 4-6 8-6s7 2 8 6',
   search: 'M11 18a7 7 0 100-14 7 7 0 000 14zM20 20l-4-4',
+  priority: 'M4 6h10M4 12h7M4 18h4M17 4v16M14 17l3 3 3-3',
+  completeness: 'M4 20V10M10 20V4M16 20v-7M22 20H2',
+  links: 'M10 14a4 4 0 005.7 0l3-3a4 4 0 00-5.7-5.7l-1 1M14 10a4 4 0 00-5.7 0l-3 3a4 4 0 005.7 5.7l1-1',
 };
 
 type Badge = {n: number; tone: 'red' | 'amber' | 'plain'} | null;
@@ -126,6 +130,14 @@ export default function AdminLayout() {
             icon: 'audit',
             badge: badge(dash?.issues.open, dash?.issues.by_rule?.['R-AGE'] ? 'red' : 'amber'),
           },
+        ],
+      },
+      {
+        title: '数据治理',
+        items: [
+          {to: '/admin/field-policies', label: '字段优先级', icon: 'priority'},
+          {to: '/admin/media-links', label: '片源映射', icon: 'links'},
+          {to: '/admin/reports/completeness', label: '完整性报告', icon: 'completeness'},
         ],
       },
       {

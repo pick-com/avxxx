@@ -52,5 +52,8 @@ export default [
     route('admin/dedupe', 'routes/admin-dedupe.tsx'),
     route('admin/actors', 'routes/admin-actors.tsx'),
     route('admin/search', 'routes/admin-search.tsx'),
+    route('admin/field-policies', 'routes/admin-field-policies.tsx'),
+    route('admin/media-links', 'routes/admin-media-links.tsx'),
+    route('admin/reports/completeness', 'routes/admin-completeness.tsx'),
   ]),
 ] satisfies RouteConfig;
