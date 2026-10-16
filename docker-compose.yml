@@ -41,6 +41,33 @@ services:
       db:
         condition: service_healthy
     ports: ["127.0.0.1:8080:8080"]
+  # Server-rendered web app (PRD 13 SEO; web/server.mjs). Public traffic goes
+  # through the host reverse proxy: /api/* -> api:8080 (127.0.0.1:8080),
+  # everything else -> web:3000 (127.0.0.1:3000). See docs/PRODUCTION_OPERATIONS.md.
+  web:
+    image: avxxx-web:latest
+    build:
+      context: ./web
+    environment:
+      # SSR loaders, sitemaps and the optional /api proxy reach the API here.
+      API_INTERNAL_URL: http://api:8080
+      # Public origin for canonical / hreflang / sitemap URLs (e.g. https://reel.example).
+      PUBLIC_BASE_URL: ${PUBLIC_BASE_URL:-${BASE_URL:-}}
+      # true: the web server also forwards /api/* (single-upstream setups).
+      # Prefer routing /api/ to the API in the reverse proxy.
+      API_PROXY: ${WEB_API_PROXY:-true}
+      SITEMAP_TTL_SECONDS: ${SITEMAP_TTL_SECONDS:-3600}
+      LOG_REQUESTS: ${WEB_LOG_REQUESTS:-true}
+    depends_on:
+      api:
+        condition: service_started
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/healthz').then(r=>process.exit(r.ok?0:1),()=>process.exit(1))"]
+      interval: 15s
+      timeout: 3s
+      retries: 3
+      start_period: 10s
+    ports: ["127.0.0.1:${WEB_PORT:-3000}:3000"]
   scheduler:
     image: avxxx-app:latest
     pull_policy: never
