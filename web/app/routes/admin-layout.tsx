@@ -116,6 +116,7 @@ export default function AdminLayout() {
         title: '内容',
         items: [
           {to: '/admin/videos', label: '视频', icon: 'videos'},
+          {to: '/admin/actors', label: '演员', icon: 'actors', badge: badge(openRequests ?? undefined, 'amber')},
           {to: '/admin/pipeline', label: '入库流水线', icon: 'pipeline', badge: badge(failedJobs(dash), 'red')},
           {to: '/admin/dedupe', label: '重复与归并', icon: 'dedupe', badge: badge(dash?.identity_candidates_open, 'amber')},
           {to: '/admin/review', label: '字段冲突', icon: 'conflicts', badge: badge(dash?.conflicts_open, 'amber')},
