@@ -2,6 +2,7 @@ package store
 
 import (
 	"avxxx/internal/catalog"
+	"avxxx/internal/i18n"
 	"avxxx/internal/model"
 	"avxxx/migrations"
 	"context"
@@ -9,6 +10,7 @@ import (
 	"fmt"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -500,6 +502,9 @@ func (s *Store) ResolveConflict(ctx context.Context, conflictID, sourceRecordID 
 	if _, err = tx.Exec(ctx, fmt.Sprintf("UPDATE %s SET %s=$1,updated_at=now() WHERE id=$2", table, field), string(value), entityID); err != nil {
 		return err
 	}
+	if err = markStale(ctx, tx, typ, strconv.FormatInt(entityID, 10)); err != nil {
+		return err
+	}
 	if _, err = tx.Exec(ctx, `UPDATE field_conflicts SET status='resolved',selected_source_record_id=NULLIF($2,0),resolution_note=$3,resolved_at=now(),updated_at=now() WHERE id=$1`, conflictID, sourceRecordID, note); err != nil {
 		return err
 	}
@@ -542,6 +547,9 @@ func (s *Store) SaveCatalogRecord(ctx context.Context, sourceID int64, parserVer
 		if id, err = survivingID(ctx, tx, "performers", id); err != nil {
 			return 0, err
 		}
+		if err = markStale(ctx, tx, i18n.EntityPerformer, strconv.FormatInt(id, 10)); err != nil {
+			return 0, err
+		}
 		performerID = &id
 	} else if rec.EntityType == catalog.Release {
 		title, _ := rec.Fields["title"].(string)
@@ -564,6 +572,9 @@ func (s *Store) SaveCatalogRecord(ctx context.Context, sourceID int64, parserVer
 			return 0, err
 		}
 		if id, err = survivingID(ctx, tx, "releases", id); err != nil {
+			return 0, err
+		}
+		if err = markStale(ctx, tx, i18n.EntityRelease, strconv.FormatInt(id, 10)); err != nil {
 			return 0, err
 		}
 		releaseID = &id
@@ -631,6 +642,9 @@ func (s *Store) SaveCatalogRecord(ctx context.Context, sourceID int64, parserVer
 					return 0, err
 				}
 				if _, err = tx.Exec(ctx, `INSERT INTO release_tag_sources(release_id,normalized_tag,source_record_id,source_tag) VALUES($1,$2,$3,$4) ON CONFLICT DO NOTHING`, *releaseID, normalized, sourceRecordID, tag); err != nil {
+					return 0, err
+				}
+				if err = markStale(ctx, tx, i18n.EntityTag, normalized); err != nil {
 					return 0, err
 				}
 			}
