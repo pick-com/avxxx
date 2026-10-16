@@ -59,6 +59,8 @@ const paths = {
   chevronRight: 'M9 6l6 6-6 6',
   // Community (DanmakuPlayer, Ratings).
   list: 'M9 6h11M9 12h11M9 18h11M4.5 6h.01M4.5 12h.01M4.5 18h.01',
+  // 播放队列 (list with a plus).
+  queue: 'M4 6h12M4 12h12M4 18h8M18 14v8M14 18h8',
   flag: 'M5 21V4h12l-2.5 4L17 12H5',
   thumb: 'M7 11v9H4v-9zM7 11l4-8a2 2 0 012 2v4h5.5a2 2 0 012 2.3l-1.2 6.5A2 2 0 0117.3 20H7',
   star: 'M12 3l2.6 5.6 6.1.7-4.5 4.2 1.2 6L12 16.6 6.6 19.5l1.2-6-4.5-4.2 6.1-.7z',

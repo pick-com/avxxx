@@ -548,6 +548,75 @@ a.notif-main:hover {
   margin-bottom: 16px;
 }
 
+/* 播放队列 (PlayQueue.tsx) */
+
+.play-queue-start {
+  margin: 0 0 10px;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 12px;
+}
+
+.play-queue-start .text-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.play-queue-list {
+  max-height: 440px;
+  overflow-y: auto;
+}
+
+.play-queue-list .thumb-row {
+  width: 120px;
+}
+
+.play-queue-actions {
+  display: flex;
+  flex-direction: column;
+  flex-shrink: 0;
+}
+
+.play-queue-actions .icon-btn {
+  width: 36px;
+  height: 30px;
+  border-radius: 8px;
+}
+
+.play-queue-actions .icon-btn:first-child svg {
+  transform: rotate(180deg);
+}
+
+.play-queue-actions .icon-btn:disabled {
+  opacity: 0.35;
+}
+
+/* 添加到播放队列 confirmation under a card's 「⋯」 (CardMenu.tsx). */
+
+.card-menu-note {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  z-index: 3;
+  padding: 6px 10px;
+  border-radius: 8px;
+  background: rgba(15, 16, 18, 0.88);
+  color: #ececee;
+  font-size: 13px;
+  white-space: nowrap;
+}
+
+.release-row .card-menu-note {
+  left: auto;
+  right: 0;
+}
+
+.card-menu-note:empty {
+  display: none;
+}
+
 /* Switch */
 
 .switch {

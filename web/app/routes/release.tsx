@@ -37,7 +37,9 @@ import {discoverHref} from '../lib/releaseFilter';
 import {useAsync} from '../lib/useAsync';
 import {useCanonicalSlug} from '../lib/useCanonicalSlug';
 import {useMediaQuery} from '../lib/useMediaQuery';
-import {isQueueList, readQueue, type Queue} from '../lib/queue';
+import {ADHOC_QUEUE, isQueueList, readQueue, type Queue} from '../lib/queue';
+import {useAdhocQueue} from '../lib/useQueue';
+import {PlayQueuePanel} from '../components/PlayQueue';
 import {listSeriesEpisodes} from '../lib/series';
 import {adjacentTracks, artistLine, type TrackTarget} from '../lib/mediaSession';
 import {parseStartTime} from '../lib/interactions';
@@ -176,6 +178,8 @@ export const meta: MetaFunction<typeof loader> = ({data: d, params, matches}) =>
 // elsewhere), up to the runtime.
 // 稍后观看 toggles here; ?list=later (or performer, or playlist:<id> for a
 // 收藏夹) follows the 全部播放 / 随机播放 queue.
+// 播放队列 (?list=queue, cards' ⋮ 添加到播放队列; PlayQueuePanel) also plays
+// after a video that is in no queue.
 // 自动连播 (PRD 5.4, settings.autoplay, default on): when a video ends, the
 // next one (the queue's next, else — also after the queue's last item — the
 // first 接下来播放 work) starts after a 10 s countdown that can be cancelled;
@@ -219,8 +223,14 @@ export default function ReleasePage() {
   // A shared link's start time (分享 · 从当前位置开始).
   const startAt = parseStartTime(params.get('t'));
   // The queue lives in this browser (sessionStorage): read after hydration.
-  const [queue, setQueue] = useState<ReturnType<typeof readQueue>>(null);
-  useEffect(() => setQueue(isQueueList(listName) ? readQueue(listName) : null), [listName]);
+  const [storedQueue, setStoredQueue] = useState<ReturnType<typeof readQueue>>(null);
+  useEffect(() => setStoredQueue(isQueueList(listName) && listName !== ADHOC_QUEUE ? readQueue(listName) : null), [listName]);
+  // 播放队列 (card menu 添加到播放队列): followed with ?list=queue, and — like
+  // YouTube — next after a video outside any queue, as if this video led it.
+  const adhoc = useAdhocQueue().queue;
+  const adhocNext = !listName && adhoc.slugs.length > 0 && !adhoc.slugs.includes(slug);
+  const queue: Queue | null =
+    listName === ADHOC_QUEUE ? (adhoc.slugs.length ? adhoc : null) : (storedQueue ?? (adhocNext ? {...adhoc, slugs: [slug, ...adhoc.slugs]} : null));
   const queueIndex = queue ? queue.slugs.indexOf(slug) : -1;
   const nextSlug = queue && queueIndex >= 0 ? queue.slugs[queueIndex + 1] : undefined;
   const prefs = usePlayerPrefs();
@@ -436,7 +446,8 @@ export default function ReleasePage() {
       </div>
 
       <aside className="video-aside" aria-label={t('release.upNext')}>
-        {queue && queueIndex >= 0 && <QueuePanel queue={queue} index={queueIndex} />}
+        {adhoc.slugs.length > 0 && <PlayQueuePanel queue={adhoc} slug={slug} playing={listName === ADHOC_QUEUE && adhoc.slugs.includes(slug)} upNext={adhocNext} />}
+        {queue && queueIndex >= 0 && queue.name !== ADHOC_QUEUE && <QueuePanel queue={queue} index={queueIndex} />}
         {episodes && <SeriesEpisodesPanel episodes={episodes} query={episodeQuery} />}
         {release && <UpNext slug={slug} performer={performers[0]} series={release.series ?? undefined} onFirst={setRelated} onList={setEndItems} />}
       </aside>

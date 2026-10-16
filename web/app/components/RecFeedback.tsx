@@ -4,7 +4,7 @@ import {postErrorMessage} from '../lib/community';
 import {addRecFeedback, listRecFeedback, undoRecFeedback, type RecFeedback, type RecFeedbackKind} from '../lib/recFeedback';
 import {recsMissing, recTitle, type RecItem} from '../lib/recs';
 import type {MessageKey} from '../lib/messages.zh-CN';
-import {CardMenu, type CardMenuItem} from './CardMenu';
+import {CardMenu, useReleaseMenuItems, type CardMenuItem} from './CardMenu';
 
 // 推荐反馈 on recommendation cards (home shelves, 接下来播放) and in Settings
 // (internal/api/rec_feedback.go). Picking 「不感兴趣」 or 「不推荐此演员」 in a
@@ -53,6 +53,7 @@ export function RecFeedbackCard({item, variant, children}: {item: RecItem; varia
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const by = hiddenBy(item);
+  const shared = useReleaseMenuItems(item.slug, recTitle(item));
 
   const give = async (h: Hidden) => {
     setError('');
@@ -95,7 +96,7 @@ export function RecFeedbackCard({item, variant, children}: {item: RecItem; varia
     );
   }
 
-  const items: CardMenuItem[] = [{key: 'not-interested', label: t('recFeedback.notInterested'), onSelect: () => void give({kind: 'not_interested_release', target: item.slug})}];
+  const items: CardMenuItem[] = [...shared, {key: 'not-interested', label: t('recFeedback.notInterested'), onSelect: () => void give({kind: 'not_interested_release', target: item.slug})}];
   if (item.performer) {
     const target = item.performer.slug;
     items.push({key: 'not-performer', label: t('recFeedback.notPerformer'), onSelect: () => void give({kind: 'not_interested_performer', target})});
