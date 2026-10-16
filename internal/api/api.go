@@ -41,6 +41,10 @@ type Server struct {
 	// push stores Web Push subscriptions (push.go); pushCfg is read from env.
 	push    pushStore
 	pushCfg pushConfig
+	// recs backs /api/recs and /api/trending, recsAdmin the similarity
+	// weights and rebuild routes (recs.go).
+	recs      recsStore
+	recsAdmin recsAdmin
 	// adminToken is ADMIN_TOKEN, read once at construction. Empty disables
 	// every admin route (they all return 401).
 	adminToken string
@@ -70,6 +74,8 @@ func Register(mux *http.ServeMux, s *store.Store, mediaHandler *media.Handler) {
 		srv.i18n = s
 		srv.community = s
 		srv.moderation = s
+		srv.recs = s
+		srv.recsAdmin = s
 	}
 	for _, rt := range srv.routes() {
 		mux.HandleFunc(rt.pattern, rt.handler)
@@ -93,6 +99,7 @@ func (srv *Server) routes() []route {
 	rs = append(rs, srv.adminI18nRoutes()...)
 	rs = append(rs, srv.communityRoutes()...)
 	rs = append(rs, srv.moderationRoutes()...)
+	rs = append(rs, srv.recsRoutes()...)
 	return srv.followMerges(rs)
 }
 
