@@ -53,7 +53,7 @@ export type LegalDocument = {
   is_current: boolean;
   title: string;
   summary: string[];
-  /** Markdown: `## Heading {#anchor}`, paragraphs, `- ` lists. */
+  /** Markdown subset of lib/legalMarkdown.ts: headings, paragraphs, lists, emphasis, links. */
   body: string;
   effective_at: string;
   published_at: string;

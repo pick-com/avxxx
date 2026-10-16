@@ -58,6 +58,14 @@
   font-size: 13px;
 }
 
+.adm-legal-preview {
+  max-height: 480px;
+  overflow: auto;
+  padding: 12px 16px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+
 .adm-row-actions {
   display: flex;
   flex-wrap: wrap;

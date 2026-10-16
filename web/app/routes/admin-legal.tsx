@@ -6,6 +6,8 @@ import {createLegalDraft, getAdminLegal, getLegalDiff, publishLegal, updateLegal
 import {LEGAL_KINDS} from '../lib/compliance';
 import {useAdminAction, useAdminLoad} from '../lib/adminContext';
 import {LANGS} from '../lib/langs';
+import {LegalMarkdown, parseLegalMarkdown} from '../components/LegalMarkdown';
+import '../styles/compliance.css';
 import '../styles/admin-compliance.css';
 
 export const meta = () => [{title: 'REEL · 法律文本'}];
@@ -16,8 +18,11 @@ export const meta = () => [{title: 'REEL · 法律文本'}];
 // version. A version number belongs to the document kind: a translation is
 // a draft with the same version in another language and inherits that
 // version's effective date. Every write is a review_events row with the
-// signed-in admin as 操作人. Body text is Markdown: `## 标题 {#anchor}`, blank
-// lines between paragraphs, `- ` lists, **bold**, [text](https://…).
+// signed-in admin as 操作人. Body text is the Markdown subset of
+// lib/legalMarkdown.ts (`#`/`##` sections with optional {#anchor}, `###`
+// sub headings, blank lines between paragraphs, `- ` / `1. ` lists, **bold**,
+// *italic*, [text](https://… | mailto: | /path)); the editor shows a live
+// preview rendered exactly like the public page.
 
 const KIND_LABELS: Record<string, string> = {
   privacy: '隐私政策',
@@ -256,6 +261,7 @@ export default function AdminLegal() {
                 正文（Markdown）
                 <textarea className="body" value={editing.body} onChange={e => setEditing({...editing, body: e.target.value})} />
               </label>
+              <LegalPreview body={editing.body} />
               <div className="adm-toolbar">
                 <label className="adm-field">
                   计划生效时间（可空）
@@ -319,5 +325,16 @@ export default function AdminLegal() {
         </section>
       </div>
     </>
+  );
+}
+
+/** Live preview of a draft body, rendered like the public legal page. */
+function LegalPreview({body}: {body: string}) {
+  const blocks = useMemo(() => parseLegalMarkdown(body), [body]);
+  return (
+    <div className="adm-field">
+      预览
+      <div className="adm-legal-preview legal-md">{blocks.length ? <LegalMarkdown blocks={blocks} /> : <p className="muted">正文为空</p>}</div>
+    </div>
   );
 }
