@@ -68,3 +68,34 @@
 
 - 不存原始 IP：限流只在内存里以地址为键；同意记录只存设备 id 的 HMAC。
 - 公开接口泄露检查（`internal/acceptance` 的 public-API walk）已加入投诉人 / 反通知人姓名、邮箱、电话、地址、签名、编号，反馈正文与邮箱，以及同意记录的设备哈希。
+
+## 6. 进站 18+ 确认
+
+本站是成人站（`DESIGN_ALIGNMENT.md` #8 已定）：进站确认 18+，没有青少年模式和家长密码。迁移：`migrations/046_adult_confirmation.sql`。代码：`internal/api/agegate.go`、`web/app/lib/ageGate*.ts`、`web/app/components/AgeGate.tsx`。
+
+| 项目 | 实现 |
+| --- | --- |
+| 进站 | 首次访问任何页面都先显示确认页（出生年、月）；`POST /api/age-gate {year, month}` 判定后写 Cookie，页面刷新后才渲染内容 |
+| 年龄计算 | 只有年和月：出生当月按「生日还没过」算（保守）；拒绝未来日期、超过 120 年和非法月份 |
+| Cookie | `ag` = `v1.<ok\|denied>.<到期时间>.<HMAC-SHA256>`，密钥 `AGE_GATE_KEY`（API 与 web 共用；未设置时用开发密钥并打警告）；HttpOnly、SameSite=Lax、Path=/，https 下 Secure。ok 约 1 年；denied 24 小时，期间接口拒绝重新提交（403），不能改填 |
+| 未满 18 | 只显示说明页和法律 / 帮助链接；`/legal/*`、`/help`、`/copyright` 和后台不受拦截 |
+| 不存数据 | 访客的出生年月不入库、不写日志；只有计数 `avxxx_age_gate_total{result=ok\|denied\|locked\|invalid}`。接口按地址限流（每 10 分钟 20 次） |
+| 服务端渲染 | 根路由读取 Cookie：未确认时页面主体换成确认页，播放器、片源请求、页面数据请求都不执行；页面 loader 只取 `<head>` 需要的字段（标题、描述、canonical、JSON-LD），列表、片源署名、公告等一律跳过 |
+| 搜索引擎 | 不区分爬虫和用户（不做 cloaking）：没有 Cookie 的爬虫和访客拿到同一份 HTML，`<head>` 完整，正文是确认页。站点地图照常列出内容页 |
+| 注册 | 必须勾选「已年满 18 周岁」；确认 Cookie 不是 ok 时还要填出生年月（未满 18 返回 403 并写入 denied Cookie）。`users.adult_confirmed_at` 记录确认时间，`adult_birth_ym`（YYYY-MM）只在当时填写了出生年月才保存，不存日 |
+| Google / Apple | 注册页勾选后才带着确认去第三方；回调时没有确认就不创建账号（`age_required`），已有账号照常登录 |
+| 老账号 | `adult_confirmed_at` 为空的账号登录后弹一次确认（`POST /api/me/adult-confirm`）；拒绝则退出登录。数据导出包含这两个字段 |
+| 分级字段 | `releases.age_rating` 保留为元数据，不再用于前台隐藏 |
+
+已知限制：
+- 这是自我声明，不是身份验证；清除 Cookie（或换浏览器、设备）即可重新填写，24 小时锁定只对同一浏览器有效。
+- 内容 API（`/api/releases` 等）不受拦截，爬虫和 API 客户端可以直接读取目录数据；拦截只作用于网页。
+- 拦截页的 `<head>` 里有作品标题、简介，og:image 为封面地址，用于搜索和分享预览。
+- 确认页需要 JavaScript 才能提交。
+
+**[法务]**
+- 英国（Online Safety Act，Ofcom 要求「高度有效的年龄验证」）、美国多个州（如路易斯安那、犹他、得克萨斯等的成人网站年龄验证法）、欧盟部分国家（如法国 SREN 法）要求第三方年龄验证（证件、信用卡、年龄估算等），自我声明不满足。需要决定：按访问地区接入验证服务（`PRODUCT_REVIEW_AND_TECH_PLAN.md` 的 `age_verifications` 表），还是对这些地区禁止访问。地区判定来源（GeoIP / CDN 国家头）同第 4 节，尚未决定。本期不做。
+- 内容 API 对未确认的客户端开放是否可接受，或是否需要对 API 也做限制。
+- `adult_birth_ym` 的保存期限（目前随账号删除）；是否应完全不存出生年月，只存确认时间。
+- 确认页、注册勾选的文案需律师审阅；用户协议中应写明仅限成年人使用并禁止未成年人访问。
+- 是否需要「RTA」（Restricted To Adults）标签等让家长控制软件识别的标记（`<meta name="rating" content="RTA-5042-1996-1400-1577-RTA">`）。

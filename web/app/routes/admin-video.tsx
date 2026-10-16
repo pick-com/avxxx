@@ -420,7 +420,7 @@ function PublishTab({r, onSaved}: {r: AdminRelease; onSaved: () => void}) {
         <h2>分级与地区</h2>
         <div className="adm-form-grid">
           <label className="adm-field">
-            年龄分级（青少年模式按此隐藏）
+            年龄分级（仅作元数据，全站已限 18+）
             <select value={ageRating} onChange={e => setAgeRating(e.target.value)}>
               <option value="">未分级</option>
               {AGE_RATINGS.map(a => (

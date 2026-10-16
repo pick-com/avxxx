@@ -518,7 +518,7 @@ func (s *Store) ReserveDataExport(ctx context.Context, userID int64) error {
 var exportSections = []struct{ name, sql string }{
 	{"account", `SELECT json_build_object('id',id,'email',email,'display_name',display_name,'created_at',created_at,
 		'password_set',password_hash<>'','password_changed_at',password_changed_at,'onboarded_at',onboarded_at,
-		'deletion_requested_at',deletion_requested_at) FROM users WHERE id=$1`},
+		'deletion_requested_at',deletion_requested_at,'adult_confirmed_at',adult_confirmed_at,'adult_birth_ym',adult_birth_ym) FROM users WHERE id=$1`},
 	{"settings", `SELECT COALESCE((SELECT to_jsonb(s) - 'user_id' FROM user_settings s WHERE user_id=$1),'null'::jsonb)`},
 	{"terms_acceptances", `SELECT COALESCE(json_agg(json_build_object('version',version,'source',source,'accepted_at',accepted_at) ORDER BY accepted_at),'[]') FROM terms_acceptances WHERE user_id=$1`},
 	{"sign_in_providers", `SELECT COALESCE(json_agg(json_build_object('provider',provider,'email',email,'linked_at',created_at,'last_login_at',last_login_at) ORDER BY provider),'[]') FROM user_identities WHERE user_id=$1`},

@@ -25,6 +25,9 @@
           # Break-glass off once personal admin accounts exist (docs/DEPLOYMENT.md 2.7).
           ADMIN_TOKEN_DISABLED={{ admin_token_disabled | default(false) | bool | lower }}
           ADMIN_TOTP_KEY={{ admin_totp_key | default('') }}
+          # Signs the site-entry 18+ gate cookie (api and web share it;
+          # internal/api/agegate.go). Empty = the public development key.
+          AGE_GATE_KEY={{ age_gate_key | default('') }}
           # Service token (svc_…) of the daily SEO check, scoped to POST /api/admin/seo/report
           # (docs/DEPLOYMENT.md 2.7); empty = the cron falls back to ADMIN_TOKEN.
           SEO_REPORT_TOKEN={{ seo_report_token | default('') }}

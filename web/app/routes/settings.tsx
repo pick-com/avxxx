@@ -29,7 +29,8 @@ export const meta = () => [{title: translate('settings.pageTitle')}];
 // Not built (no backend or decision yet):
 // TODO(tech plan 3.13): 跳过片头 (needs intro markers; only a curve-based
 // suggestion exists), 默认片源、字幕大小、配音、清除搜索记录.
-// TODO(PRD 16 / 20): 广告偏好 and 青少年模式 sections (青少年模式 positioning is undecided).
+// TODO(PRD 16 / 20): 广告偏好 section. There is no 青少年模式: the site is
+// adults-only behind the site-entry 18+ gate (DESIGN_ALIGNMENT #8).
 
 type SectionKey = 'account' | 'playback' | 'language' | 'notify' | 'privacy';
 const SECTION_DEFS: {key: SectionKey; title: MessageKey; desc: MessageKey; icon: IconName}[] = [

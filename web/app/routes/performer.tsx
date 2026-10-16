@@ -9,6 +9,7 @@ import {SourceCredits} from '../components/SourceCredits';
 import {SourceEvidence} from '../components/SourceEvidence';
 import {BlockSkeleton, CardGridSkeleton, EmptyState, ErrorBanner} from '../components/States';
 import {ApiError, getPerformer, getPerformerReleases, listPerformerPage, listReleasePage, listUpcoming, toPage, type CreditRole, type LangCode, type Page, type PerformerDetail, type Release} from '../lib/api';
+import {isGated} from '../lib/ageGate.server';
 import {isGone, serverApi} from '../lib/api.server';
 import {serverCredits} from '../lib/credits.server';
 import {useCredits, type Attribution} from '../lib/evidence';
@@ -49,6 +50,20 @@ export async function loader({params, request}: LoaderFunctionArgs) {
     const detail = await serverApi<PerformerDetail>(`performers/${enc}`, {lang, signal: request.signal});
     if (detail.slug && detail.slug !== slug) {
       throw redirect(localizePath(`/performers/${encodeURIComponent(detail.slug)}`, lang) + new URL(request.url).search, 301);
+    }
+    // 18+ gate: only what meta() puts in the head reaches the document.
+    if (isGated(request)) {
+      const seo = {
+        slug: detail.slug,
+        canonical_name: detail.canonical_name,
+        canonical_name_ja: detail.canonical_name_ja,
+        biography: detail.biography,
+        birth_date: detail.birth_date_hidden === false ? detail.birth_date : undefined,
+        birth_date_hidden: detail.birth_date_hidden,
+        birth_place: detail.birth_place,
+        portrait: detail.portrait?.url ? {url: detail.portrait.url} : undefined,
+      } as PerformerDetail;
+      return {lang, slug, detail: seo} satisfies PerformerLoad;
     }
     const creditsP = serverCredits({kind: 'performer', slug}, request.signal);
     const works = await serverApi<{items: Release[] | null; next_cursor?: string | null}>(`releases?performer=${enc}&limit=${PAGE_SIZE}`, {lang, signal: request.signal})

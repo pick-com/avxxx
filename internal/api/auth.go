@@ -39,7 +39,7 @@ import (
 
 // authStore is the subset of *store.Store used by the account and auth routes.
 type authStore interface {
-	RegisterSession(ctx context.Context, email, password, displayName, termsVersion string, meta store.SessionMeta) (map[string]any, error)
+	RegisterSession(ctx context.Context, email, password, displayName, termsVersion string, adult store.Adult, meta store.SessionMeta) (map[string]any, error)
 	LoginSession(ctx context.Context, email, password string, meta store.SessionMeta) (map[string]any, error)
 	Logout(ctx context.Context, token string) error
 
@@ -52,6 +52,7 @@ type authStore interface {
 	RequestPasswordReset(ctx context.Context, email string) error
 	ResetPassword(ctx context.Context, token, password string) error
 	AcceptTerms(ctx context.Context, userID int64, version, source string) error
+	ConfirmAdult(ctx context.Context, userID int64, adult store.Adult) error
 
 	RequestAccountDeletion(ctx context.Context, userID int64, password string) (time.Time, error)
 	ReserveDataExport(ctx context.Context, userID int64) error
@@ -61,7 +62,7 @@ type authStore interface {
 
 	SaveOAuthState(ctx context.Context, st store.OAuthState) error
 	TakeOAuthState(ctx context.Context, provider, stateHash string) (store.OAuthState, error)
-	OAuthSignIn(ctx context.Context, p store.OAuthProfile) (int64, bool, error)
+	OAuthSignIn(ctx context.Context, p store.OAuthProfile, adult store.Adult) (int64, bool, error)
 	LinkIdentity(ctx context.Context, userID int64, p store.OAuthProfile) error
 	Identities(ctx context.Context, userID int64) ([]map[string]any, error)
 	UnlinkIdentity(ctx context.Context, userID int64, provider string) error
@@ -89,6 +90,7 @@ var (
 	limitForgotIP   = rateRule{5, time.Hour}
 	limitResetIP    = rateRule{20, time.Hour}
 	limitOAuthIP    = rateRule{30, 10 * time.Minute}
+	limitAdultUser  = rateRule{10, time.Hour}
 )
 
 const oauthBindCookie = "reel_oauth_bind"
@@ -116,6 +118,7 @@ func (srv *Server) authRoutes() []route {
 		{"POST /api/me/deletion", srv.user(srv.requestDeletion)},
 		{"GET /api/me/interests", srv.user(srv.getInterests)},
 		{"PUT /api/me/interests", srv.user(srv.putInterests)},
+		{"POST /api/me/adult-confirm", srv.user(srv.confirmAdult)},
 	}
 }
 
@@ -293,6 +296,7 @@ func (srv *Server) oauthStart(w http.ResponseWriter, r *http.Request) {
 		Next     string `json:"next"`
 		Remember *bool  `json:"remember"`
 		Link     bool   `json:"link"`
+		adultInput
 	}
 	if err := readJSON(r, &in, true); err != nil {
 		reply(w, nil, err)
@@ -305,6 +309,18 @@ func (srv *Server) oauthStart(w http.ResponseWriter, r *http.Request) {
 	if !srv.allow(r, "oauth:"+srv.ip(r), limitOAuthIP) {
 		reply(w, nil, tooManyRequests("too many requests"))
 		return
+	}
+	// 18+ (agegate.go): a sign-in that may create an account carries the
+	// confirmation to the callback; without it only existing accounts can
+	// sign in (a new one fails as age_required).
+	var adult store.Adult
+	if !in.Link && in.AdultConfirmed {
+		a, err := srv.adultCheck(w, r, in.adultInput)
+		if err != nil {
+			reply(w, nil, err)
+			return
+		}
+		adult = a
 	}
 	var linkUser int64
 	if in.Link {
@@ -326,7 +342,7 @@ func (srv *Server) oauthStart(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	st := store.OAuthState{StateHash: store.HashOpaque(state), Provider: name, CodeVerifier: verifier, Nonce: nonce,
-		BindHash: store.HashOpaque(bind), NextPath: safeNextPath(in.Next), Remember: rememberOr(in.Remember), LinkUserID: linkUser}
+		BindHash: store.HashOpaque(bind), NextPath: safeNextPath(in.Next), Remember: rememberOr(in.Remember), LinkUserID: linkUser, Adult: adult}
 	if err := srv.auth.SaveOAuthState(r.Context(), st); err != nil {
 		reply(w, nil, err)
 		return
@@ -423,8 +439,11 @@ func (srv *Server) oauthCallback(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, "/settings?s=account&linked="+url.QueryEscape(name), http.StatusSeeOther)
 		return
 	}
-	uid, created, err := srv.auth.OAuthSignIn(r.Context(), profile)
+	uid, created, err := srv.auth.OAuthSignIn(r.Context(), profile, st.Adult)
 	switch {
+	case errors.Is(err, store.ErrAdultRequired):
+		fail("age_required", nil, false)
+		return
 	case errors.Is(err, store.ErrIdentityEmailTaken):
 		fail("email_taken", nil, false)
 		return
@@ -593,6 +612,33 @@ func (srv *Server) acceptTerms(w http.ResponseWriter, r *http.Request, uid int64
 	}
 	e := srv.auth.AcceptTerms(r.Context(), uid, in.Version, "prompt")
 	reply(w, map[string]string{"terms_version": in.Version}, e)
+}
+
+// confirmAdult is the one-time 18+ confirmation for accounts created before
+// the site-entry gate (users.adult_confirmed_at NULL; GET /api/auth/me says
+// adult_confirmed false): {"adult_confirmed": true} plus birth_year /
+// birth_month unless the gate cookie is ok. Under 18 answers 403 and sets
+// the denied gate cookie; the web app then signs out.
+func (srv *Server) confirmAdult(w http.ResponseWriter, r *http.Request, uid int64) {
+	var in adultInput
+	if err := readJSON(r, &in, false); err != nil {
+		reply(w, nil, err)
+		return
+	}
+	if !srv.needAuth(w) {
+		return
+	}
+	if !srv.allow(r, "adult:"+strconv.FormatInt(uid, 10), limitAdultUser) {
+		reply(w, nil, tooManyRequests("too many requests"))
+		return
+	}
+	adult, err := srv.adultCheck(w, r, in)
+	if err != nil {
+		reply(w, nil, err)
+		return
+	}
+	e := srv.auth.ConfirmAdult(r.Context(), uid, adult)
+	reply(w, map[string]bool{"adult_confirmed": e == nil}, e)
 }
 
 func (srv *Server) listIdentities(w http.ResponseWriter, r *http.Request, uid int64) {

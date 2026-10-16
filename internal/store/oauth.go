@@ -45,6 +45,9 @@ type OAuthState struct {
 	NextPath     string
 	Remember     bool
 	LinkUserID   int64 // 0 = sign in
+	// Adult is the 18+ confirmation given on the login page; a sign-in that
+	// would create an account fails without it (ErrAdultRequired).
+	Adult Adult
 }
 
 // HashOpaque is the stored form of an opaque one-time value (state, bind
@@ -60,9 +63,13 @@ func (s *Store) SaveOAuthState(ctx context.Context, st OAuthState) error {
 	if st.LinkUserID > 0 {
 		link = st.LinkUserID
 	}
-	_, err := s.Exec(ctx, `INSERT INTO oauth_states(state_hash,provider,code_verifier,nonce,bind_hash,next_path,remember,link_user_id,expires_at)
-		VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9)`, st.StateHash, st.Provider, st.CodeVerifier, st.Nonce, st.BindHash, st.NextPath, st.Remember, link,
-		time.Now().Add(OAuthStateTTL))
+	ym, err := st.Adult.birthYM()
+	if err != nil {
+		return err
+	}
+	_, err = s.Exec(ctx, `INSERT INTO oauth_states(state_hash,provider,code_verifier,nonce,bind_hash,next_path,remember,link_user_id,expires_at,adult_confirmed,adult_birth_ym)
+		VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`, st.StateHash, st.Provider, st.CodeVerifier, st.Nonce, st.BindHash, st.NextPath, st.Remember, link,
+		time.Now().Add(OAuthStateTTL), st.Adult.Confirmed, ym)
 	return err
 }
 
@@ -71,11 +78,12 @@ func (s *Store) SaveOAuthState(ctx context.Context, st OAuthState) error {
 func (s *Store) TakeOAuthState(ctx context.Context, provider, stateHash string) (OAuthState, error) {
 	var st OAuthState
 	var link *int64
+	var ym *string
 	var live bool
 	// Deleted whatever the outcome: a state presented once is spent, even
 	// on the wrong provider's callback.
-	err := s.QueryRow(ctx, `DELETE FROM oauth_states WHERE state_hash=$1 RETURNING state_hash,provider,code_verifier,nonce,bind_hash,next_path,remember,link_user_id,expires_at>now()`,
-		stateHash).Scan(&st.StateHash, &st.Provider, &st.CodeVerifier, &st.Nonce, &st.BindHash, &st.NextPath, &st.Remember, &link, &live)
+	err := s.QueryRow(ctx, `DELETE FROM oauth_states WHERE state_hash=$1 RETURNING state_hash,provider,code_verifier,nonce,bind_hash,next_path,remember,link_user_id,expires_at>now(),adult_confirmed,adult_birth_ym`,
+		stateHash).Scan(&st.StateHash, &st.Provider, &st.CodeVerifier, &st.Nonce, &st.BindHash, &st.NextPath, &st.Remember, &link, &live, &st.Adult.Confirmed, &ym)
 	if errors.Is(err, pgx.ErrNoRows) || (err == nil && (!live || st.Provider != provider)) {
 		return OAuthState{}, ErrOAuthState
 	}
@@ -84,6 +92,9 @@ func (s *Store) TakeOAuthState(ctx context.Context, provider, stateHash string) 
 	}
 	if link != nil {
 		st.LinkUserID = *link
+	}
+	if ym != nil {
+		st.Adult.BirthYM = *ym
 	}
 	return st, nil
 }
@@ -99,9 +110,11 @@ type OAuthProfile struct {
 
 // OAuthSignIn finds or creates the user for a provider identity: an existing
 // identity signs in (and cancels a pending deletion); otherwise a new
-// OAuth-only account is created from the verified email. created reports a
-// new account (the web app then shows onboarding and the terms prompt).
-func (s *Store) OAuthSignIn(ctx context.Context, p OAuthProfile) (userID int64, created bool, err error) {
+// OAuth-only account is created from the verified email, but only with the
+// 18+ confirmation (ErrAdultRequired otherwise; nothing is written). created
+// reports a new account (the web app then shows onboarding and the terms
+// prompt).
+func (s *Store) OAuthSignIn(ctx context.Context, p OAuthProfile, adult Adult) (userID int64, created bool, err error) {
 	err = s.QueryRow(ctx, `UPDATE user_identities SET last_login_at=now() WHERE provider=$1 AND subject=$2 RETURNING user_id`, p.Provider, p.Subject).Scan(&userID)
 	if err == nil {
 		_, err = s.cancelDeletion(ctx, userID)
@@ -114,13 +127,21 @@ func (s *Store) OAuthSignIn(ctx context.Context, p OAuthProfile) (userID int64, 
 	if email == "" || !p.EmailVerified {
 		return 0, false, ErrNoEmail
 	}
+	if !adult.Confirmed {
+		return 0, false, ErrAdultRequired
+	}
+	ym, err := adult.birthYM()
+	if err != nil {
+		return 0, false, err
+	}
 	name, _ := CleanDisplayName(p.Name)
 	tx, err := s.Begin(ctx)
 	if err != nil {
 		return 0, false, err
 	}
 	defer tx.Rollback(ctx)
-	err = tx.QueryRow(ctx, `INSERT INTO users(email,password_hash,display_name) VALUES($1,'',$2) ON CONFLICT (email) DO NOTHING RETURNING id`, email, name).Scan(&userID)
+	err = tx.QueryRow(ctx, `INSERT INTO users(email,password_hash,display_name,adult_confirmed_at,adult_birth_ym) VALUES($1,'',$2,now(),$3)
+		ON CONFLICT (email) DO NOTHING RETURNING id`, email, name, ym).Scan(&userID)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return 0, false, ErrIdentityEmailTaken
 	}

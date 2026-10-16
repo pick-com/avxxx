@@ -1,29 +1,18 @@
-import {useEffect, useId, useState} from 'react';
+import {useId, useState, type FormEvent, type ReactNode} from 'react';
+import {ApiError} from '../lib/api';
+import {answerAgeGate} from '../lib/ageGate';
 import {useT} from '../lib/i18n';
+import {Link} from '../lib/nav';
 import {Icon} from './Icon';
 
-// Age confirmation (PRD 15, AgeGate artboard).
+// Site-entry 18+ gate (PRD 15, AgeGate artboard; DESIGN_ALIGNMENT #8).
 //
-// Registration asks for birth year and month and blocks under-13s
-// (login.tsx). AgeConfirm is the per-video 18+ screen; it is not mounted
-// anywhere yet because releases carry no age rating in the API.
-// TODO(PRD 15 / age_verifications): mount <AgeConfirm> on the video page for
-// releases with an age rating and record the confirmation server-side.
-// Teen mode (time limits, parent password) is out of scope: positioning is undecided.
-
-export const MIN_REGISTER_AGE = 13;
-const LOCK_KEY = 'age_gate_v1';
-const LOCK_MS = 24 * 60 * 60 * 1000;
-
-/**
- * Whole years at `now` from a birth year and month. The day is unknown, so the
- * birth month itself counts as not yet reached (conservative).
- */
-export function ageFromYearMonth(year: number, month: number, now = new Date()): number {
-  let age = now.getFullYear() - year;
-  if (now.getMonth() + 1 <= month) age -= 1;
-  return age;
-}
+// The site is adults-only. root.tsx renders <SiteAgeGate> instead of the app
+// until the visitor's signed gate cookie says ok, and <AgeRestricted> while it
+// says denied (24 hours, no new answer possible). The answer is checked and
+// the cookie set by POST /api/age-gate (internal/api/agegate.go); the page
+// then reloads so the server renders it with its data. Registration and the
+// one-time prompt for older accounts reuse <BirthMonthPicker>.
 
 export function BirthMonthPicker({year, month, onYear, onMonth, idPrefix}: {
   year: string;
@@ -65,87 +54,98 @@ export function BirthMonthPicker({year, month, onYear, onMonth, idPrefix}: {
   );
 }
 
-type Lock = {year: number; month: number; at: number};
-
-function readLock(): Lock | null {
-  try {
-    const v = JSON.parse(window.localStorage.getItem(LOCK_KEY) ?? 'null') as Lock | null;
-    return v && Date.now() - v.at < LOCK_MS ? v : null;
-  } catch {
-    return null;
-  }
+function GateLinks() {
+  const t = useT();
+  return (
+    <nav className="age-gate-links" aria-label={t('age.linksLabel')}>
+      <Link to="/legal/terms">{t('age.linkTerms')}</Link>
+      <Link to="/legal/privacy">{t('age.linkPrivacy')}</Link>
+      <Link to="/help">{t('age.linkHelp')}</Link>
+    </nav>
+  );
 }
 
-/** Per-video confirmation for rated releases (unused until the API exposes a rating). */
-export function AgeConfirm({minAge = 18, reason, onConfirm, onBack}: {minAge?: number; reason?: string; onConfirm: () => void; onBack: () => void}) {
+function GateFrame({children, labelledBy}: {children: ReactNode; labelledBy: string}) {
+  return (
+    <main className="age-gate-page">
+      <section className="age-gate" aria-labelledby={labelledBy}>
+        <span className="logo logo-lg">
+          REEL<span className="logo-dot">.</span>
+        </span>
+        {children}
+      </section>
+    </main>
+  );
+}
+
+/** The interstitial shown before any page until the visitor confirms 18+. */
+export function SiteAgeGate() {
   const t = useT();
   const [year, setYear] = useState('');
   const [month, setMonth] = useState('');
-  const [blocked, setBlocked] = useState(false);
-  const [lock, setLock] = useState<Lock | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
 
-  useEffect(() => {
-    const l = readLock();
-    setLock(l);
-    if (l) {
-      setYear(String(l.year));
-      setMonth(String(l.month));
-      if (ageFromYearMonth(l.year, l.month) < minAge) setBlocked(true);
+  const submit = async (event: FormEvent) => {
+    event.preventDefault();
+    if (!year || !month) {
+      setError(t('login.pickBirth'));
+      return;
     }
-  }, [minAge]);
-
-  const confirm = () => {
-    const y = Number(year);
-    const m = Number(month);
-    if (!y || !m) return;
-    if (!lock) {
-      const next = {year: y, month: m, at: Date.now()};
-      try {
-        window.localStorage.setItem(LOCK_KEY, JSON.stringify(next));
-      } catch {
-        /* not persisted */
-      }
-      setLock(next);
+    setBusy(true);
+    setError('');
+    try {
+      await answerAgeGate(Number(year), Number(month));
+      // ok: the server renders the page; denied: the restricted page.
+      window.location.reload();
+    } catch (cause) {
+      setError(cause instanceof ApiError && cause.status === 429 ? t('login.tooMany') : t('age.gateFailed'));
+      setBusy(false);
     }
-    if (ageFromYearMonth(y, m) >= minAge) onConfirm();
-    else setBlocked(true);
   };
 
-  if (blocked) {
-    return (
-      <section className="age-gate" role="alert">
-        <h2>{t('age.blockedTitle')}</h2>
-        <p>{t('age.blockedBody')}</p>
-        <p className="muted">{t('age.lockNote')}</p>
-        <button type="button" className="btn btn-secondary" onClick={onBack}>
-          {t('common.back')}
-        </button>
-      </section>
-    );
-  }
-
   return (
-    <section className="age-gate" aria-labelledby="age-gate-title">
-      <span className="age-badge">{minAge}+</span>
-      <h2 id="age-gate-title">{t('age.title', {age: minAge})}</h2>
-      <p>
-        {reason ? t('age.reason', {reason}) : ''}
-        {t('age.prompt')}
-      </p>
-      <BirthMonthPicker year={year} month={month} onYear={lock ? () => {} : setYear} onMonth={lock ? () => {} : setMonth} />
-      {lock && (
+    <GateFrame labelledBy="age-gate-title">
+      <span className="age-badge">18+</span>
+      <h1 id="age-gate-title">{t('age.gateTitle')}</h1>
+      <p>{t('age.gateBody')}</p>
+      <form className="age-gate-form" onSubmit={submit}>
+        <BirthMonthPicker year={year} month={month} onYear={setYear} onMonth={setMonth} idPrefix="gate-birth" />
         <p className="muted">
-          <Icon name="lock" size={14} /> {t('age.lockNote')}
+          <Icon name="lock" size={14} /> {t('age.gatePrivacy')}
         </p>
-      )}
-      <div className="action-row">
-        <button type="button" className="btn btn-secondary" onClick={onBack}>
-          {t('common.back')}
+        {error && (
+          <p className="form-error" role="alert">
+            {error}
+          </p>
+        )}
+        <button type="submit" className="btn btn-primary btn-block btn-lg" disabled={busy || !year || !month}>
+          {busy ? t('login.wait') : t('age.gateEnter')}
         </button>
-        <button type="button" className="btn btn-primary" disabled={!year || !month} onClick={confirm}>
-          {t('age.confirm')}
-        </button>
-      </div>
-    </section>
+      </form>
+      <p className="muted">{t('age.gateNotice')}</p>
+      <GateLinks />
+    </GateFrame>
+  );
+}
+
+/** Shown for 24 hours after an under-18 answer: an explanation and the legal pages, nothing else. */
+export function AgeRestricted({until}: {until?: string}) {
+  const t = useT();
+  return (
+    <GateFrame labelledBy="age-restricted-title">
+      <h1 id="age-restricted-title">{t('age.deniedTitle')}</h1>
+      <p>{t('age.deniedBody')}</p>
+      <p className="muted">
+        <Icon name="lock" size={14} /> {t('age.lockNote')}
+        {until && (
+          <>
+            {' '}
+            <time dateTime={until}>{t('age.lockUntil', {time: until.slice(0, 16).replace('T', ' ') + ' UTC'})}</time>
+          </>
+        )}
+      </p>
+      <GateLinks />
+    </GateFrame>
   );
 }

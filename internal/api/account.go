@@ -41,6 +41,7 @@ func (srv *Server) register(w http.ResponseWriter, r *http.Request) {
 		DisplayName  string `json:"display_name"`
 		Remember     *bool  `json:"remember"`
 		TermsVersion string `json:"terms_version"`
+		adultInput
 	}
 	if err := json.NewDecoder(r.Body).Decode(&in); err != nil {
 		reply(w, nil, badRequest("invalid JSON body", err))
@@ -51,12 +52,18 @@ func (srv *Server) register(w http.ResponseWriter, r *http.Request) {
 		reply(w, nil, badRequest("email and password (min 8 characters) are required", nil))
 		return
 	}
+	if srv.auth != nil && !srv.allow(r, "register:"+srv.ip(r), limitRegisterIP) {
+		reply(w, nil, tooManyRequests("too many requests"))
+		return
+	}
+	// 18+ only (agegate.go): checked before anything is created.
+	adult, err := srv.adultCheck(w, r, in.adultInput)
+	if err != nil {
+		reply(w, nil, err)
+		return
+	}
 	if srv.auth != nil {
-		if !srv.allow(r, "register:"+srv.ip(r), limitRegisterIP) {
-			reply(w, nil, tooManyRequests("too many requests"))
-			return
-		}
-		v, e := srv.auth.RegisterSession(r.Context(), in.Email, in.Password, in.DisplayName, in.TermsVersion,
+		v, e := srv.auth.RegisterSession(r.Context(), in.Email, in.Password, in.DisplayName, in.TermsVersion, adult,
 			store.SessionMeta{Remember: rememberOr(in.Remember), UserAgent: userAgent(r)})
 		reply(w, v, e)
 		return

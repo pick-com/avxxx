@@ -254,6 +254,7 @@ var expectedRoutes = []string{
 	"POST /api/me/deletion",
 	"GET /api/me/interests",
 	"PUT /api/me/interests",
+	"POST /api/me/adult-confirm",
 	// Consent records (consent.go).
 	"POST /api/consent",
 	"GET /api/me/consent",
@@ -329,6 +330,8 @@ var expectedRoutes = []string{
 	"POST /api/admin/releases/{id}/rights-proofs",
 	"DELETE /api/admin/releases/{id}/rights-proofs/{proof_id}",
 	"POST /api/admin/search/terms/release",
+	// Site-entry 18+ gate (agegate.go).
+	"POST /api/age-gate",
 }
 
 var (

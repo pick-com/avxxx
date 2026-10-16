@@ -1,4 +1,5 @@
 import {data, useLoaderData, useSearchParams, type LoaderFunctionArgs, type MetaFunction} from 'react-router';
+import {isGated} from '../lib/ageGate.server';
 import {serverApi} from '../lib/api.server';
 import {routeLang} from '../lib/langs';
 import {breadcrumbs, seoMeta, type SeoHandle} from '../lib/seo';
@@ -71,6 +72,12 @@ export async function loader({params, request}: LoaderFunctionArgs) {
   const body: DiscoverLoad = {lang, search: url.searchParams.toString()};
   const tab = rawTab(url.searchParams);
   const fail = () => undefined;
+  if (isGated(request)) {
+    // 18+ gate: only the tag name for the title of a ?tag= page.
+    const tag = tab === 'new' ? parseReleaseFilter(url.searchParams).tag : undefined;
+    if (tag) body.tags = await serverApi<Items<Tag>>('tags?limit=200', opts).then(d => (d.items ?? []).filter(x => x.slug === tag), fail);
+    return body;
+  }
   if (tab === 'new') {
     const filter = parseReleaseFilter(url.searchParams);
     const q = query({...filter, sort: filter.sort && filter.sort !== 'newest' ? filter.sort : undefined, limit: RELEASE_PAGE_SIZE});

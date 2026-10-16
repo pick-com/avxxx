@@ -1,8 +1,13 @@
 import {createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode} from 'react';
+import {useRouteLoaderData} from 'react-router';
+import {BirthMonthPicker} from '../components/AgeGate';
+import type {RootData} from '../root';
+import {isAgeRestricted} from './ageGate';
 import {tokens, type AuthResult} from './api';
 import {
   acceptTerms,
   clearSessionKind,
+  confirmAdult,
   currentTermsVersion,
   ephemeralTokenExpired,
   getAccount,
@@ -83,12 +88,77 @@ export function AuthProvider({children}: {children: ReactNode}) {
   return (
     <AuthContext.Provider value={value}>
       {children}
-      {status === 'user' && user && <TermsPrompt user={user} onAccepted={refresh} onDecline={signOut} />}
+      {status === 'user' &&
+        user &&
+        (user.adult_confirmed === false ? (
+          <AdultPrompt onConfirmed={refresh} onDecline={signOut} />
+        ) : (
+          <TermsPrompt user={user} onAccepted={refresh} onDecline={signOut} />
+        ))}
     </AuthContext.Provider>
   );
 }
 
 export const useAuth = () => useContext(AuthContext);
+
+/**
+ * One-time 18+ confirmation for accounts created before the site became
+ * adults-only (GET /api/auth/me adult_confirmed false; POST
+ * /api/me/adult-confirm). Birth year and month are asked only when the gate
+ * cookie is not ok. Under 18: signed out, and the reload shows the
+ * restricted page (the API set the denied gate cookie).
+ */
+function AdultPrompt({onConfirmed, onDecline}: {onConfirmed: () => void; onDecline: () => void}) {
+  const t = useT();
+  const needBirth = useRouteLoaderData<RootData>('root')?.gate !== 'ok';
+  const [year, setYear] = useState('');
+  const [month, setMonth] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  const confirm = async () => {
+    if (needBirth && (!year || !month)) {
+      setError(t('login.pickBirth'));
+      return;
+    }
+    setBusy(true);
+    setError('');
+    try {
+      await confirmAdult(needBirth ? {adult_confirmed: true, birth_year: Number(year), birth_month: Number(month)} : {adult_confirmed: true});
+      onConfirmed();
+    } catch (cause) {
+      if (isAgeRestricted(cause)) {
+        onDecline();
+        window.location.reload();
+        return;
+      }
+      setError(t('terms.failed'));
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <section className="consent-banner" role="dialog" aria-labelledby="adult-title" aria-live="polite">
+      <div className="consent-text">
+        <strong id="adult-title">{t('age.promptTitle')}</strong>
+        <span>{t('age.promptBody')}</span>
+        {needBirth && <BirthMonthPicker year={year} month={month} onYear={setYear} onMonth={setMonth} idPrefix="adult-birth" />}
+        {error && (
+          <span className="field-error" role="alert">
+            {error}
+          </span>
+        )}
+      </div>
+      <div className="consent-actions">
+        <button type="button" className="btn btn-secondary" onClick={onDecline} disabled={busy}>
+          {t('terms.decline')}
+        </button>
+        <button type="button" className="btn btn-primary" onClick={confirm} disabled={busy}>
+          {t('age.promptConfirm')}
+        </button>
+      </div>
+    </section>
+  );
+}
 
 /**
  * Re-prompt when the accepted terms version differs from the current one

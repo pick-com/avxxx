@@ -16,7 +16,16 @@ export type Me = User & {
   /** Latest accepted terms version; "" = none. undefined = backend without terms_acceptances. */
   terms_version?: string;
   providers?: string[];
+  /** The 18+ confirmation is on file (migration 046); false = one-time prompt. undefined = older backend. */
+  adult_confirmed?: boolean;
 };
+
+/**
+ * 18+ confirmation sent with registration, an OAuth sign-up and the one-time
+ * prompt: the checkbox, plus birth year and month when the gate cookie is not
+ * already ok (internal/api/agegate.go adultCheck).
+ */
+export type AdultInput = {adult_confirmed: boolean; birth_year?: number; birth_month?: number};
 
 export type SignInResult = AuthResult & {remember?: boolean; expires_at?: string; deletion_cancelled?: boolean; created?: boolean};
 
@@ -43,8 +52,11 @@ const bearer = (): Record<string, string> => {
 export const loginWith = (email: string, password: string, remember: boolean) =>
   api<SignInResult>('auth/login', {method: 'POST', body: {email, password, remember}});
 
-export const registerWith = (email: string, password: string, displayName: string, remember: boolean, termsVersion: string) =>
-  api<SignInResult>('auth/register', {method: 'POST', body: {email, password, display_name: displayName, remember, terms_version: termsVersion}});
+export const registerWith = (email: string, password: string, displayName: string, remember: boolean, termsVersion: string, adult: AdultInput) =>
+  api<SignInResult>('auth/register', {method: 'POST', body: {email, password, display_name: displayName, remember, terms_version: termsVersion, ...adult}});
+
+/** POST /api/me/adult-confirm: the one-time 18+ confirmation for older accounts. 403 = under 18. */
+export const confirmAdult = (adult: AdultInput) => api<{adult_confirmed: boolean}>('me/adult-confirm', {method: 'POST', body: adult});
 
 export const getAccount = (signal?: AbortSignal) => api<Me>('auth/me', {signal});
 
@@ -74,10 +86,10 @@ export async function getAuthProviders(signal?: AbortSignal): Promise<OAuthProvi
 }
 
 /** Starts a sign-in (or, with link, links the provider to the signed-in user) and navigates to the provider. */
-export async function startOAuth(provider: OAuthProvider, opts: {next?: string; remember?: boolean; link?: boolean}) {
+export async function startOAuth(provider: OAuthProvider, opts: {next?: string; remember?: boolean; link?: boolean; adult?: AdultInput}) {
   const r = await api<{url: string}>(`auth/oauth/${provider}/start`, {
     method: 'POST',
-    body: {next: opts.next ?? '/', remember: opts.remember ?? true, link: !!opts.link},
+    body: {next: opts.next ?? '/', remember: opts.remember ?? true, link: !!opts.link, ...opts.adult},
     headers: opts.link ? bearer() : undefined,
   });
   if (!r?.url) throw new ApiError('no redirect', 500);

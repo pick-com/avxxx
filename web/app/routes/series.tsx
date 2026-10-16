@@ -5,6 +5,7 @@ import {LoadMore} from '../components/Paging';
 import {SourceCredits} from '../components/SourceCredits';
 import {BlockSkeleton, CardGridSkeleton, EmptyState, ErrorBanner} from '../components/States';
 import {ApiError, type LangCode} from '../lib/api';
+import {isGated} from '../lib/ageGate.server';
 import {isGone, serverApi} from '../lib/api.server';
 import {serverCredits} from '../lib/credits.server';
 import {useCredits, type Attribution} from '../lib/evidence';
@@ -65,12 +66,18 @@ export async function loader({params, request}: LoaderFunctionArgs) {
   if (!lang) return null;
   const sort = parseSeriesReleaseSort(new URL(request.url).searchParams.get('sort'));
   const opts = {lang, signal: request.signal};
+  const gated = isGated(request);
   try {
     const [detail, releases, credits] = await Promise.all([
       serverApi<SeriesDetail>(`series/${encodeURIComponent(slug)}`, opts),
       serverApi<Parameters<typeof toSeriesReleasePage>[0]>(seriesReleasesPath(slug, sort), opts).then(toSeriesReleasePage, () => undefined),
-      serverCredits({kind: 'series', slug}, request.signal),
+      gated ? undefined : serverCredits({kind: 'series', slug}, request.signal),
     ]);
+    // 18+ gate: the episode list only as the names and links of the head's ItemList.
+    if (gated) {
+      const list = releases && {...releases, items: releases.items.map(r => ({slug: r.slug, canonical_title: r.canonical_title}) as typeof r)};
+      return {lang, slug, sort, detail, releases: list} satisfies SeriesLoad;
+    }
     return {lang, slug, sort, detail, releases, credits} satisfies SeriesLoad;
   } catch (e) {
     if (isGone(e)) return data({lang, slug, sort, missing: true} satisfies SeriesLoad, {status: 404});

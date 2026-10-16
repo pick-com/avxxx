@@ -1,7 +1,8 @@
 import {useEffect, useRef, useState, type FormEvent} from 'react';
-import {useSearchParams} from 'react-router';
+import {useRouteLoaderData, useSearchParams} from 'react-router';
 import {Link, useNavigate} from '../lib/nav';
-import {BirthMonthPicker, MIN_REGISTER_AGE, ageFromYearMonth} from '../components/AgeGate';
+import {BirthMonthPicker} from '../components/AgeGate';
+import {isAgeRestricted} from '../lib/ageGate';
 import {ThemeToggle} from '../components/TopBar';
 import {ApiError} from '../lib/api';
 import {
@@ -12,9 +13,11 @@ import {
   loginWith,
   registerWith,
   startOAuth,
+  type AdultInput,
   type OAuthProvider,
   type SignInResult,
 } from '../lib/account';
+import type {RootData} from '../root';
 import {useAuth} from '../lib/auth';
 import {t, useT} from '../lib/i18n';
 import type {MessageKey} from '../lib/messages.zh-CN';
@@ -37,33 +40,24 @@ function safeNext(value: string | null): string {
 // The OAuth callback lands back here with #oauth_code=… (exchanged once for a
 // session) or ?oauth_error=….
 //
-// Registration asks for birth year and month (PRD 15) and refuses under-13s
-// before anything is sent. The birth date is not sent to the API (no field
-// for it yet; TODO age_verifications, blocked on a product decision). A
-// refusal is remembered on this device for 24 hours so the form cannot simply
-// be retried with another year. A new account goes to /welcome (Onboarding)
-// before `next`.
-
-const AGE_BLOCK_KEY = 'register_age_block';
-const AGE_BLOCK_MS = 24 * 60 * 60 * 1000;
+// 18+ only (PRD 15, DESIGN_ALIGNMENT #8): registration needs the 「已年满 18
+// 周岁」 checkbox, plus birth year and month when the site-entry gate cookie
+// is not already ok (it normally is: this page sits behind the gate). The
+// API checks it (internal/api/agegate.go) and stores users.adult_confirmed_at;
+// an under-18 birth date answers 403 and sets the 24-hour denied cookie, and
+// the page reloads into the restricted page. Google / Apple sign-up passes
+// the same confirmation from the 注册 tab; from the 登录 tab only existing
+// accounts can sign in (a new one comes back as age_required). A new account
+// goes to /welcome (Onboarding) before `next`.
 
 const OAUTH_ERRORS: Record<string, MessageKey> = {
   email_taken: 'login.oauthEmailTaken',
   no_email: 'login.oauthNoEmail',
   cancelled: 'login.oauthCancelled',
   expired: 'login.oauthExpired',
+  age_required: 'login.oauthAgeRequired',
 };
 
-function ageBlocked(): boolean {
-  try {
-    const at = Number(window.localStorage.getItem(AGE_BLOCK_KEY) ?? 0);
-    return at > 0 && Date.now() - at < AGE_BLOCK_MS;
-  } catch {
-    return false;
-  }
-}
-
-const underAge = () => t('login.underAge', {age: MIN_REGISTER_AGE});
 export default function LoginPage() {
   const t = useT();
   const [params] = useSearchParams();
@@ -77,6 +71,9 @@ export default function LoginPage() {
   const [birthMonth, setBirthMonth] = useState('');
   const [remember, setRemember] = useState(true);
   const [agreed, setAgreed] = useState(false);
+  const [adultOk, setAdultOk] = useState(false);
+  // Birth year and month only when the gate cookie is not already ok.
+  const needBirth = useRouteLoaderData<RootData>('root')?.gate !== 'ok';
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(() => {
     const code = params.get('oauth_error');
@@ -147,21 +144,12 @@ export default function LoginPage() {
       return;
     }
     if (mode === 'register') {
-      if (ageBlocked()) {
-        setError(underAge());
+      if (!adultOk) {
+        setError(t('age.adultRequired'));
         return;
       }
-      if (!birthYear || !birthMonth) {
+      if (needBirth && (!birthYear || !birthMonth)) {
         setError(t('login.pickBirth'));
-        return;
-      }
-      if (ageFromYearMonth(Number(birthYear), Number(birthMonth)) < MIN_REGISTER_AGE) {
-        try {
-          window.localStorage.setItem(AGE_BLOCK_KEY, String(Date.now()));
-        } catch {
-          /* not persisted */
-        }
-        setError(underAge());
         return;
       }
       if (!agreed) {
@@ -178,9 +166,13 @@ export default function LoginPage() {
       const result =
         mode === 'login'
           ? await loginWith(email, password, remember)
-          : await registerWith(email, password, displayName, remember, await currentTermsVersion());
+          : await registerWith(email, password, displayName, remember, await currentTermsVersion(), adultInput());
       finish(result, remember, mode === 'register');
     } catch (cause) {
+      if (mode === 'register' && isAgeRestricted(cause)) {
+        window.location.reload();
+        return;
+      }
       if (cause instanceof ApiError && cause.status === 0) setError(cause.message);
       else if (cause instanceof ApiError && cause.status === 429) setError(t('login.tooMany'));
       else if (mode === 'login') setError(t('login.loginFailed'));
@@ -189,12 +181,32 @@ export default function LoginPage() {
     }
   };
 
+  const adultInput = (): AdultInput =>
+    needBirth && birthYear && birthMonth
+      ? {adult_confirmed: adultOk, birth_year: Number(birthYear), birth_month: Number(birthMonth)}
+      : {adult_confirmed: adultOk};
+
   const sso = async (provider: OAuthProvider) => {
     setError('');
+    // Signing up with a provider needs the same 18+ confirmation first.
+    if (mode === 'register') {
+      if (!adultOk) {
+        setError(t('age.adultRequired'));
+        return;
+      }
+      if (needBirth && (!birthYear || !birthMonth)) {
+        setError(t('login.pickBirth'));
+        return;
+      }
+    }
     setBusy(true);
     try {
-      await startOAuth(provider, {next, remember});
-    } catch {
+      await startOAuth(provider, {next, remember, adult: mode === 'register' ? adultInput() : undefined});
+    } catch (cause) {
+      if (isAgeRestricted(cause)) {
+        window.location.reload();
+        return;
+      }
       setError(t('login.oauthFailed'));
       setBusy(false);
     }
@@ -253,7 +265,7 @@ export default function LoginPage() {
               <span>{t('login.email')}</span>
               <input type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="name@example.com" autoComplete="email" required />
             </label>
-            {mode === 'register' && (
+            {mode === 'register' && needBirth && (
               <div className="field">
                 <BirthMonthPicker year={birthYear} month={birthMonth} onYear={setBirthYear} onMonth={setBirthMonth} idPrefix="reg-birth" />
                 <span className="field-hint">{t('login.birthHint')}</span>
@@ -285,6 +297,12 @@ export default function LoginPage() {
                   </button>
                 )}
               </div>
+            )}
+            {mode === 'register' && (
+              <label className="auth-check">
+                <input type="checkbox" checked={adultOk} onChange={e => setAdultOk(e.target.checked)} required />
+                <span>{t('age.adultConfirm')}</span>
+              </label>
             )}
             {mode === 'register' && (
               <label className="auth-check">

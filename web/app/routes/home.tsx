@@ -1,5 +1,6 @@
 import {Link} from '../lib/nav';
 import {data, useLoaderData, type LoaderFunctionArgs, type MetaFunction} from 'react-router';
+import {isGated} from '../lib/ageGate.server';
 import {serverApi} from '../lib/api.server';
 import {routeLang} from '../lib/langs';
 import {compact, pageUrl, rootMeta, seoMeta, type SeoHandle} from '../lib/seo';
@@ -37,6 +38,8 @@ const SHORT_LIMIT = 10;
 export async function loader({params, request}: LoaderFunctionArgs) {
   const lang = routeLang(params);
   if (!lang) return null;
+  // 18+ gate: the head needs no data; the body is the gate (root.tsx).
+  if (isGated(request)) return {lang} satisfies HomeLoad;
   const opts = {lang, signal: request.signal};
   type Items<T> = {items: T[] | null; next_cursor?: string | null};
   // Region-targeted slots: the visitor's country from the CDN (CF-IPCountry).

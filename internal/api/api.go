@@ -17,6 +17,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 )
@@ -133,6 +134,10 @@ type Server struct {
 	auth       authStore
 	oidc       map[string]oidcProvider
 	oauthHTTPS bool
+	// ageGate signs the site-entry 18+ gate cookie (agegate.go,
+	// AGE_GATE_KEY); clock overrides time.Now in tests.
+	ageGate ageGate
+	clock   func() time.Time
 }
 
 type route struct {
@@ -170,6 +175,7 @@ func Register(mux *http.ServeMux, s *store.Store, mediaHandler *media.Handler) {
 	}
 	srv.adminTokenDisabled, _ = strconv.ParseBool(strings.TrimSpace(os.Getenv("ADMIN_TOKEN_DISABLED")))
 	srv.adminSecureCookie = strings.HasPrefix(strings.TrimSpace(os.Getenv("BASE_URL")), "https://")
+	srv.ageGate = newAgeGate(os.Getenv)
 	if s != nil {
 		srv.auth = s
 		srv.adminAuth = s
@@ -268,6 +274,7 @@ func (srv *Server) routes() []route {
 	rs = append(rs, srv.adminJobRoutes()...)
 	rs = append(rs, srv.releaseRightsRoutes()...)
 	rs = append(rs, srv.releaseStubRoutes()...)
+	rs = append(rs, srv.ageGateRoutes()...)
 	return srv.followMerges(rs)
 }
 

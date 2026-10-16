@@ -27,6 +27,8 @@ type fakeAuth struct {
 	revoked       []int64
 	deletionPw    string
 	sessionsOf    map[int64][]int64 // user -> session ids
+	registered    []store.Adult
+	confirmed     map[int64]store.Adult
 }
 
 func newFakeAuth() *fakeAuth {
@@ -34,7 +36,8 @@ func newFakeAuth() *fakeAuth {
 		sessionsOf: map[int64][]int64{1: {10, 11}, 2: {20}}}
 }
 
-func (f *fakeAuth) RegisterSession(_ context.Context, email, _, _, _ string, m store.SessionMeta) (map[string]any, error) {
+func (f *fakeAuth) RegisterSession(_ context.Context, email, _, _, _ string, a store.Adult, m store.SessionMeta) (map[string]any, error) {
+	f.registered = append(f.registered, a)
 	return map[string]any{"token": "t", "remember": m.Remember, "user": map[string]any{"id": 1, "email": email}}, nil
 }
 func (f *fakeAuth) LoginSession(_ context.Context, email, _ string, m store.SessionMeta) (map[string]any, error) {
@@ -114,11 +117,21 @@ func (f *fakeAuth) TakeOAuthState(_ context.Context, provider, h string) (store.
 	}
 	return st, nil
 }
-func (f *fakeAuth) OAuthSignIn(_ context.Context, p store.OAuthProfile) (int64, bool, error) {
+func (f *fakeAuth) OAuthSignIn(_ context.Context, p store.OAuthProfile, a store.Adult) (int64, bool, error) {
 	if f.signIn != nil {
 		return f.signIn(p)
 	}
+	if !a.Confirmed {
+		return 0, false, store.ErrAdultRequired
+	}
 	return 7, true, nil
+}
+func (f *fakeAuth) ConfirmAdult(_ context.Context, uid int64, a store.Adult) error {
+	if f.confirmed == nil {
+		f.confirmed = map[int64]store.Adult{}
+	}
+	f.confirmed[uid] = a
+	return nil
 }
 func (f *fakeAuth) LinkIdentity(_ context.Context, uid int64, p store.OAuthProfile) error {
 	f.linked[uid] = p
@@ -368,7 +381,7 @@ func TestOAuthSignInFlow(t *testing.T) {
 	p := &fakeOIDC{claims: oidc.Claims{Subject: "g-1", Email: "a@example.com", EmailVerified: true}}
 	srv := newAuthServer(f, p)
 
-	state, bind := startOAuth(t, srv, `{"next":"/releases/x","remember":false}`, "")
+	state, bind := startOAuth(t, srv, `{"next":"/releases/x","remember":false,"adult_confirmed":true,"birth_year":1990,"birth_month":5}`, "")
 	for _, st := range f.states {
 		if st.Remember || st.NextPath != "/releases/x" || st.CodeVerifier == "" || st.Nonce == "" {
 			t.Errorf("stored state: %+v", st)

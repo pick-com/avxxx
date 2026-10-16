@@ -3,6 +3,7 @@ import {ReleaseRow} from '../components/Cards';
 import {Icon} from '../components/Icon';
 import {BlockSkeleton, EmptyState, ErrorBanner} from '../components/States';
 import {ApiError, api, type PlaylistDetail} from '../lib/api';
+import {isGated} from '../lib/ageGate.server';
 import {isGone, serverApi} from '../lib/api.server';
 import {formatDate, formatRuntime} from '../lib/format';
 import {t, useT} from '../lib/i18n';
@@ -29,6 +30,8 @@ export async function loader({params, request}: LoaderFunctionArgs) {
   try {
     const detail = await serverApi<PlaylistDetail>(`playlists/${encodeURIComponent(token)}`, {signal: request.signal});
     const headers: HeadersInit = detail.playlist.visibility === 'public' ? {} : {'X-Robots-Tag': 'noindex'};
+    // 18+ gate: the head needs the playlist itself, not its items.
+    if (isGated(request)) return data({token, detail: {playlist: detail.playlist, items: []}} satisfies PlaylistLoad, {headers});
     return data({token, detail} satisfies PlaylistLoad, {headers});
   } catch (e) {
     if (isGone(e)) return data({token, missing: true} satisfies PlaylistLoad, {status: 404, headers: {'X-Robots-Tag': 'noindex'}});
