@@ -19,6 +19,7 @@ type stubPlaybackStore struct {
 	tokens  map[string]int64
 	resume  map[int64]int
 	curves  map[string][]int16
+	replay  map[string][]int16
 }
 
 func (s *stubPlaybackStore) PlaybackForRelease(_ context.Context, slug string) (store.PlaybackRelease, []store.PlaybackSource, error) {
@@ -45,6 +46,10 @@ func (s *stubPlaybackStore) UserIDByToken(_ context.Context, token string) (int6
 
 func (s *stubPlaybackStore) DanmakuCurves(context.Context, int64) (map[string][]int16, error) {
 	return s.curves, nil
+}
+
+func (s *stubPlaybackStore) ReplayCurves(context.Context, int64) (map[string][]int16, error) {
+	return s.replay, nil
 }
 
 func ptr[T any](v T) *T { return &v }

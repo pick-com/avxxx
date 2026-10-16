@@ -98,6 +98,7 @@ func (srv *Server) routes() []route {
 	rs = append(rs, srv.adminI18nRoutes()...)
 	rs = append(rs, srv.communityRoutes()...)
 	rs = append(rs, srv.moderationRoutes()...)
+	rs = append(rs, srv.adminCurveRoutes()...)
 	return srv.followMerges(rs)
 }
 

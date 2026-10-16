@@ -2,6 +2,7 @@ package main
 
 import (
 	"avxxx/internal/audit"
+	"avxxx/internal/playcurve"
 	"avxxx/internal/store"
 	"context"
 	"log"
@@ -48,6 +49,10 @@ func main() {
 		}
 		if _, err := s.EnqueueKindSince(ctx, audit.JobKindSourceHealth, time.Now().Truncate(healthEvery)); err != nil {
 			log.Printf("enqueue source health: %v", err)
+		}
+		// Replay peak / retention curves (PRD 14.3): hourly, run by cmd/audit.
+		if _, err := s.EnqueueKindSince(ctx, playcurve.JobKind, time.Now().Truncate(time.Hour)); err != nil {
+			log.Printf("enqueue release curves: %v", err)
 		}
 		n, err := s.EnqueueDue(ctx)
 		if err != nil {
