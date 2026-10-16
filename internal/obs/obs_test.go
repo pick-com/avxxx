@@ -343,6 +343,20 @@ func TestAlertRulesReferenceKnownMetrics(t *testing.T) {
 	for _, m := range Catalog() {
 		known[m.Name] = true
 	}
+	// Metrics produced outside the Go binaries: scripts/backup-db.sh writes
+	// avxxx_backup.prom for node_exporter's textfile collector. Each name must
+	// still appear in that script, so a rename there fails this test too.
+	backupScript, err := os.ReadFile("../../scripts/backup-db.sh")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, n := range []string{"avxxx_backup", "avxxx_backup_last_success_timestamp_seconds",
+		"avxxx_backup_last_size_bytes", "avxxx_backup_last_duration_seconds"} {
+		if !strings.Contains(string(backupScript), n) {
+			t.Errorf("textfile metric %s is not written by scripts/backup-db.sh", n)
+		}
+		known[n] = true
+	}
 	names := regexp.MustCompile(`avxxx_[a-z0-9_]+`).FindAllString(string(raw), -1)
 	if len(names) == 0 {
 		t.Fatal("no avxxx metrics referenced")
