@@ -10,6 +10,8 @@ import {browserTimezone, useSettings} from '../lib/settings';
 import {themeLabels, useTheme, type ThemePref} from '../lib/theme';
 import {useMediaQuery} from '../lib/useMediaQuery';
 import {LANGS, LANG_LABELS} from '../lib/langs';
+import {t as translate, useI18n, useT} from '../lib/i18n';
+import type {MessageKey} from '../lib/messages.zh-CN';
 
 export const meta = () => [{title: 'REEL · 设置'}];
 
@@ -24,29 +26,32 @@ export const meta = () => [{title: 'REEL · 设置'}];
 // TODO(PRD 16 / 20): 广告偏好 and 青少年模式 sections (青少年模式 positioning is undecided).
 
 type SectionKey = 'account' | 'playback' | 'language' | 'notify' | 'privacy';
-const SECTIONS: {key: SectionKey; title: string; desc: string; icon: IconName}[] = [
-  {key: 'account', title: '账号', desc: '登录方式与账号安全。', icon: 'me'},
-  {key: 'playback', title: '播放', desc: '这些设置在所有设备上同步。', icon: 'play'},
-  {key: 'language', title: '语言与外观', desc: '界面、内容、字幕三者分开设置。', icon: 'globe'},
-  {key: 'notify', title: '通知', desc: '只发你关心的。每类都可以单独关掉。', icon: 'bell'},
-  {key: 'privacy', title: '隐私与数据', desc: '你的数据怎么用，由你决定。', icon: 'lock'},
+const SECTION_DEFS: {key: SectionKey; title: MessageKey; desc: MessageKey; icon: IconName}[] = [
+  {key: 'account', title: 'settings.account', desc: 'settings.accountDesc', icon: 'me'},
+  {key: 'playback', title: 'settings.playback', desc: 'settings.playbackDesc', icon: 'play'},
+  {key: 'language', title: 'settings.language', desc: 'settings.languageDesc', icon: 'globe'},
+  {key: 'notify', title: 'settings.notify', desc: 'settings.notifyDesc', icon: 'bell'},
+  {key: 'privacy', title: 'settings.privacy', desc: 'settings.privacyDesc', icon: 'lock'},
 ];
 
-const QUALITY_LABELS: Record<QualityPref, string> = {auto: '自动', '2160p': '4K（2160p）', '1080p': '1080p', '720p': '720p', '480p': '480p', '360p': '360p'};
-const KIND_LABELS: [NotifyKind, string, string][] = [
-  ['new_work', '关注演员的新作', '按每位演员的铃铛设置（所有新作 / 只提醒主演 / 不提醒）'],
-  ['reservation', '预约的视频上线', '预约过的作品上线时提醒'],
-  ['comment_reply', '评论被回复', ''],
-  ['favorite_update', '收藏的视频有更新', '新增片源或字幕'],
+const QUALITY_PREFS: QualityPref[] = ['auto', '2160p', '1080p', '720p', '480p', '360p'];
+const qualityLabel = (q: QualityPref) => (q === 'auto' ? translate('settings.qualityAuto') : q === '2160p' ? translate('settings.quality4k') : q);
+const KIND_LABELS: [NotifyKind, MessageKey, MessageKey | null][] = [
+  ['new_work', 'settings.kindNewWork', 'settings.kindNewWorkDesc'],
+  ['reservation', 'settings.kindReservation', 'settings.kindReservationDesc'],
+  ['comment_reply', 'settings.kindCommentReply', null],
+  ['favorite_update', 'settings.kindFavoriteUpdate', 'settings.kindFavoriteUpdateDesc'],
 ];
-const CHANNEL_LABELS: [NotifyChannel, string][] = [
-  ['in_app', '站内'],
-  ['push', '推送'],
-  ['email', '邮件'],
+const CHANNEL_LABELS: [NotifyChannel, MessageKey][] = [
+  ['in_app', 'settings.channelInApp'],
+  ['push', 'settings.channelPush'],
+  ['email', 'settings.channelEmail'],
 ];
 const DEFAULT_QUIET = {start: '22:00', end: '08:00'};
 
 export default function SettingsPage() {
+  const t = useT();
+  const SECTIONS = SECTION_DEFS.map(s => ({...s, title: t(s.title), desc: t(s.desc)}));
   const {status: auth} = useAuth();
   const {status, error, reload} = useSettings();
   const [params, setParams] = useSearchParams();
@@ -57,14 +62,14 @@ export default function SettingsPage() {
   if (auth === 'anon') {
     return (
       <div className="page">
-        <EmptyState icon="settings" title="登录后管理设置" body="播放、通知和隐私设置会同步到你的所有设备。外观可以直接用顶栏的按钮切换。" actions={[{to: '/login?next=%2Fsettings', label: '登录'}]} />
+        <EmptyState icon="settings" title={t('settings.signInTitle')} body={t('settings.signInBody')} actions={[{to: '/login?next=%2Fsettings', label: t('auth.login')}]} />
       </div>
     );
   }
   if (status === 'missing') {
     return (
       <div className="page">
-        <EmptyState icon="settings" title="设置页即将上线" body="当前服务还不支持同步设置。外观可以先用顶栏的按钮切换。" actions={[{to: '/me', label: '返回我的'}]} />
+        <EmptyState icon="settings" title={t('settings.missingTitle')} body={t('settings.missingBody')} actions={[{to: '/me', label: t('settings.backToMe')}]} />
       </div>
     );
   }
@@ -74,11 +79,11 @@ export default function SettingsPage() {
 
   return (
     <div className="page settings-page">
-      <h1 className="page-title">{mobile && current ? current.title : '设置'}</h1>
+      <h1 className="page-title">{mobile && current ? current.title : t('settings.title')}</h1>
       {status === 'error' && error && <ErrorBanner error={error} onRetry={reload} />}
       <div className="settings-layout">
         {(!mobile || !current) && (
-          <nav className="settings-nav" aria-label="设置分类">
+          <nav className="settings-nav" aria-label={t('settings.nav')}>
             {SECTIONS.map(s => (
               <button
                 key={s.key}
@@ -101,7 +106,7 @@ export default function SettingsPage() {
           <section className="settings-panel" aria-labelledby="settings-head">
             {mobile && (
               <Link to="/settings" className="text-btn settings-back">
-                <Icon name="back" size={16} /> 全部设置
+                <Icon name="back" size={16} /> {t('settings.all')}
               </Link>
             )}
             <h2 id="settings-head" className={mobile ? 'sr-only' : 'settings-head'}>
@@ -206,20 +211,21 @@ function SelectRow<T extends string>({id, label, description, value, options, on
 }
 
 function AccountSection() {
+  const t = useT();
   const {user, signOut} = useAuth();
   const navigate = useNavigate();
   return (
     <>
-      <Group title="基本信息">
+      <Group title={t('settings.basicInfo')}>
         <div className="set-row">
           <div className="set-text">
-            <span className="set-label">邮箱</span>
-            <span className="set-desc">用于登录和找回</span>
+            <span className="set-label">{t('settings.email')}</span>
+            <span className="set-desc">{t('settings.emailDesc')}</span>
           </div>
           <span className="set-value">{user?.email ?? ''}</span>
         </div>
       </Group>
-      <p className="muted">修改昵称和密码、已登录设备、第三方登录、注销账号即将支持。</p>
+      <p className="muted">{t('settings.accountSoon')}</p>
       <button
         type="button"
         className="btn btn-secondary"
@@ -228,37 +234,40 @@ function AccountSection() {
           navigate('/');
         }}
       >
-        退出登录
+        {t('settings.signOut')}
       </button>
     </>
   );
 }
 
 function PlaybackSection({s}: {s: UserSettings}) {
+  const t = useT();
   const {save} = useSettings();
   return (
     <>
-      <Group title="画质与流量">
+      <Group title={t('settings.qualityGroup')}>
         <SelectRow
           id="set-quality"
-          label="默认画质"
-          description="网络差时自动降低"
+          label={t('settings.quality')}
+          description={t('settings.qualityDesc')}
           value={s.quality_pref}
-          options={(Object.keys(QUALITY_LABELS) as QualityPref[]).map(q => [q, QUALITY_LABELS[q]])}
+          options={QUALITY_PREFS.map(q => [q, qualityLabel(q)])}
           errorKey="quality_pref"
           onChange={v => save('quality_pref', {quality_pref: v}, cur => ({...cur, quality_pref: v}))}
         />
-        <BoolRow k="data_saver" label="省流量模式" description="用流量时少预加载" s={s} />
+        <BoolRow k="data_saver" label={t('settings.dataSaver')} description={t('settings.dataSaverDesc')} s={s} />
       </Group>
-      <Group title="习惯">
-        <BoolRow k="autoplay" label="自动播放下一个" s={s} />
-        <BoolRow k="remember_rate" label="记住播放速度" s={s} />
+      <Group title={t('settings.habits')}>
+        <BoolRow k="autoplay" label={t('settings.autoplay')} description={t('settings.autoplayDesc')} s={s} />
+        <BoolRow k="remember_rate" label={t('settings.rememberRate')} description={t('settings.rememberRateDesc')} s={s} />
       </Group>
     </>
   );
 }
 
 function LanguageSection({s}: {s: UserSettings}) {
+  const t = useT();
+  const {setUiLang} = useI18n();
   const {save, fieldErrors} = useSettings();
   const {setPref} = useTheme();
   const langOptions = LANGS.map(l => [l, LANG_LABELS[l]] as [LangCode, string]);
@@ -268,20 +277,20 @@ function LanguageSection({s}: {s: UserSettings}) {
   };
   return (
     <>
-      <Group title="语言">
+      <Group title={t('settings.languageGroup')}>
         <SelectRow
           id="set-ui-lang"
-          label="界面语言"
-          description="目前界面只有简体中文，其他语言陆续上线"
+          label={t('settings.uiLang')}
+          description={t('settings.uiLangDesc')}
           value={s.ui_lang}
           options={langOptions}
           errorKey="ui_lang"
-          onChange={v => save('ui_lang', {ui_lang: v}, cur => ({...cur, ui_lang: v}))}
+          onChange={v => setUiLang(v)}
         />
         <SelectRow
           id="set-content-lang"
-          label="内容语言"
-          description="标题、简介、演员名、标签"
+          label={t('settings.contentLang')}
+          description={t('settings.contentLangDesc')}
           value={s.content_lang}
           options={langOptions}
           errorKey="content_lang"
@@ -290,10 +299,12 @@ function LanguageSection({s}: {s: UserSettings}) {
         <div className="set-row set-row-stack">
           <div className="set-text">
             <span className="set-label" id="sub-langs-label">
-              字幕优先顺序
+              {t('settings.subtitleOrder')}
             </span>
             <span className="set-desc">
-              {s.subtitle_langs.length > 0 ? s.subtitle_langs.map(l => LANG_LABELS[l] ?? l).join(' → ') : '未设置：按片源默认'}。第一个没有时用下一个，按点选顺序排列。
+              {t('settings.subtitleHint', {
+                order: s.subtitle_langs.length > 0 ? s.subtitle_langs.map(l => LANG_LABELS[l] ?? l).join(' → ') : t('settings.subtitleUnset'),
+              })}
             </span>
             <FieldError k="subtitle_langs" />
           </div>
@@ -310,13 +321,13 @@ function LanguageSection({s}: {s: UserSettings}) {
           </div>
         </div>
       </Group>
-      <Group title="外观">
+      <Group title={t('settings.appearance')}>
         <div className="set-row set-row-stack">
           <div className="set-text">
             <span className="set-label" id="theme-label">
-              主题
+              {t('settings.theme')}
             </span>
-            <span className="set-desc">和顶栏的外观按钮同步</span>
+            <span className="set-desc">{t('settings.themeDesc')}</span>
             {fieldErrors.theme && (
               <span className="field-error" role="alert">
                 {fieldErrors.theme}
@@ -347,6 +358,7 @@ function LanguageSection({s}: {s: UserSettings}) {
 }
 
 function NotifySection({s}: {s: UserSettings}) {
+  const t = useT();
   const {save, pending} = useSettings();
   const tz = browserTimezone();
   const setChannel = (kind: NotifyKind, ch: NotifyChannel, on: boolean) =>
@@ -357,8 +369,11 @@ function NotifySection({s}: {s: UserSettings}) {
 
   return (
     <>
-      <Group title="提醒方式">
-        {KIND_LABELS.map(([kind, label, desc]) => (
+      <Group title={t('settings.notifyGroup')}>
+        {KIND_LABELS.map(([kind, labelKey, descKey]) => {
+          const label = t(labelKey);
+          const desc = descKey ? t(descKey) : '';
+          return (
           <div className="set-row set-row-stack" key={kind}>
             <div className="set-text">
               <span className="set-label" id={`kind-${kind}`}>
@@ -368,7 +383,8 @@ function NotifySection({s}: {s: UserSettings}) {
               <FieldError k={`notify_prefs.${kind}`} />
             </div>
             <div className="chip-row chip-row-wrap" role="group" aria-labelledby={`kind-${kind}`}>
-              {CHANNEL_LABELS.map(([ch, chLabel]) => {
+              {CHANNEL_LABELS.map(([ch, chKey]) => {
+                const chLabel = t(chKey);
                 const on = s.notify_prefs?.[kind]?.[ch] ?? false;
                 return (
                   <button
@@ -376,7 +392,7 @@ function NotifySection({s}: {s: UserSettings}) {
                     type="button"
                     className={on ? 'chip chip-lg chip-on' : 'chip chip-lg'}
                     aria-pressed={on}
-                    aria-label={`${label}：${chLabel}`}
+                    aria-label={t('settings.channelLabel', {kind: label, channel: chLabel})}
                     aria-busy={pending.has(`notify_prefs.${kind}`) || undefined}
                     onClick={() => setChannel(kind, ch, !on)}
                   >
@@ -387,36 +403,37 @@ function NotifySection({s}: {s: UserSettings}) {
               })}
             </div>
           </div>
-        ))}
-        <p className="set-note">推送需要在设备上授权。网页推送即将支持，开关会先保存到你的账号。</p>
+          );
+        })}
+        <p className="set-note">{t('settings.pushNote')}</p>
       </Group>
-      <Group title="时机与频率">
+      <Group title={t('settings.timing')}>
         <div className="set-row">
           <div className="set-text">
-            <span className="set-label">什么时候提醒</span>
-            <span className="set-desc">作品上线时提醒；「上线前一天」提醒即将支持</span>
+            <span className="set-label">{t('settings.when')}</span>
+            <span className="set-desc">{t('settings.whenDesc')}</span>
           </div>
-          <span className="set-value">上线时</span>
+          <span className="set-value">{t('settings.whenValue')}</span>
         </div>
         <div className="set-row">
           <div className="set-text">
-            <span className="set-label">每天最多</span>
-            <span className="set-desc">每个渠道每天最多 1 条，超出的合并成一条</span>
+            <span className="set-label">{t('settings.dailyCap')}</span>
+            <span className="set-desc">{t('settings.dailyCapDesc')}</span>
           </div>
-          <span className="set-value">1 条</span>
+          <span className="set-value">{t('settings.dailyCapValue')}</span>
         </div>
         <QuietHours s={s} />
         <div className="set-row">
           <div className="set-text">
-            <span className="set-label">时区</span>
-            <span className="set-desc">免打扰时段和每天合并按这个时区计算</span>
+            <span className="set-label">{t('settings.timezone')}</span>
+            <span className="set-desc">{t('settings.timezoneDesc')}</span>
             <FieldError k="timezone" />
           </div>
           <span className="set-value">
             {s.timezone}
             {tz !== s.timezone && (
               <button type="button" className="text-btn" onClick={() => save('timezone', {timezone: tz}, cur => ({...cur, timezone: tz}))}>
-                改为本机时区（{tz}）
+                {t('settings.useLocalTz', {tz})}
               </button>
             )}
           </span>
@@ -429,6 +446,7 @@ function NotifySection({s}: {s: UserSettings}) {
 const CLOCK = /^([01]\d|2[0-3]):[0-5]\d$/;
 
 function QuietHours({s}: {s: UserSettings}) {
+  const t = useT();
   const {save, fieldErrors, pending} = useSettings();
   const on = s.quiet_hours !== null;
   const [draft, setDraft] = useState(s.quiet_hours ?? DEFAULT_QUIET);
@@ -441,11 +459,11 @@ function QuietHours({s}: {s: UserSettings}) {
   const commit = (next: {start: string; end: string}) => {
     setLocal('');
     if (!CLOCK.test(next.start) || !CLOCK.test(next.end)) {
-      setLocal('请输入 HH:MM 格式的时间');
+      setLocal(t('settings.quietFormat'));
       return;
     }
     if (next.start === next.end) {
-      setLocal('开始和结束时间不能相同');
+      setLocal(t('settings.quietSame'));
       return;
     }
     if (s.quiet_hours && next.start === s.quiet_hours.start && next.end === s.quiet_hours.end) return;
@@ -458,13 +476,13 @@ function QuietHours({s}: {s: UserSettings}) {
       <div className="set-row-inline">
         <div className="set-text">
           <span className="set-label" id="quiet-label">
-            免打扰时段
+            {t('settings.quiet')}
           </span>
-          <span className="set-desc">这段时间的推送和邮件顺延到结束时发，站内通知照常</span>
+          <span className="set-desc">{t('settings.quietDesc')}</span>
         </div>
         <Switch
           checked={on}
-          label="免打扰时段"
+          label={t('settings.quiet')}
           busy={pending.has('quiet_hours')}
           onChange={next => {
             setLocal('');
@@ -476,7 +494,7 @@ function QuietHours({s}: {s: UserSettings}) {
       {on && (
         <div className="quiet-times" role="group" aria-labelledby="quiet-label">
           <label className="field field-inline-time">
-            <span>开始</span>
+            <span>{t('settings.quietStart')}</span>
             <input
               type="time"
               value={draft.start}
@@ -487,7 +505,7 @@ function QuietHours({s}: {s: UserSettings}) {
           </label>
           <span aria-hidden="true">–</span>
           <label className="field field-inline-time">
-            <span>结束</span>
+            <span>{t('settings.quietEnd')}</span>
             <input
               type="time"
               value={draft.end}
@@ -508,6 +526,7 @@ function QuietHours({s}: {s: UserSettings}) {
 }
 
 function PrivacySection({s}: {s: UserSettings}) {
+  const t = useT();
   const {openPrefs, choice} = useConsent();
   const [confirming, setConfirming] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -520,43 +539,50 @@ function PrivacySection({s}: {s: UserSettings}) {
     setResult('');
     try {
       const r = await clearWatchHistory();
-      setResult(`已清除 ${r?.deleted ?? 0} 条观看记录`);
+      setResult(t('settings.cleared', {n: r?.deleted ?? 0}));
       setConfirming(false);
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : '清除失败');
+      setError(cause instanceof Error ? cause.message : t('settings.clearFailed'));
     } finally {
       setBusy(false);
     }
   };
 
   const consentSummary = choice
-    ? ['必要', choice.analytics && '分析', choice.personalized_ads && '个性化广告', choice.personalized_recs && '个性化推荐'].filter(Boolean).join(' · ')
-    : '尚未选择（只用必要的）';
+    ? [
+        t('settings.consentNecessary'),
+        choice.analytics && t('settings.consentAnalytics'),
+        choice.personalized_ads && t('settings.consentAds'),
+        choice.personalized_recs && t('settings.consentRecs'),
+      ]
+        .filter(Boolean)
+        .join(' · ')
+    : t('settings.consentNone');
 
   return (
     <>
-      <Group title="观看记录">
-        <BoolRow k="history_paused" label="记录观看历史" description="关闭后不再记录新的观看进度，已有记录保留" s={s} invert />
+      <Group title={t('settings.historyGroup')}>
+        <BoolRow k="history_paused" label={t('settings.recordHistory')} description={t('settings.recordHistoryDesc')} s={s} invert />
         <div className="set-row set-row-stack">
           <div className="set-row-inline">
             <div className="set-text">
-              <span className="set-label">清除观看记录</span>
-              <span className="set-desc">删除全部观看记录和进度，无法恢复</span>
+              <span className="set-label">{t('settings.clearHistory')}</span>
+              <span className="set-desc">{t('settings.clearHistoryDesc')}</span>
             </div>
             {!confirming && (
               <button type="button" className="btn btn-secondary btn-danger" onClick={() => setConfirming(true)}>
-                清除
+                {t('settings.clear')}
               </button>
             )}
           </div>
           {confirming && (
-            <div className="confirm-row" role="group" aria-label="确认清除观看记录">
-              <span>确定清除全部观看记录吗？</span>
+            <div className="confirm-row" role="group" aria-label={t('settings.confirmClearLabel')}>
+              <span>{t('settings.confirmClear')}</span>
               <button type="button" className="btn btn-secondary" onClick={() => setConfirming(false)} disabled={busy}>
-                取消
+                {t('settings.cancel')}
               </button>
               <button type="button" className="btn btn-primary btn-danger-solid" onClick={clear} disabled={busy}>
-                {busy ? '正在清除…' : '确定清除'}
+                {busy ? t('settings.clearing') : t('settings.confirmClearButton')}
               </button>
             </div>
           )}
@@ -570,23 +596,23 @@ function PrivacySection({s}: {s: UserSettings}) {
           )}
         </div>
       </Group>
-      <Group title="数据">
+      <Group title={t('settings.dataGroup')}>
         <div className="set-row">
           <div className="set-text">
-            <span className="set-label">Cookie 与追踪</span>
+            <span className="set-label">{t('settings.cookies')}</span>
             <span className="set-desc">{consentSummary}</span>
           </div>
           <button type="button" className="btn btn-secondary" onClick={openPrefs}>
-            管理
+            {t('settings.manage')}
           </button>
         </div>
         <div className="set-row">
           <div className="set-text">
-            <span className="set-label">隐私政策</span>
-            <span className="set-desc">收集哪些信息、怎么使用、你的权利</span>
+            <span className="set-label">{t('settings.privacyPolicy')}</span>
+            <span className="set-desc">{t('settings.privacyPolicyDesc')}</span>
           </div>
           <Link to="/legal/privacy" className="btn btn-secondary">
-            查看
+            {t('settings.view')}
           </Link>
         </div>
       </Group>

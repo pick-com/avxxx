@@ -1,4 +1,5 @@
 import {useEffect, useRef, useState} from 'react';
+import {useT} from '../lib/i18n';
 import {useOnline} from '../lib/useOnline';
 import {Icon} from './Icon';
 
@@ -10,6 +11,7 @@ const RECONNECTED_MS = 2000;
  * After reconnecting it turns green with 「已重新连接」 for 2 s, then goes away.
  */
 export function NetworkBanner() {
+  const t = useT();
   const online = useOnline();
   const [reconnected, setReconnected] = useState(false);
   const [stillOffline, setStillOffline] = useState(false);
@@ -47,15 +49,15 @@ export function NetworkBanner() {
       {!online ? (
         <div className="net-banner banner banner-warn">
           <Icon name="offline" size={18} />
-          <span className="banner-text">{stillOffline ? '仍未连接到网络，请检查网络设置' : '网络已断开，正在重新连接…'}</span>
+          <span className="banner-text">{stillOffline ? t('net.stillOffline') : t('net.offline')}</span>
           <button type="button" className="banner-action" onClick={retry}>
-            立即重试
+            {t('net.retry')}
           </button>
         </div>
       ) : reconnected ? (
         <div className="net-banner banner banner-ok">
           <Icon name="check" size={18} />
-          <span className="banner-text">已重新连接</span>
+          <span className="banner-text">{t('net.reconnected')}</span>
         </div>
       ) : null}
     </div>

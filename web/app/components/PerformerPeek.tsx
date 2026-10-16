@@ -1,6 +1,7 @@
 import {useCallback, useEffect, useLayoutEffect, useRef, useState, type FocusEvent, type ReactNode} from 'react';
 import {createPortal} from 'react-dom';
 import {Link} from 'react-router';
+import {track} from '../lib/analytics';
 import {getPerformer, getPerformerReleases, type Performer, type PerformerDetail, type Release} from '../lib/api';
 import {ageAt, formatDate, formatYear} from '../lib/format';
 import {useAsync} from '../lib/useAsync';
@@ -137,7 +138,7 @@ function PeekBody({performer, releaseDate, currentSlug, layout}: {
 
       {layout === 'sheet' && (
         <div className="peek-actions">
-          <FollowButton slug={performer.slug} name={performer.canonical_name} block />
+          <FollowButton slug={performer.slug} name={performer.canonical_name} performerId={performer.id} source="half_sheet" block />
           <Link to={href} className="btn btn-secondary peek-action">
             完整主页
           </Link>
@@ -169,7 +170,7 @@ function PeekBody({performer, releaseDate, currentSlug, layout}: {
 
       {layout === 'card' && (
         <div className="peek-actions peek-actions-card">
-          <FollowButton slug={performer.slug} name={performer.canonical_name} size="sm" block />
+          <FollowButton slug={performer.slug} name={performer.canonical_name} performerId={performer.id} source="hover" size="sm" block />
           <Link to={href} className="btn btn-secondary btn-sm peek-action">
             查看主页
           </Link>
@@ -186,6 +187,10 @@ export function PerformerSheet({performer, releaseDate, currentSlug, onClose}: {
   currentSlug?: string;
   onClose: () => void;
 }) {
+  const openId = performer?.id;
+  useEffect(() => {
+    if (openId) track('actor_card_open', {performer_id: openId, source: 'half_sheet'});
+  }, [openId]);
   return (
     <Sheet open={performer !== null} onClose={onClose} label={performer ? `${performer.canonical_name} 详情` : '演员详情'} className="sheet-performer">
       {performer && <PeekBody performer={performer} releaseDate={releaseDate} currentSlug={currentSlug} layout="sheet" />}
@@ -228,6 +233,9 @@ export function PerformerHoverCard({performer, releaseDate, currentSlug, childre
   }, []);
 
   useEffect(() => () => window.clearTimeout(timer.current), []);
+  useEffect(() => {
+    if (open && performer.id) track('actor_card_open', {performer_id: performer.id, source: 'hover'});
+  }, [open, performer.id]);
 
   // Prefetch so the card is usually filled by the time it opens.
   const prefetch = () => {

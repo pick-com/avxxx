@@ -5,6 +5,7 @@ import {Footer} from '../components/Footer';
 import {NetworkBanner} from '../components/NetworkBanner';
 import {SideNav, type NavVariant} from '../components/SideNav';
 import {TopBar} from '../components/TopBar';
+import {useT} from '../lib/i18n';
 import {useMediaQuery} from '../lib/useMediaQuery';
 
 export type ShellHandle = {
@@ -20,6 +21,7 @@ type NavMode = 'auto' | 'open' | 'collapsed';
  * or opens the full nav as an overlay at narrower widths and on the video page.
  */
 export default function Shell() {
+  const t = useT();
   const matches = useMatches();
   const immersive = matches.some(m => (m.handle as ShellHandle | undefined)?.immersive);
   const location = useLocation();
@@ -45,13 +47,13 @@ export default function Shell() {
   return (
     <div className="shell" data-immersive={immersive ? 'true' : 'false'}>
       <a href="#main" className="skip-link">
-        跳到主要内容
+        {t('shell.skipToMain')}
       </a>
       <TopBar onToggleNav={toggle} navExpanded={variant === 'full' || variant === 'overlay'} />
       <NetworkBanner />
       <div className="shell-body">
         <SideNav variant={variant} />
-        {variant === 'overlay' && <button type="button" className="nav-backdrop" aria-label="关闭导航菜单" onClick={() => setMode('auto')} />}
+        {variant === 'overlay' && <button type="button" className="nav-backdrop" aria-label={t('nav.closeOverlay')} onClick={() => setMode('auto')} />}
         <main id="main" className="shell-main" tabIndex={-1}>
           <Outlet />
           {!immersive && <Footer />}

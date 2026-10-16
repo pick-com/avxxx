@@ -1,4 +1,5 @@
 import {createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode} from 'react';
+import {track, type ConsentCategory} from './analytics';
 
 // Cookie consent (PRD 15, CookieBanner / MobileConsent). Four categories:
 // 必要 (always on), 分析, 个性化广告, 个性化推荐. Stored only in this browser
@@ -8,9 +9,8 @@ import {createContext, useCallback, useContext, useEffect, useMemo, useState, ty
 // has personalized ads forced off and the switch locked (PRD 14.5).
 //
 // consentField() is the PRD 14.1 `consent` array for analytics events
-// (internal/events: necessary / analytics / personalized_ads).
-// TODO(event client, PRD 14): send consentField() as `consent` on every event
-// and emit consent_change {categories, gpc} when the choice is saved.
+// (internal/events: necessary / analytics / personalized_ads); lib/analytics
+// sends it on every event, and saving a choice emits consent_change.
 
 export type ConsentChoice = {
   analytics: boolean;
@@ -112,6 +112,7 @@ export function ConsentProvider({children}: {children: ReactNode}) {
     }
     setChoice(stored);
     setPrefsOpen(false);
+    track('consent_change', {categories: consentField() as ConsentCategory[], gpc: g});
   }, []);
 
   const openPrefs = useCallback(() => setPrefsOpen(true), []);

@@ -1,10 +1,11 @@
-import {useEffect, useState} from 'react';
+import {useEffect, useRef, useState} from 'react';
 import {Link, useSearchParams} from 'react-router';
 import {FollowButton} from '../components/SocialButtons';
 import {Avatar, ReleaseCard, SectionHeader} from '../components/Cards';
 import {FilterBar, ReleaseResults, type SortOption} from '../components/ReleaseFilters';
 import {SearchBox} from '../components/SearchBox';
 import {CardGridSkeleton, EmptyState, ErrorBanner} from '../components/States';
+import {onUnload, track} from '../lib/analytics';
 import {catalogSearch, type ReleaseFilter, type SearchHit} from '../lib/api';
 import {formatDate, formatYear} from '../lib/format';
 import {clearRecentSearches, readRecentSearches, rememberSearch} from '../lib/recentSearches';
@@ -14,6 +15,38 @@ import {useAsync} from '../lib/useAsync';
 export const meta = () => [{title: 'REEL · 搜索'}];
 
 const LIMIT = 60;
+const RETRY_WINDOW_MS = 2 * 60_000;
+
+// PRD 14 `search`: one event per search, sent when it ends — on a result
+// click (with clicked_rank, 1-based in display order: performers, then
+// videos), on the next query, on leaving the page. is_retry: the previous
+// search in this tab ended without a click less than 2 minutes earlier.
+let lastSearch: {at: number; clicked: boolean} | null = null;
+type PendingSearch = {query: string; count: number; isRetry: boolean};
+
+function useSearchTracking(q: string, hits: SearchHit[] | undefined) {
+  const pending = useRef<PendingSearch | null>(null);
+  const finish = (rank?: number) => {
+    const p = pending.current;
+    if (!p) return;
+    pending.current = null;
+    lastSearch = {at: Date.now(), clicked: rank !== undefined};
+    track('search', {query: p.query.slice(0, 200), result_count: p.count, is_retry: p.isRetry, clicked_rank: rank});
+  };
+  const finishRef = useRef(finish);
+  finishRef.current = finish;
+  useEffect(() => {
+    if (!q || !hits) return;
+    const isRetry = !!lastSearch && !lastSearch.clicked && Date.now() - lastSearch.at < RETRY_WINDOW_MS;
+    pending.current = {query: q, count: hits.length, isRetry};
+    const off = onUnload(() => finishRef.current());
+    return () => {
+      off();
+      finishRef.current();
+    };
+  }, [q, hits]);
+  return (rank: number) => finishRef.current(rank);
+}
 const SORTS: SortOption[] = [{value: 'relevance', label: '相关度'}, ...RELEASE_SORTS];
 
 // Browse / MobileSearch / MobileSearchTyping.
@@ -39,6 +72,7 @@ export default function SearchPage() {
 
   const performers = (results.data ?? []).filter(h => h.type === 'performer');
   const releases = (results.data ?? []).filter(h => h.type === 'release');
+  const clicked = useSearchTracking(q, results.data);
 
   const update = (patch: Partial<Record<keyof ReleaseFilter, string | number | undefined>>) =>
     setParams(withFilter(params, patch), {replace: true});
@@ -90,9 +124,17 @@ export default function SearchPage() {
 
           {performers.length > 0 && (
             <div className="performer-hits">
-              {performers.map(hit => (
+              {performers.map((hit, i) => (
                 <div key={hit.id} className="performer-hit">
-                  <Link to={`/performers/${encodeURIComponent(hit.slug)}`} className="performer-hit-link">
+                  <Link
+                    to={`/performers/${encodeURIComponent(hit.slug)}`}
+                    className="performer-hit-link"
+                    state={{slot: `search:p${i + 1}`}}
+                    onClick={() => {
+                      clicked(i + 1);
+                      track('actor_card_open', {performer_id: hit.id, source: 'search'});
+                    }}
+                  >
                     <Avatar seed={hit.slug} name={hit.name} size={64} />
                     <span className="performer-hit-text">
                       <span className="performer-hit-kind">演员</span>
@@ -100,7 +142,7 @@ export default function SearchPage() {
                       {performerSub(hit) && <span className="muted">{performerSub(hit)}</span>}
                     </span>
                   </Link>
-                  <FollowButton slug={hit.slug} name={hit.name} size="sm" />
+                  <FollowButton slug={hit.slug} name={hit.name} performerId={hit.id} source="search" size="sm" />
                 </div>
               ))}
             </div>
@@ -158,9 +200,11 @@ export default function SearchPage() {
               <section className="shelf">
                 {performers.length > 0 && <SectionHeader title="视频" />}
                 <div className="card-grid card-grid-4 search-grid">
-                  {releases.map(hit => (
+                  {releases.map((hit, i) => (
                     <ReleaseCard
                       key={hit.id}
+                      slot={`search:r${i + 1}`}
+                      onOpen={() => clicked(performers.length + i + 1)}
                       slug={hit.slug}
                       title={hit.name}
                       badge={hit.runtime_minutes ? `${hit.runtime_minutes} 分` : undefined}

@@ -26,7 +26,7 @@ export function Thumb({seed, badge, progress, className = ''}: {seed: string; ba
 }
 
 /** Video card. Signed-in users get a 稍后观看 toggle over the thumbnail (NavLater). */
-export function ReleaseCard({slug, title, meta, sub, badge, progress, later = true}: {
+export function ReleaseCard({slug, title, meta, sub, badge, progress, later = true, slot, onOpen}: {
   slug: string;
   title: string;
   meta?: ReactNode;
@@ -34,10 +34,13 @@ export function ReleaseCard({slug, title, meta, sub, badge, progress, later = tr
   badge?: string;
   progress?: number;
   later?: boolean;
+  /** Analytics entry position (PRD 14.1 `slot`, e.g. "home:r2:c3"). */
+  slot?: string;
+  onOpen?: () => void;
 }) {
   return (
     <div className="release-card-wrap">
-      <Link to={`/releases/${encodeURIComponent(slug)}`} className="release-card">
+      <Link to={`/releases/${encodeURIComponent(slug)}`} className="release-card" state={slot ? {slot} : undefined} onClick={onOpen}>
         <Thumb seed={slug} badge={badge} progress={progress} />
         <span className="card-title">{title}</span>
         {meta && <span className="card-meta">{meta}</span>}

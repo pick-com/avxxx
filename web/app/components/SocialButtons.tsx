@@ -1,5 +1,6 @@
 import {useEffect, useId, useRef, useState} from 'react';
 import {useLocation, useNavigate} from 'react-router';
+import {track} from '../lib/analytics';
 import type {NotifyMode} from '../lib/api';
 import {useAuth} from '../lib/auth';
 import {useSocial} from '../lib/social';
@@ -46,7 +47,15 @@ export function useDismiss(open: boolean, close: () => void, rootRef: React.RefO
   }, [open, rootRef, triggerRef]);
 }
 
-export function FollowButton({slug, name, size = 'md', block = false}: {slug: string; name: string; size?: 'sm' | 'md'; block?: boolean}) {
+/** performerId + source feed the follow_actor event (PRD 14); without an id nothing is tracked. */
+export function FollowButton({slug, name, performerId, source = 'other', size = 'md', block = false}: {
+  slug: string;
+  name: string;
+  performerId?: number;
+  source?: string;
+  size?: 'sm' | 'md';
+  block?: boolean;
+}) {
   const {status} = useAuth();
   const {available, followMode, setFollow, followsReady} = useSocial();
   const toLogin = useLoginRedirect();
@@ -72,6 +81,7 @@ export function FollowButton({slug, name, size = 'md', block = false}: {slug: st
     const err = await setFollow(slug, next, name);
     setBusy(false);
     setError(err);
+    if (!err && next !== null && !following && performerId) track('follow_actor', {performer_id: performerId, source});
   };
 
   const sizeClass = size === 'sm' ? ' btn-sm' : '';
