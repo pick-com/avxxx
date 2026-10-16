@@ -34,8 +34,8 @@ export function postConsent(body: {
   return api<ServerConsent>('consent', {method: 'POST', body, headers: token ? {Authorization: `Bearer ${token}`} : undefined, keepalive: true});
 }
 
-/** The logged-in user's latest choice on any device; 404 before the first. */
-export const getMyConsent = (signal?: AbortSignal) => api<ServerConsent>('me/consent', {signal});
+/** The logged-in user's latest choice on any device; null (204) before the first. */
+export const getMyConsent = (signal?: AbortSignal) => api<ServerConsent | null>('me/consent', {signal});
 
 // ---- legal documents
 

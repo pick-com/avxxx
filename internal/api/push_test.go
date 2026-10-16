@@ -69,8 +69,8 @@ func TestPushConfigFromEnv(t *testing.T) {
 func TestPushDisabledWithoutVAPID(t *testing.T) {
 	p := &stubPush{}
 	h := newPushServer(p, pushConfig{allowedHosts: webpush.DefaultAllowedHosts})
-	if rec := do(h, "GET", "/api/push/vapid-public-key", "", ""); rec.Code != 404 {
-		t.Errorf("key without VAPID: %d", rec.Code)
+	if rec := do(h, "GET", "/api/push/vapid-public-key", "", ""); rec.Code != 200 || strings.TrimSpace(rec.Body.String()) != `{"enabled":false}` {
+		t.Errorf("key without VAPID: %d %s", rec.Code, rec.Body)
 	}
 	pk, auth := clientKeys(t)
 	body := fmt.Sprintf(`{"endpoint":"https://fcm.googleapis.com/fcm/send/x","keys":{"p256dh":%q,"auth":%q}}`, pk, auth)
@@ -91,9 +91,12 @@ func TestPushSubscriptionRoutes(t *testing.T) {
 	h := newPushServer(p, pushConfig{vapidPublicKey: pub, allowedHosts: webpush.DefaultAllowedHosts})
 
 	rec := do(h, "GET", "/api/push/vapid-public-key", "", "")
-	var key map[string]string
+	var key struct {
+		Enabled   bool   `json:"enabled"`
+		PublicKey string `json:"public_key"`
+	}
 	json.Unmarshal(rec.Body.Bytes(), &key)
-	if rec.Code != 200 || key["public_key"] != pub {
+	if rec.Code != 200 || !key.Enabled || key.PublicKey != pub {
 		t.Fatalf("key: %d %s", rec.Code, rec.Body)
 	}
 

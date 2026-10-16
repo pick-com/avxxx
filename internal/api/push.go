@@ -3,7 +3,9 @@ package api
 // Web Push subscription routes (PRD 17, tech plan 3.7). Delivery is done by
 // cmd/notifier; the API only hands out the VAPID public key and stores the
 // browser's PushSubscription. Without VAPID_PUBLIC_KEY push is disabled:
-// the key and subscribe routes return 404 (DELETE keeps working for cleanup).
+// the key route answers 200 {"enabled":false} (so browsers log no error on
+// every settings page), subscribe returns 404, and DELETE keeps working for
+// cleanup.
 
 import (
 	"context"
@@ -70,11 +72,12 @@ var errPushDisabled = &httpError{status: http.StatusNotFound, msg: "web push is 
 
 func (srv *Server) vapidPublicKey(w http.ResponseWriter, r *http.Request) {
 	if srv.pushCfg.vapidPublicKey == "" {
-		reply(w, nil, errPushDisabled)
+		w.Header().Set("Cache-Control", "no-cache")
+		reply(w, map[string]any{"enabled": false}, nil)
 		return
 	}
 	w.Header().Set("Cache-Control", "public, max-age=3600")
-	reply(w, map[string]string{"public_key": srv.pushCfg.vapidPublicKey}, nil)
+	reply(w, map[string]any{"enabled": true, "public_key": srv.pushCfg.vapidPublicKey}, nil)
 }
 
 // pushSubscriptionJSON is PushSubscription.toJSON() from the browser.

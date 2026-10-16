@@ -183,6 +183,11 @@ export function ConsentProvider({children}: {children: ReactNode}) {
       server => {
         if (ctrl.signal.aborted) return;
         const local = read();
+        if (!server) {
+          // 204: nothing saved on the account yet; upload this browser's choice.
+          if (local) record(local, 'sync');
+          return;
+        }
         if (!local || time(server.saved_at) > time(local.saved_at)) {
           const adopted = fromServer(server, g);
           write(adopted);
@@ -195,6 +200,7 @@ export function ConsentProvider({children}: {children: ReactNode}) {
       e => {
         if (ctrl.signal.aborted) return;
         const local = read();
+        // An older backend answers 404 before the first choice.
         if (e instanceof ApiError && e.status === 404 && local) record(local, 'sync');
       },
     );

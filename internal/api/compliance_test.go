@@ -23,6 +23,7 @@ type stubCompliance struct {
 	lookups    []string // "ticket email"
 	takenDown  map[string]bool
 	legalCalls []string // "kind lang version"
+	noConsent  bool     // LatestConsent: no choice saved yet
 }
 
 func (s *stubCompliance) RecordConsent(_ context.Context, rec store.ConsentRecord) (store.ConsentState, error) {
@@ -31,7 +32,7 @@ func (s *stubCompliance) RecordConsent(_ context.Context, rec store.ConsentRecor
 }
 
 func (s *stubCompliance) LatestConsent(_ context.Context, uid int64) (store.ConsentState, error) {
-	if uid != 1 {
+	if uid != 1 || s.noConsent {
 		return store.ConsentState{}, pgx.ErrNoRows
 	}
 	return store.ConsentState{Analytics: true, Categories: []string{"necessary", "analytics"}}, nil
@@ -117,6 +118,10 @@ func TestConsentRecordsGPCAndHashedDevice(t *testing.T) {
 	}
 	if rec := do(h, "GET", "/api/me/consent", "", ""); rec.Code != http.StatusUnauthorized {
 		t.Errorf("me/consent without login: %d", rec.Code)
+	}
+	c.noConsent = true
+	if rec := do(h, "GET", "/api/me/consent", "good", ""); rec.Code != http.StatusNoContent || rec.Body.Len() != 0 {
+		t.Errorf("me/consent before the first choice: %d %q, want 204", rec.Code, rec.Body)
 	}
 }
 
