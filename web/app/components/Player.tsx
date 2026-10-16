@@ -784,6 +784,8 @@ export function Player({slug, releaseId, title, resumeAt, startAt, onBack, theat
   onReplayRef.current = onReplay;
   const theaterRef = useRef({theater, onToggleTheater});
   theaterRef.current = {theater, onToggleTheater};
+  const trackNavRef = useRef({previous: onPreviousTrack, next: onNextTrack});
+  trackNavRef.current = {previous: onPreviousTrack, next: onNextTrack};
 
   const togglePlay = useCallback(() => {
     const video = videoRef.current;
@@ -809,6 +811,20 @@ export function Player({slug, releaseId, title, resumeAt, startAt, onBack, theat
       video.dataset.seekMethod = 'keyboard';
       video.currentTime = Math.min(end, Math.max(0, video.currentTime + delta));
       showFlash(delta < 0 ? t('player.rewind', {s: -delta}) : t('player.forward', {s: delta}));
+    },
+    [showFlash],
+  );
+
+  // ↑ / ↓ (YouTube): ±5 % volume; raising it unmutes. Remembered like the slider.
+  const stepVolume = useCallback(
+    (delta: number) => {
+      const video = videoRef.current;
+      if (!video) return;
+      const next = Math.round(Math.min(1, Math.max(0, (video.muted ? 0 : video.volume) + delta)) * 100) / 100;
+      video.volume = next;
+      video.muted = next === 0;
+      writeVolume({volume: next, muted: video.muted});
+      showFlash(t('player.volumeTo', {n: Math.round(next * 100)}));
     },
     [showFlash],
   );
@@ -938,6 +954,14 @@ export function Player({slug, releaseId, title, resumeAt, startAt, onBack, theat
       // The progress slider handles its own arrows / Home / End / Page keys.
       if (target?.getAttribute('role') === 'slider' && /^(Arrow|Home|End|Page)/.test(key)) return;
       const {theater: inTheater, onToggleTheater: toggleTheater} = theaterRef.current;
+      // Shift+N / Shift+P (YouTube): next / previous video in the queue, series or autoplay order.
+      if (event.shiftKey && (key === 'n' || key === 'p')) {
+        const go = key === 'n' ? trackNavRef.current.next : trackNavRef.current.previous;
+        if (!go) return;
+        event.preventDefault();
+        go();
+        return;
+      }
       switch (key) {
         case ' ':
         case 'k':
@@ -960,6 +984,19 @@ export function Player({slug, releaseId, title, resumeAt, startAt, onBack, theat
           break;
         case 'm':
           toggleMute();
+          break;
+        case 'ArrowUp':
+        case 'ArrowDown':
+          // On the page body the arrows keep scrolling, unless in fullscreen.
+          if (!inPlayer && !document.fullscreenElement) return;
+          stepVolume(key === 'ArrowUp' ? 0.05 : -0.05);
+          break;
+        case 't':
+          if (!toggleTheater || document.fullscreenElement) return;
+          toggleTheater();
+          break;
+        case 'i':
+          void togglePip();
           break;
         case 'c':
           toggleCaptions();
@@ -1016,7 +1053,7 @@ export function Player({slug, releaseId, title, resumeAt, startAt, onBack, theat
     };
     document.addEventListener('keydown', onKey);
     return () => document.removeEventListener('keydown', onKey);
-  }, [phase, mini, poke, seekBy, seekToFraction, showFlash, stepRate, t, toggleCaptions, toggleFullscreen, toggleMute, togglePlay]);
+  }, [phase, mini, poke, seekBy, seekToFraction, showFlash, stepRate, stepVolume, t, toggleCaptions, toggleFullscreen, toggleMute, togglePip, togglePlay]);
 
   const replay = useCallback(() => {
     const video = videoRef.current;
