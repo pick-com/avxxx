@@ -98,8 +98,16 @@ export function SearchBox({initialQuery = '', autoFocus = false, className = ''}
     navigate(`/search?q=${encodeURIComponent(q)}`);
   };
 
+  const expanded = open && items.length > 0;
+
   const onKeyDown = (event: KeyboardEvent<HTMLInputElement>) => {
     if (event.key === 'Escape') {
+      // First Esc closes the suggestions; with none showing it leaves the box
+      // (YouTube; / focuses it again) instead of clearing the text.
+      if (!expanded) {
+        event.preventDefault();
+        event.currentTarget.blur();
+      }
       setOpen(false);
       setActive(-1);
       return;
@@ -115,8 +123,6 @@ export function SearchBox({initialQuery = '', autoFocus = false, className = ''}
       setActive(i => (i < 0 ? items.length - 1 : i - 1));
     }
   };
-
-  const expanded = open && items.length > 0;
 
   const sub = (s: Suggestion) => {
     if (s.type === 'upcoming' && s.scheduled_date) return t('suggest.upcomingOn', {date: formatDate(s.scheduled_date)});
