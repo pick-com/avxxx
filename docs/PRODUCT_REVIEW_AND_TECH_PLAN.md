@@ -35,7 +35,7 @@
 设计稿 M2「视频播放」和 T2 的前提是：平台持有视频文件，自己转码成 HLS 多码率，按片源分目录存储，走自家 CDN。仓库目前的实际做法是：
 
 - 目录：从 JAV Database / XCITY / Jav.Guru 采集 metadata（`internal/catalog`）。
-- 播放：`internal/media` 有 19 个第三方站点适配器，`POST /api/resolve/{source}/{id}` 解析出直链，前端用 `<video src>` 或 `<iframe>` 播放。
+- 播放：前端下拉列出 19 个第三方站点，`internal/media` 下有 15 个站点适配器（含通用的 KVS 适配器），`POST /api/resolve/{source}/{id}` 解析出直链，前端用 `<video src>` 或 `<iframe>` 播放。
 
 可选模式：
 
@@ -181,7 +181,7 @@ CREATE INDEX ON playback_sources(release_id, status, priority);
 
 `release_media_sources` 保留作为采集侧证据，审核通过的映射才写入 `playback_sources`。
 
-`watch_history` 增加 `source_id`；`is_alt_version` 的片源按 `(user_id, release_id, source_id)` 记进度，其余共享 `(user_id, release_id)`。
+`watch_history` 增加 `progress_key`：普通片源为 0，`is_alt_version` 的片源为该片源的 `id`；主键从 `(user_id, release_id)` 改为 `(user_id, release_id, progress_key)`，迁移时已有记录填 0。这样正片、高画质共享进度，其他版本单独记进度。
 
 **用户与社交**
 
@@ -375,8 +375,8 @@ health = 0.7 × 可播放率 + 0.3 × 首帧 ≤ 3s 的比例
 |---|---|---|---|
 | M0 决策 | 定片源模式与目标地区；PRD v1；选年龄验证服务和广告网络 | — | 1 周 |
 | M1 加固与重构 | 修复 2.6 全部问题；拆分 API handler；Next.js 骨架、设计令牌（深浅色）、TopBar / SideNav；进站年龄确认；Cookie 同意 | 组件、C1–C3 | 2 周 |
-| M2 核心闭环（P0） | 首页、热门、新上线、分类、演员库、演员页、作品页（`play-config` + 官方嵌入 / 外链）、搜索（PG）、登录注册 + Google、观看记录、收藏、稍后看、设置、状态页、多语言路由（zh / en / ja） | 02–06、N1–N8、M1–M9、S2、U3、C4–C5 | 6 周 |
-| M3 留存（P1） | 关注与新作提醒、预约、通知中心、新手引导、今晚看什么、规则推荐 + 协同过滤、评分短评、举报审核、后台 A1–A4、A6–A9 | F1–F6、S1、U1–U2、U5、A1–A9 | 6 周 |
+| M2 核心闭环（P0） | 首页、热门、新上线、分类、演员库、演员页、作品页（`play-config` + 官方嵌入 / 外链）、搜索（PG）、登录注册 + Google、观看记录、收藏、稍后看、设置、状态页、多语言路由（zh / en / ja）；出演年龄小于 18 的自动下架与复核（A5 的子集，上线前必须有） | 02–06、N1–N8、M1–M9、S2、U3、C4–C5 | 6 周 |
+| M3 留存（P1） | 关注与新作提醒、预约、通知中心、新手引导、今晚看什么、规则推荐 + 协同过滤、评分短评、举报审核、后台 A1–A9 | F1–F6、S1、U1–U2、U5、A1–A9 | 6 周 |
 | M4 变现与增强（P2） | 广告、弹幕、翻译工作台、Meilisearch / OpenSearch、向量推荐；**[B]** 转码与 CDN | AD1–AD4、DM1–DM2、A10、T1、T2 | 8 周以上 |
 
 不做或推迟：青少年模式（与成人站定位冲突）、电视端、弹幕自动翻译、激励广告解锁 4K（模式 A 下无 4K 片源）。
