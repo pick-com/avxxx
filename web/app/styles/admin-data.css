@@ -1,0 +1,125 @@
+/* Admin data views: AdminVideo 数据标签 curves (components/AdminVideoCurves.tsx). */
+
+.adm-curves {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.adm-curve {
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.adm-curve figcaption {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: baseline;
+  font-size: 13px;
+}
+
+.adm-curve-top {
+  margin-left: auto;
+  color: var(--text2);
+  font-size: 12px;
+}
+
+.adm-curve-svg {
+  width: 100%;
+  height: 120px;
+  display: block;
+  border-radius: 8px;
+  background: var(--surface2);
+  cursor: crosshair;
+  touch-action: pan-y;
+  --curve: var(--adm-blue-fg);
+}
+
+.adm-curve-svg:focus-visible {
+  outline: 2px solid var(--curve);
+  outline-offset: 2px;
+}
+
+.adm-curve-svg.purple {
+  --curve: var(--adm-purple-fg);
+}
+
+.adm-curve-svg.amber {
+  --curve: var(--adm-amber-fg);
+}
+
+.adm-curve-grid {
+  stroke: var(--line);
+  stroke-width: 0.5;
+}
+
+.adm-curve-area {
+  fill: var(--curve);
+  opacity: 0.18;
+}
+
+.adm-curve-line {
+  fill: none;
+  stroke: var(--curve);
+  stroke-width: 1.5;
+}
+
+.adm-curve-bar {
+  fill: var(--curve);
+  opacity: 0.75;
+}
+
+.adm-curve-peak line {
+  stroke: var(--curve);
+  stroke-dasharray: 3 3;
+  stroke-width: 1;
+  opacity: 0.7;
+}
+
+.adm-curve-peak circle {
+  fill: var(--surface);
+  stroke: var(--curve);
+  stroke-width: 2;
+}
+
+.adm-curve-cursor {
+  stroke: var(--text);
+  stroke-width: 1;
+}
+
+.adm-curve-peaks {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+  font-size: 12px;
+}
+
+.adm-curve-readout {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 20px;
+  margin: 0;
+  padding: 10px 12px;
+  border-radius: 8px;
+  border: 1px solid var(--line);
+  font-size: 13px;
+  min-height: 42px;
+  align-items: center;
+}
+
+.adm-curve-readout div {
+  display: flex;
+  gap: 6px;
+}
+
+.adm-curve-readout dt {
+  color: var(--muted);
+}
+
+.adm-curve-readout dd {
+  margin: 0;
+}
