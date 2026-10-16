@@ -881,3 +881,26 @@ func (s *Store) Finish(ctx context.Context, id int64, items []model.Item, cause 
 	}
 	return tx.Commit(ctx)
 }
+
+// ReleaseCodesForPlayback returns a published release's id and its DVD codes
+// (normalized, e.g. "juq-743"), used to auto-link playback providers.
+func (s *Store) ReleaseCodesForPlayback(ctx context.Context, slug string) (int64, []string, error) {
+	var id int64
+	if err := s.QueryRow(ctx, `SELECT id FROM releases WHERE slug=$1 AND status='published' AND merged_into_id IS NULL`, slug).Scan(&id); err != nil {
+		return 0, nil, err
+	}
+	rows, err := s.Query(ctx, `SELECT DISTINCT normalized_value FROM release_identifiers WHERE release_id=$1 AND identifier_type='dvd_code' ORDER BY 1`, id)
+	if err != nil {
+		return 0, nil, err
+	}
+	defer rows.Close()
+	var codes []string
+	for rows.Next() {
+		var c string
+		if err := rows.Scan(&c); err != nil {
+			return 0, nil, err
+		}
+		codes = append(codes, c)
+	}
+	return id, codes, rows.Err()
+}
