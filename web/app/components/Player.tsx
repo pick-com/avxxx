@@ -25,6 +25,7 @@ import {useOnline} from '../lib/useOnline';
 import {applyVolume, writeVolume} from '../lib/volumePrefs';
 import {registerSeeker} from '../lib/playerSeek';
 import {NO_AB, abActive, abMarkers, abSeekTarget, endAction, setAbPoint, type AbLoop} from '../lib/playerLoop';
+import {SLEEP_OFF, sleepOnNavigate, sleepSecondsLeft, sleepTick, startSleep, type SleepChoice, type SleepState} from '../lib/sleepTimer';
 import {DanmakuBar, DanmakuLayer, DanmakuListSheet, DanmakuSettings, useDanmakuFeed, type DanmakuLayerHandle} from './Danmaku';
 import {EpisodesSheet, type PlayerEpisodes} from './Episodes';
 import {Icon} from './Icon';
@@ -137,6 +138,10 @@ type LockableOrientation = ScreenOrientation & {lock?: (orientation: string) => 
  * instead of the end screen and onEnded (autoplay-next); the A-B loop jumps
  * back to A on reaching B, with markers on the progress bar. Per video, not
  * persisted. Both go through the <video> API, so they follow a cast TV.
+ * 定时停止 (lib/sleepTimer.ts): 15–60 min of wall-clock time, the volume
+ * fading over the last 10 s before the pause (not remembered as the
+ * viewer's volume); kept across source switches, ended by another release.
+ * 播完本集 stops at the end of this video instead of autoplay-next.
  */
 export type PlayerProps = Parameters<typeof Player>[0];
 
@@ -265,6 +270,14 @@ export function Player({slug, releaseId, title, resumeAt, startAt, onBack, theat
     setLoop(false);
     setAb(NO_AB);
   }, [slug]);
+  // 定时停止: survives source switches; another release ends a timed choice.
+  const [sleep, setSleep] = useState<SleepState>(SLEEP_OFF);
+  const sleepRef = useRef(sleep);
+  sleepRef.current = sleep;
+  const [sleepLeft, setSleepLeft] = useState<number | null>(null);
+  // The volume before the fade, on the element it was taken from.
+  const sleepFade = useRef<{el: HTMLVideoElement; base: number} | null>(null);
+  useEffect(() => setSleep(s => sleepOnNavigate(s)), [slug]);
   const rateRef = useRef(rate);
   rateRef.current = rate;
   fullscreenRef.current = fullscreen;
@@ -817,7 +830,8 @@ export function Player({slug, releaseId, title, resumeAt, startAt, onBack, theat
     if (!videoEl) return;
     // While casting these are the TV's volume, not this browser's.
     const onVolume = () => {
-      if (!isCastShadowed(videoEl)) writeVolume({volume: videoEl.volume, muted: videoEl.muted});
+      // The sleep timer's fade is not the viewer's volume.
+      if (!isCastShadowed(videoEl) && !sleepFade.current) writeVolume({volume: videoEl.volume, muted: videoEl.muted});
     };
     videoEl.addEventListener('volumechange', onVolume);
     return () => videoEl.removeEventListener('volumechange', onVolume);
@@ -1156,6 +1170,44 @@ export function Player({slug, releaseId, title, resumeAt, startAt, onBack, theat
     return () => document.removeEventListener('keydown', onKey);
   }, [phase, mini, poke, seekBy, seekToFraction, showFlash, stepRate, stepVolume, t, toggleCaptions, toggleFullscreen, toggleMute, togglePip, togglePlay]);
 
+  // 定时停止: a 250 ms tick while a timed choice runs; fades, then pauses.
+  useEffect(() => {
+    const endFade = () => {
+      const fade = sleepFade.current;
+      sleepFade.current = null;
+      if (fade && fade.el === videoRef.current) fade.el.volume = fade.base;
+    };
+    if (sleep.deadline === null) {
+      setSleepLeft(null);
+      return endFade;
+    }
+    const tick = () => {
+      const now = Date.now();
+      setSleepLeft(sleepSecondsLeft(sleep, now));
+      const {phase, factor} = sleepTick(sleep, now);
+      const video = videoRef.current;
+      if (phase === 'fade' && video && !video.paused) {
+        if (!sleepFade.current || sleepFade.current.el !== video) sleepFade.current = {el: video, base: video.volume};
+        video.volume = sleepFade.current.base * factor;
+        return;
+      }
+      if (phase !== 'fire') {
+        endFade();
+        return;
+      }
+      if (video && !video.paused) video.pause();
+      endFade();
+      setSleep(SLEEP_OFF);
+      showFlash(t('player.sleepFired'), true);
+    };
+    tick();
+    const id = window.setInterval(tick, 250);
+    return () => {
+      window.clearInterval(id);
+      endFade();
+    };
+  }, [sleep, showFlash, t]);
+
   const replay = useCallback(() => {
     const video = videoRef.current;
     if (!video) return;
@@ -1223,9 +1275,14 @@ export function Player({slug, releaseId, title, resumeAt, startAt, onBack, theat
     setAb(next);
     if (abActive(next)) showFlash(t('player.abActive', {a: formatClock(next.a), b: formatClock(next.b)}));
   };
+  const chooseSleep = (choice: SleepChoice) => {
+    setSleep(startSleep(choice, Date.now()));
+    showFlash(choice === 'off' ? t('player.sleepOff') : choice === 'episode' ? t('player.sleepEpisodeSet') : t('player.sleepSet', {n: choice}));
+  };
   const playbackPanel = stream ? (
     <PlayerPlaybackPanel
       loop={{on: loop, onChange: chooseLoop}}
+      sleep={{value: sleep.choice, left: sleepLeft, onChange: chooseSleep}}
       ab={{
         value: ab,
         time: clock.time,
@@ -1353,9 +1410,16 @@ export function Player({slug, releaseId, title, resumeAt, startAt, onBack, theat
               onPause={() => save(true)}
               // Native loop (seamless) for 循环播放 alone; the A-B loop and a cast
               // TV (no loop attribute there) go through onEnded below.
-              loop={loop && !abActive(ab)}
+              loop={loop && !abActive(ab) && sleep.choice !== 'episode'}
               onEnded={event => {
                 const video = event.currentTarget;
+                // 播完本集: stop here (no loop, no autoplay-next or queue).
+                if (sleepRef.current.choice === 'episode') {
+                  setSleep(SLEEP_OFF);
+                  save(true);
+                  showFlash(t('player.sleepFired'), true);
+                  return;
+                }
                 const action = endAction(loopRef.current.loop, loopRef.current.ab);
                 if (action !== 'end') {
                   video.dataset.seekMethod = 'skip';
