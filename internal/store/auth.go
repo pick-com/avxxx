@@ -119,16 +119,29 @@ var dummyHash = func() string {
 }()
 
 func (s *Store) Register(ctx context.Context, email, password, displayName string) (map[string]any, error) {
+	return s.RegisterSession(ctx, email, password, displayName, "", SessionMeta{Remember: true})
+}
+
+// RegisterSession creates an account and its first session. termsVersion, when
+// set, is recorded in terms_acceptances (source "register").
+func (s *Store) RegisterSession(ctx context.Context, email, password, displayName, termsVersion string, meta SessionMeta) (map[string]any, error) {
 	email = strings.ToLower(strings.TrimSpace(email))
 	if len(email) < 3 || len(password) < 8 {
 		return nil, errors.New("email and password (min 8 characters) are required")
+	}
+	name, err := CleanDisplayName(displayName)
+	if err != nil {
+		return nil, err
+	}
+	if termsVersion != "" && !ValidTermsVersion(termsVersion) {
+		return nil, invalid("invalid terms version")
 	}
 	hash, err := hashPassword(password)
 	if err != nil {
 		return nil, fmt.Errorf("hash password: %w", err)
 	}
 	var id int64
-	err = s.QueryRow(ctx, `INSERT INTO users(email,password_hash,display_name) VALUES($1,$2,$3) RETURNING id`, email, hash, strings.TrimSpace(displayName)).Scan(&id)
+	err = s.QueryRow(ctx, `INSERT INTO users(email,password_hash,display_name) VALUES($1,$2,$3) RETURNING id`, email, hash, name).Scan(&id)
 	if err != nil {
 		var pgErr *pgconn.PgError
 		if errors.As(err, &pgErr) && pgErr.Code == "23505" {
@@ -138,10 +151,22 @@ func (s *Store) Register(ctx context.Context, email, password, displayName strin
 		}
 		return nil, fmt.Errorf("register user: %w", err)
 	}
-	return s.createSession(ctx, id, email)
+	if termsVersion != "" {
+		if err := s.AcceptTerms(ctx, id, termsVersion, "register"); err != nil {
+			return nil, err
+		}
+	}
+	meta.Method = "password"
+	return s.createSession(ctx, id, email, meta)
 }
 
 func (s *Store) Login(ctx context.Context, email, password string) (map[string]any, error) {
+	return s.LoginSession(ctx, email, password, SessionMeta{Remember: true})
+}
+
+// LoginSession checks the password and opens a session. Logging in cancels a
+// pending account deletion (the response then has "deletion_cancelled": true).
+func (s *Store) LoginSession(ctx context.Context, email, password string, meta SessionMeta) (map[string]any, error) {
 	email = strings.ToLower(strings.TrimSpace(email))
 	var id int64
 	var stored string
@@ -153,6 +178,10 @@ func (s *Store) Login(ctx context.Context, email, password string) (map[string]a
 	if err != nil {
 		return nil, fmt.Errorf("login lookup: %w", err)
 	}
+	if stored == "" { // OAuth-only account: same work and answer as a wrong password
+		verifyPassword(dummyHash, password)
+		return nil, ErrInvalidCredentials
+	}
 	ok, needsRehash := verifyPassword(stored, password)
 	if !ok {
 		return nil, ErrInvalidCredentials
@@ -163,35 +192,87 @@ func (s *Store) Login(ctx context.Context, email, password string) (map[string]a
 			_, _ = s.Exec(ctx, `UPDATE users SET password_hash=$1 WHERE id=$2 AND password_hash=$3`, hash, id, stored)
 		}
 	}
-	return s.createSession(ctx, id, email)
+	cancelled, err := s.cancelDeletion(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	meta.Method = "password"
+	out, err := s.createSession(ctx, id, email, meta)
+	if err == nil && cancelled {
+		out["deletion_cancelled"] = true
+	}
+	return out, err
 }
 
-func (s *Store) createSession(ctx context.Context, id int64, email string) (map[string]any, error) {
+// SessionMeta describes a new session: remember-me (30 d, kept by the
+// browser) or a browser session (24 h), the device's User-Agent and how the
+// user signed in (password | google | apple).
+type SessionMeta struct {
+	Remember  bool
+	UserAgent string
+	Method    string
+}
+
+// Session lifetimes on the server. The web app keeps a non-remembered token
+// only for the browser session; the server bounds it to a day regardless.
+const (
+	SessionTTLRemember = 30 * 24 * time.Hour
+	SessionTTLBrowser  = 24 * time.Hour
+)
+
+func (s *Store) createSession(ctx context.Context, id int64, email string, meta SessionMeta) (map[string]any, error) {
 	b := make([]byte, 32)
 	if _, err := rand.Read(b); err != nil {
 		return nil, err
 	}
 	token := hex.EncodeToString(b)
-	exp := time.Now().Add(30 * 24 * time.Hour)
-	if _, err := s.Exec(ctx, `INSERT INTO user_sessions(token_hash,user_id,expires_at) VALUES($1,$2,$3)`, hashToken(token), id, exp); err != nil {
+	ttl := SessionTTLBrowser
+	if meta.Remember {
+		ttl = SessionTTLRemember
+	}
+	if meta.Method == "" {
+		meta.Method = "password"
+	}
+	exp := time.Now().Add(ttl)
+	if _, err := s.Exec(ctx, `INSERT INTO user_sessions(token_hash,user_id,expires_at,user_agent,remember,auth_method) VALUES($1,$2,$3,$4,$5,$6)`,
+		hashToken(token), id, exp, truncate(meta.UserAgent, 400), meta.Remember, meta.Method); err != nil {
 		return nil, err
 	}
-	return map[string]any{"token": token, "user": map[string]any{"id": id, "email": email}}, nil
+	return map[string]any{"token": token, "expires_at": exp, "remember": meta.Remember, "user": map[string]any{"id": id, "email": email}}, nil
 }
 
+// UserByToken returns the signed-in user: id, email, display name, whether a
+// password is set, the latest accepted terms version ("" = none), whether
+// onboarding was finished and the linked sign-in providers.
 func (s *Store) UserByToken(ctx context.Context, token string) (map[string]any, error) {
 	var id int64
-	var email string
-	err := s.QueryRow(ctx, `SELECT u.id,u.email FROM user_sessions ss JOIN users u ON u.id=ss.user_id WHERE ss.token_hash=$1 AND ss.expires_at>now()`, hashToken(token)).Scan(&id, &email)
+	var email, name, terms string
+	var hasPassword bool
+	var created time.Time
+	var onboarded *time.Time
+	var providers []string
+	err := s.QueryRow(ctx, `SELECT u.id,u.email,u.display_name,u.password_hash<>'',u.created_at,u.onboarded_at,
+		COALESCE((SELECT version FROM terms_acceptances t WHERE t.user_id=u.id ORDER BY accepted_at DESC, version DESC LIMIT 1),''),
+		COALESCE((SELECT array_agg(provider ORDER BY provider) FROM user_identities i WHERE i.user_id=u.id),'{}')
+		FROM user_sessions ss JOIN users u ON u.id=ss.user_id WHERE ss.token_hash=$1 AND ss.expires_at>now()`, hashToken(token)).
+		Scan(&id, &email, &name, &hasPassword, &created, &onboarded, &terms, &providers)
 	if err != nil {
 		return nil, errors.New("unauthorized")
 	}
-	return map[string]any{"id": id, "email": email}, nil
+	return map[string]any{"id": id, "email": email, "display_name": name, "has_password": hasPassword,
+		"created_at": created, "onboarded": onboarded != nil, "terms_version": terms, "providers": providers}, nil
 }
 
+// UserIDByToken resolves a session token. last_seen_at is refreshed at most
+// every 5 minutes, so authenticated reads do not write on every request.
 func (s *Store) UserIDByToken(ctx context.Context, token string) (int64, error) {
 	var id int64
-	err := s.QueryRow(ctx, `SELECT user_id FROM user_sessions WHERE token_hash=$1 AND expires_at>now()`, hashToken(token)).Scan(&id)
+	err := s.QueryRow(ctx, `WITH ss AS (
+		  SELECT user_id FROM user_sessions WHERE token_hash=$1 AND expires_at>now()),
+		touch AS (
+		  UPDATE user_sessions SET last_seen_at=now()
+		  WHERE token_hash=$1 AND expires_at>now() AND last_seen_at < now() - interval '5 minutes')
+		SELECT user_id FROM ss`, hashToken(token)).Scan(&id)
 	return id, err
 }
 

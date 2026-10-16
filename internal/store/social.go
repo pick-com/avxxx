@@ -48,6 +48,10 @@ var (
 	SettingsLangs = []string{"zh-CN", "zh-TW", "en", "ja", "ko", "vi", "es", "th"}
 	QualityPrefs  = []string{"auto", "2160p", "1080p", "720p", "480p", "360p"}
 	Themes        = []string{"system", "dark", "light"}
+	// When reservation holders hear about a release (migration 037).
+	ReservationTimings = []string{"go_live", "day_before", "both"}
+	// Allowed push / email deliveries per channel per local day.
+	NotifyDailyCaps = []int{1, 2, 3, 5, 10}
 )
 
 // QuietHours is a daily do-not-disturb window in the user's timezone, as
@@ -87,6 +91,11 @@ type UserSettings struct {
 
 	// LaterAutoRemove drops a watch-later entry at 90 % progress (migration 036).
 	LaterAutoRemove bool `json:"later_auto_remove"`
+	// Migration 037: daily push/email cap, reservation reminder timing and
+	// whether watch history personalizes recommendations.
+	NotifyDailyCap    int    `json:"notify_daily_cap"`
+	ReservationTiming string `json:"reservation_timing"`
+	PersonalizeRecs   bool   `json:"personalize_recs"`
 }
 
 // defaultNotifyPrefs: in-app for everything; push on by default only for the
@@ -106,8 +115,9 @@ func DefaultSettings() UserSettings {
 		UILang: "zh-CN", ContentLang: "zh-CN", SubtitleLangs: []string{},
 		QualityPref: "auto", Autoplay: true, RememberRate: true, LaterAutoRemove: true,
 		Theme: "system", Timezone: "UTC",
-		NotifyPrefs: defaultNotifyPrefs(),
-		QuietHours:  &QuietHours{Start: "22:00", End: "08:00"},
+		NotifyPrefs:    defaultNotifyPrefs(),
+		QuietHours:     &QuietHours{Start: "22:00", End: "08:00"},
+		NotifyDailyCap: 1, ReservationTiming: "go_live", PersonalizeRecs: true,
 	}
 }
 
@@ -206,6 +216,16 @@ func ApplySettingsPatch(cur UserSettings, body []byte) (UserSettings, error) {
 			out.HistoryPaused, err = decodeBool(key, raw)
 		case "later_auto_remove":
 			out.LaterAutoRemove, err = decodeBool(key, raw)
+		case "personalize_recs":
+			out.PersonalizeRecs, err = decodeBool(key, raw)
+		case "reservation_timing":
+			out.ReservationTiming, err = decodeEnum(key, raw, ReservationTimings)
+		case "notify_daily_cap":
+			var n int
+			if json.Unmarshal(raw, &n) != nil || !slices.Contains(NotifyDailyCaps, n) {
+				return cur, invalidSettings("notify_daily_cap must be one of 1, 2, 3, 5, 10")
+			}
+			out.NotifyDailyCap = n
 		case "subtitle_langs":
 			var langs []string
 			if json.Unmarshal(raw, &langs) != nil || langs == nil {
@@ -294,15 +314,18 @@ func ApplySettingsPatch(cur UserSettings, body []byte) (UserSettings, error) {
 	return out, nil
 }
 
-const settingsColumns = `ui_lang,content_lang,subtitle_langs,quality_pref,data_saver,autoplay,remember_rate,history_paused,theme,timezone,notify_prefs,quiet_hours,later_auto_remove`
+const settingsColumns = `ui_lang,content_lang,subtitle_langs,quality_pref,data_saver,autoplay,remember_rate,history_paused,theme,timezone,notify_prefs,quiet_hours,later_auto_remove,notify_daily_cap,reservation_timing,personalize_recs`
 
 type rowScanner interface{ Scan(dest ...any) error }
 
 func scanSettings(row rowScanner) (UserSettings, error) {
 	var u UserSettings
 	var prefs, quiet []byte
+	var dailyCap int16
 	err := row.Scan(&u.UILang, &u.ContentLang, &u.SubtitleLangs, &u.QualityPref, &u.DataSaver, &u.Autoplay,
-		&u.RememberRate, &u.HistoryPaused, &u.Theme, &u.Timezone, &prefs, &quiet, &u.LaterAutoRemove)
+		&u.RememberRate, &u.HistoryPaused, &u.Theme, &u.Timezone, &prefs, &quiet, &u.LaterAutoRemove,
+		&dailyCap, &u.ReservationTiming, &u.PersonalizeRecs)
+	u.NotifyDailyCap = int(dailyCap)
 	if err != nil {
 		return u, err
 	}
@@ -355,14 +378,16 @@ func (s *Store) PatchSettings(ctx context.Context, userID int64, body []byte) (U
 		quiet, _ = json.Marshal(next.QuietHours)
 	}
 	_, err = tx.Exec(ctx, `INSERT INTO user_settings(user_id,`+settingsColumns+`,updated_at)
-		VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,now())
+		VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,now())
 		ON CONFLICT(user_id) DO UPDATE SET ui_lang=EXCLUDED.ui_lang,content_lang=EXCLUDED.content_lang,
 		subtitle_langs=EXCLUDED.subtitle_langs,quality_pref=EXCLUDED.quality_pref,data_saver=EXCLUDED.data_saver,
 		autoplay=EXCLUDED.autoplay,remember_rate=EXCLUDED.remember_rate,history_paused=EXCLUDED.history_paused,
 		theme=EXCLUDED.theme,timezone=EXCLUDED.timezone,notify_prefs=EXCLUDED.notify_prefs,
-		quiet_hours=EXCLUDED.quiet_hours,later_auto_remove=EXCLUDED.later_auto_remove,updated_at=now()`,
+		quiet_hours=EXCLUDED.quiet_hours,later_auto_remove=EXCLUDED.later_auto_remove,notify_daily_cap=EXCLUDED.notify_daily_cap,
+		reservation_timing=EXCLUDED.reservation_timing,personalize_recs=EXCLUDED.personalize_recs,updated_at=now()`,
 		userID, next.UILang, next.ContentLang, next.SubtitleLangs, next.QualityPref, next.DataSaver, next.Autoplay,
-		next.RememberRate, next.HistoryPaused, next.Theme, next.Timezone, prefs, quiet, next.LaterAutoRemove)
+		next.RememberRate, next.HistoryPaused, next.Theme, next.Timezone, prefs, quiet, next.LaterAutoRemove,
+		next.NotifyDailyCap, next.ReservationTiming, next.PersonalizeRecs)
 	if err != nil {
 		return UserSettings{}, err
 	}
