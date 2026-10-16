@@ -3,6 +3,7 @@ import type HlsType from 'hls.js';
 import {getPlayConfig, getPlayback, resolvePlayback, saveWatchProgress} from '../lib/api';
 import {currentPage, entryFrom, track} from '../lib/analytics';
 import {useAuth} from '../lib/auth';
+import {useT} from '../lib/i18n';
 import {formatClock} from '../lib/format';
 import {PlayTracker, takeEndReason, takeEntryOverride} from '../lib/playAnalytics';
 import {heightCap, prefHeight, qualityParam, rememberRate, rememberedRate, usePlayerPrefs} from '../lib/playerPrefs';
@@ -80,6 +81,7 @@ export function Player({slug, releaseId, title, resumeAt, onBack, theater = fals
   /** Rendered over the video area (the autoplay countdown). */
   overlay?: ReactNode;
 }) {
+  const t = useT();
   const {status} = useAuth();
   const prefs = usePlayerPrefs();
   const prefsRef = useRef(prefs);
@@ -260,7 +262,7 @@ export function Player({slug, releaseId, title, resumeAt, onBack, theater = fals
     setPhase('resolving');
     try {
       const result = await resolvePlayback(info.data.resolve_path);
-      if (result.length === 0) throw new Error('没有找到可用的播放地址');
+      if (result.length === 0) throw new Error(t('player.noStream'));
       pendingSeek.current = resumeFrom;
       setEntries(entriesFromStreams(result));
       setCurrent(0);
@@ -315,14 +317,14 @@ export function Player({slug, releaseId, title, resumeAt, onBack, theater = fals
     const nextIndex = entries.findIndex((e, i) => i > current && e.render !== 'external');
     if (from && nextIndex >= 0) {
       const next = entries[nextIndex];
-      setNotice(`${from.name} 加载失败，已自动切到${next.name}${next.alt ? '（其他版本，从头播放）' : ''}`);
+      setNotice(t(next.alt ? 'player.sourceFailedAlt' : 'player.sourceFailed', {from: from.name, to: next.name}));
       switchTo(nextIndex, true);
       return;
     }
     const code = videoRef.current?.error?.code;
     trackerRef.current?.end('error', code ? `media_err_${code}` : 'all_sources_failed');
     trackerRef.current = null;
-    setFailure(mode === 'config' ? '所有片源都加载失败' : '所有线路都加载失败');
+    setFailure(mode === 'config' ? t('player.allSourcesFailed') : t('player.allLinesFailed'));
     setPhase('failed');
   };
   const onVideoErrorRef = useRef(onVideoError);
@@ -381,7 +383,7 @@ export function Player({slug, releaseId, title, resumeAt, onBack, theater = fals
         });
         instance.on(Hls.Events.LEVEL_SWITCHED, (_event, data) => setPlayingLevel(data.level));
         instance.on(Hls.Events.AUDIO_TRACKS_UPDATED, (_event, data) => {
-          setAudioTracks(data.audioTracks.map((t, i) => ({id: t.id ?? i, name: t.name || t.lang || `音轨 ${i + 1}`})));
+          setAudioTracks(data.audioTracks.map((tr, i) => ({id: tr.id ?? i, name: tr.name || tr.lang || t('player.audioTrack', {n: i + 1})})));
           setAudioTrack(instance.audioTrack);
         });
         instance.on(Hls.Events.ERROR, (_event, data) => {
@@ -461,10 +463,10 @@ export function Player({slug, releaseId, title, resumeAt, onBack, theater = fals
     if (!video) return;
     if (video.paused) {
       void video.play().catch(() => undefined);
-      showFlash('播放');
+      showFlash(t('player.play'));
     } else {
       video.pause();
-      showFlash('暂停');
+      showFlash(t('player.pause'));
     }
   }, [showFlash]);
 
@@ -475,7 +477,7 @@ export function Player({slug, releaseId, title, resumeAt, onBack, theater = fals
       const end = Number.isFinite(video.duration) ? video.duration : Infinity;
       video.dataset.seekMethod = 'keyboard';
       video.currentTime = Math.min(end, Math.max(0, video.currentTime + delta));
-      showFlash(delta < 0 ? `后退 ${-delta} 秒` : `前进 ${delta} 秒`);
+      showFlash(delta < 0 ? t('player.rewind', {s: -delta}) : t('player.forward', {s: delta}));
     },
     [showFlash],
   );
@@ -484,7 +486,7 @@ export function Player({slug, releaseId, title, resumeAt, onBack, theater = fals
     const video = videoRef.current;
     if (!video) return;
     video.muted = !video.muted;
-    showFlash(video.muted ? '已静音' : '取消静音');
+    showFlash(video.muted ? t('player.muted') : t('player.unmuted'));
   }, [showFlash]);
 
   const toggleFullscreen = useCallback(async () => {
@@ -514,7 +516,7 @@ export function Player({slug, releaseId, title, resumeAt, onBack, theater = fals
       if (document.pictureInPictureElement) await document.exitPictureInPicture();
       else await video.requestPictureInPicture();
     } catch {
-      showFlash('画中画暂不可用');
+      showFlash(t('player.pipUnavailable'));
     }
   }, [showFlash]);
 
@@ -538,13 +540,13 @@ export function Player({slug, releaseId, title, resumeAt, onBack, theater = fals
 
   const toggleCaptions = useCallback(() => {
     if (textTracks.length === 0) {
-      showFlash('这部作品暂无字幕');
+      showFlash(t('player.noCaptions'));
       return;
     }
     const next = caption === CAPTIONS_OFF ? 0 : CAPTIONS_OFF;
     chooseCaption(next);
-    showFlash(next === CAPTIONS_OFF ? '字幕已关闭' : `字幕：${textTracks[next]}`);
-  }, [caption, chooseCaption, showFlash, textTracks]);
+    showFlash(next === CAPTIONS_OFF ? t('player.captionsOff') : t('player.captionsOn', {name: textTracks[next]}));
+  }, [caption, chooseCaption, showFlash, textTracks, t]);
 
   const chooseLevel = (index: number) => {
     const label = (i: number) => {
@@ -618,24 +620,24 @@ export function Player({slug, releaseId, title, resumeAt, onBack, theater = fals
     return () => document.removeEventListener('keydown', onKey);
   }, [phase, seekBy, toggleCaptions, toggleFullscreen, toggleMute, togglePlay]);
 
-  const resumeLabel = resumeFrom ? `从 ${formatClock(resumeFrom)} 继续` : '';
+  const resumeLabel = resumeFrom ? t('player.resumeFrom', {time: formatClock(resumeFrom)}) : '';
 
   // Menu data shared by the desktop bar and the mobile settings sheet.
   const sortedLevels = [...levels].sort((a, b) => b.height - a.height || b.bitrate - a.bitrate);
   const levelLabel = (l: Level) => (l.height ? `${l.height}p` : `${Math.round(l.bitrate / 1000)} kbps`);
   const playing = levels.find(l => l.index === playingLevel);
-  const autoLabel = playing ? `自动（${levelLabel(playing)}）` : '自动';
+  const autoLabel = playing ? t('player.autoWith', {q: levelLabel(playing)}) : t('player.auto');
   const qualityOptions: Choice<number>[] =
     levels.length > 1 ? [{value: AUTO, label: autoLabel}, ...sortedLevels.map(l => ({value: l.index, label: levelLabel(l)}))] : [];
   const currentLevel = levels.find(l => l.index === level);
-  const qualityText = level === AUTO ? autoLabel : currentLevel ? levelLabel(currentLevel) : '自动';
-  const rateOptions: Choice<number>[] = RATES.map(r => ({value: r, label: r === 1 ? '1.0×（正常）' : `${r}×`}));
-  const captionOptions: Choice<number>[] = textTracks.length ? [{value: CAPTIONS_OFF, label: '关闭'}, ...textTracks.map((t, i) => ({value: i, label: t}))] : [];
+  const qualityText = level === AUTO ? autoLabel : currentLevel ? levelLabel(currentLevel) : t('player.auto');
+  const rateOptions: Choice<number>[] = RATES.map(r => ({value: r, label: r === 1 ? t('player.rateNormal') : `${r}×`}));
+  const captionOptions: Choice<number>[] = textTracks.length ? [{value: CAPTIONS_OFF, label: t('player.off')}, ...textTracks.map((name, i) => ({value: i, label: name}))] : [];
   const audioOptions: Choice<number>[] = audioTracks.map(t => ({value: t.id, label: t.name}));
   const sourceOptions: Choice<number>[] = entries.map((e, i) => ({
     value: i,
     label: e.version ? `${e.name} · ${e.version}` : e.name,
-    hint: [e.hint, e.render === 'external' ? '在新标签页打开' : ''].filter(Boolean).join(' · '),
+    hint: [e.hint, e.render === 'external' ? t('player.openInNewTab') : ''].filter(Boolean).join(' · '),
   }));
 
   const openSettings = (tab: SettingsTab) => setSettings({open: true, tab});
@@ -652,7 +654,7 @@ export function Player({slug, releaseId, title, resumeAt, onBack, theater = fals
       >
         <div className="player">
           {onBack && !fullscreen && (
-            <button type="button" className="player-back show-mobile" aria-label="返回" onClick={onBack}>
+            <button type="button" className="player-back show-mobile" aria-label={t('player.back')} onClick={onBack}>
               <Icon name="back" size={22} />
             </button>
           )}
@@ -669,7 +671,7 @@ export function Player({slug, releaseId, title, resumeAt, onBack, theater = fals
               onLoadedMetadata={event => {
                 const video = event.currentTarget;
                 video.playbackRate = rate;
-                setTextTracks(Array.from(video.textTracks).map((t, i) => t.label || t.language || `字幕 ${i + 1}`));
+                setTextTracks(Array.from(video.textTracks).map((tr, i) => tr.label || tr.language || t('player.captionTrack', {n: i + 1})));
                 const target = pendingSeek.current;
                 pendingSeek.current = 0;
                 if (target > 0 && (!Number.isFinite(video.duration) || target < video.duration - 10)) {
@@ -708,36 +710,36 @@ export function Player({slug, releaseId, title, resumeAt, onBack, theater = fals
             />
           ) : entry?.render === 'external' ? (
             <div className="player-state">
-              <strong>{entry.name}需要在合作方网站观看</strong>
+              <strong>{t('player.partnerOnly', {name: entry.name})}</strong>
               {entry.hint && <span>{entry.hint}</span>}
               <a className="btn btn-on-dark" href={entry.url} target="_blank" rel="noopener noreferrer">
-                {entry.provider ? `前往 ${entry.provider} 观看` : '在新标签页打开'}
+                {entry.provider ? t('player.goPartner', {provider: entry.provider}) : t('player.openInNewTab')}
                 <Icon name="external" size={16} />
               </a>
             </div>
           ) : mode === 'legacy' && info.error ? (
             <div className="player-state">
-              <strong>暂时无法播放</strong>
-              <span>{info.error.message === '内容不存在或已下架' ? '这部作品还没有可用的片源。' : info.error.message}</span>
+              <strong>{t('player.unavailable')}</strong>
+              <span>{info.error.message === '内容不存在或已下架' ? t('player.noSource') : info.error.message}</span>
               <button type="button" className="btn btn-on-dark" onClick={info.reload}>
-                重试
+                {t('player.retry')}
               </button>
             </div>
           ) : phase === 'failed' ? (
             <div className="player-state">
-              <strong>暂时无法播放</strong>
+              <strong>{t('player.unavailable')}</strong>
               <span>{failure}</span>
               <button type="button" className="btn btn-on-dark" onClick={() => void start()}>
-                重试
+                {t('player.retry')}
               </button>
             </div>
           ) : loadingSources || phase === 'resolving' ? (
             <div className="player-state" aria-live="polite">
-              {(config.slow || info.slow || phase === 'resolving') && <span>{phase === 'resolving' ? '正在加载播放地址…' : '正在查找片源…'}</span>}
+              {(config.slow || info.slow || phase === 'resolving') && <span>{phase === 'resolving' ? t('player.resolving') : t('player.finding')}</span>}
             </div>
           ) : (
             <div className="player-state">
-              <button type="button" className="play-big" aria-label={resumeLabel ? `播放，${resumeLabel}` : '播放'} onClick={() => void start()}>
+              <button type="button" className="play-big" aria-label={resumeLabel ? t('player.playResume', {label: resumeLabel}) : t('player.play')} onClick={() => void start()}>
                 <Icon name="play" size={30} filled />
               </button>
               {resumeLabel && <span>{resumeLabel}</span>}
@@ -750,7 +752,7 @@ export function Player({slug, releaseId, title, resumeAt, onBack, theater = fals
               videoRef={videoRef}
               title={title}
               rate={rate}
-              qualityLabel={levels.length > 1 ? qualityText : '清晰度'}
+              qualityLabel={levels.length > 1 ? qualityText : t('player.quality')}
               onExit={() => void toggleFullscreen()}
               onOpenSettings={openSettings}
               reducedMotion={reducedMotion}
@@ -766,7 +768,7 @@ export function Player({slug, releaseId, title, resumeAt, onBack, theater = fals
           {notice && (
             <div className="player-notice" role="status">
               {notice}
-              <button type="button" className="icon-btn icon-btn-sm" aria-label="关闭提示" onClick={() => setNotice('')}>
+              <button type="button" className="icon-btn icon-btn-sm" aria-label={t('player.closeNotice')} onClick={() => setNotice('')}>
                 <Icon name="close" size={16} />
               </button>
             </div>
@@ -774,35 +776,36 @@ export function Player({slug, releaseId, title, resumeAt, onBack, theater = fals
         </div>
 
         {phase === 'ready' && !touchMode && (
-          <div className="player-bar" role="toolbar" aria-label="播放器设置">
+          <div className="player-bar" role="toolbar" aria-label={t('player.toolbar')}>
             {/* Desktop: inline menus (video sources only; embeds bring their own controls). */}
             {stream && (
               <div className="pbar-group hide-mobile">
                 {qualityOptions.length > 0 && (
-                  <PlayerMenu label="清晰度" buttonText={qualityText} options={qualityOptions} value={level} onChange={chooseLevel} />
+                  <PlayerMenu label={t('player.quality')} buttonText={qualityText} options={qualityOptions} value={level} onChange={chooseLevel} />
                 )}
-                <PlayerMenu label="倍速" buttonText={rate === 1 ? '倍速' : `${rate}×`} options={rateOptions} value={rate} onChange={chooseRate} />
+                <PlayerMenu label={t('player.rate')} buttonText={rate === 1 ? t('player.rate') : `${rate}×`} options={rateOptions} value={rate} onChange={chooseRate} />
                 <button
                   type="button"
                   className="pbar-btn pbar-text"
                   aria-pressed={caption !== CAPTIONS_OFF}
                   aria-disabled={textTracks.length === 0}
-                  title={textTracks.length === 0 ? '暂无字幕' : '字幕 (C)'}
+                  title={textTracks.length === 0 ? t('player.noCaptionsShort') : t('player.captionsKey')}
                   onClick={toggleCaptions}
                 >
                   <Icon name="cc" size={18} />
-                  <span className="sr-only">字幕</span>
+                  <span className="sr-only">{t('player.captions')}</span>
                 </button>
               </div>
             )}
             {/* Mobile: one button opens MobileSources. */}
             <button type="button" className="pbar-btn pbar-text show-mobile" onClick={() => openSettings(stream ? 'quality' : 'source')}>
               <Icon name="settings" size={18} />
-              设置{rate !== 1 ? ` · ${rate}×` : ''}
+              {t('player.settings')}
+              {rate !== 1 ? ` · ${rate}×` : ''}
             </button>
             <span className="section-spacer" />
             {pipSupported && stream && (
-              <button type="button" className="pbar-btn" aria-label={pip ? '退出画中画' : '画中画'} aria-pressed={pip} title="画中画" onClick={togglePip}>
+              <button type="button" className="pbar-btn" aria-label={pip ? t('player.exitPip') : t('player.pip')} aria-pressed={pip} title={t('player.pip')} onClick={togglePip}>
                 <Icon name="pip" size={20} />
               </button>
             )}
@@ -810,15 +813,15 @@ export function Player({slug, releaseId, title, resumeAt, onBack, theater = fals
               <button
                 type="button"
                 className="pbar-btn hide-mobile"
-                aria-label={theater ? '退出影院模式' : '影院模式'}
+                aria-label={theater ? t('player.exitTheater') : t('player.theater')}
                 aria-pressed={theater}
-                title="影院模式"
+                title={t('player.theater')}
                 onClick={onToggleTheater}
               >
                 <Icon name="theater" size={20} />
               </button>
             )}
-            <button type="button" className="pbar-btn" aria-label={fullscreen ? '退出全屏' : '全屏'} title="全屏 (F)" onClick={() => void toggleFullscreen()}>
+            <button type="button" className="pbar-btn" aria-label={fullscreen ? t('player.exitFullscreen') : t('player.fullscreen')} title={t('player.fullscreenKey')} onClick={() => void toggleFullscreen()}>
               <Icon name={fullscreen ? 'exitFullscreen' : 'fullscreen'} size={20} />
             </button>
           </div>
@@ -847,8 +850,8 @@ export function Player({slug, releaseId, title, resumeAt, onBack, theater = fals
       )}
 
       {mode === 'legacy' && entries.length > 1 && !fullscreen && (
-        <div className="stream-row" role="group" aria-label="播放线路">
-          <span className="stream-label">线路</span>
+        <div className="stream-row" role="group" aria-label={t('player.lines')}>
+          <span className="stream-label">{t('player.line')}</span>
           {entries.map((s, i) => (
             <button
               key={s.key}
@@ -871,24 +874,25 @@ export function Player({slug, releaseId, title, resumeAt, onBack, theater = fals
  * every source with its version (正片 / 高画质 / 配音 / 其他版本) and spec.
  */
 function SourcesRow({entries, current, onPick}: {entries: PlayEntry[]; current: number; onPick: (index: number) => void}) {
+  const t = useT();
   const [open, setOpen] = useState(false);
   const listId = useId();
   const active = entries[current];
   if (entries.length === 0) return null;
   return (
-    <section className="sources hide-mobile" aria-label="片源">
+    <section className="sources hide-mobile" aria-label={t('player.source')}>
       <button type="button" className="sources-toggle" aria-expanded={open} aria-controls={listId} onClick={() => setOpen(o => !o)}>
-        <span className="sources-label">片源</span>
-        <span className="sources-current">{active ? `${active.name}${active.version ? ` · ${active.version}` : ''}` : '自动选择'}</span>
+        <span className="sources-label">{t('player.source')}</span>
+        <span className="sources-current">{active ? `${active.name}${active.version ? ` · ${active.version}` : ''}` : t('player.autoPick')}</span>
         <span className="section-spacer" />
         <span className="sources-count">
-          共 {entries.length} 个 · {open ? '收起' : '展开'}
+          {t('player.sourcesCount', {count: entries.length, state: open ? t('player.collapse') : t('player.expand')})}
         </span>
         <Icon name="chevronDown" size={16} />
       </button>
       {open && (
-        <div id={listId} className="sources-list" role="radiogroup" aria-label="选择片源">
-          <p className="sources-note">切换片源会保留播放进度；时长不同的版本从头播放。</p>
+        <div id={listId} className="sources-list" role="radiogroup" aria-label={t('player.pickSource')}>
+          <p className="sources-note">{t('player.sourcesNote')}</p>
           {entries.map((e, i) => (
             <button
               key={e.key}

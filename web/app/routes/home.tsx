@@ -4,6 +4,7 @@ import {CardGridSkeleton, ErrorBanner} from '../components/States';
 import {getWatchHistory, listPerformerPage, listReleases, listTags} from '../lib/api';
 import {discoverHref} from '../lib/releaseFilter';
 import {useAuth} from '../lib/auth';
+import {useT} from '../lib/i18n';
 import {formatDate, formatRuntime} from '../lib/format';
 import {useAsync} from '../lib/useAsync';
 
@@ -18,6 +19,7 @@ export const meta = () => [{title: 'REEL · 首页'}];
 // TODO(tech plan 3.13 trending_snapshots / 3.8 ratings): visitor 本周热门 and 高分短片.
 // TODO(PRD 18 / tech plan 3.5 slot=tonight): 今晚看什么 entry.
 export default function Home() {
+  const t = useT();
   const {status} = useAuth();
   const releases = useAsync(signal => listReleases(10, signal), []);
   const performers = useAsync(signal => listPerformerPage('works', 12, null, undefined, signal), []);
@@ -29,11 +31,11 @@ export default function Home() {
       {status === 'anon' && (
         <section className="visitor-card">
           <span className="visitor-text">
-            <strong>不用登录也能看全部视频</strong>
-            <span>登录后：记住看到哪里，收藏喜欢的作品，换设备也能接着看。</span>
+            <strong>{t('home.visitorTitle')}</strong>
+            <span>{t('home.visitorBody')}</span>
           </span>
           <Link to="/login" className="btn btn-primary">
-            登录 / 注册
+            {t('home.loginRegister')}
           </Link>
         </section>
       )}
@@ -41,9 +43,9 @@ export default function Home() {
       {/* Tag chips: GET /api/tags; each opens the tag-filtered list
           (/discover?tag=, GET /api/releases?tag=). */}
       {tags.data && tags.data.length > 0 && (
-        <div className="chip-row" aria-label="热门标签">
+        <div className="chip-row" aria-label={t('home.tags')}>
           {tags.data.map(tag => (
-            <Link key={tag.slug} to={discoverHref({tag: tag.slug})} className="chip" title={`${tag.count} 部作品`}>
+            <Link key={tag.slug} to={discoverHref({tag: tag.slug})} className="chip" title={t('home.tagCount', {count: tag.count})}>
               {tag.name}
               <span className="chip-count">{tag.count}</span>
             </Link>
@@ -53,7 +55,7 @@ export default function Home() {
 
       {status === 'user' && (history.loading || (history.data && history.data.length > 0) || history.error) && (
         <section className="shelf">
-          <SectionHeader title="继续观看" sub="从上次的位置接着看" action={<Link to="/history" className="section-link">全部</Link>} />
+          <SectionHeader title={t('home.continue')} sub={t('home.continueSub')} action={<Link to="/history" className="section-link">{t('home.all')}</Link>} />
           {history.error ? (
             <ErrorBanner error={history.error} onRetry={history.reload} />
           ) : history.slow ? (
@@ -70,7 +72,7 @@ export default function Home() {
                     slug={item.slug}
                     title={item.title}
                     progress={ratio ?? 0}
-                    meta={left === null ? '继续观看' : left === 0 ? '已看完' : `剩余 ${left} 分钟`}
+                    meta={left === null ? t('home.continue') : left === 0 ? t('home.finished') : t('home.minutesLeft', {n: left})}
                   />
                 );
               })}
@@ -80,13 +82,13 @@ export default function Home() {
       )}
 
       <section className="shelf">
-        <SectionHeader title="新上线" sub="按发行日期" action={<Link to="/discover?tab=new" className="section-link">查看全部</Link>} />
+        <SectionHeader title={t('home.new')} sub={t('home.newSub')} action={<Link to="/discover?tab=new" className="section-link">{t('home.viewAll')}</Link>} />
         {releases.error ? (
           <ErrorBanner error={releases.error} onRetry={releases.reload} />
         ) : releases.slow ? (
           <CardGridSkeleton count={10} />
         ) : releases.data && releases.data.length === 0 ? (
-          <p className="muted">还没有已发布的作品。</p>
+          <p className="muted">{t('home.empty')}</p>
         ) : (
           <div className="card-grid">
             {(releases.data ?? []).map((r, col) => (
@@ -95,7 +97,7 @@ export default function Home() {
                 key={r.id}
                 slug={r.slug}
                 title={r.canonical_title}
-                badge={r.runtime_minutes ? `${r.runtime_minutes} 分` : undefined}
+                badge={r.runtime_minutes ? t('card.minutes', {n: r.runtime_minutes}) : undefined}
                 meta={[r.maker_name, formatDate(r.release_date)].filter(Boolean).join(' · ')}
                 sub={!r.maker_name && !r.release_date ? formatRuntime(r.runtime_minutes) : undefined}
               />
@@ -109,9 +111,9 @@ export default function Home() {
           data until performer_stats exists (tech plan 3.13). */}
       <section className="shelf">
         <SectionHeader
-          title="演员"
-          sub={performers.data?.paged ? '作品最多' : undefined}
-          action={<Link to="/discover?tab=actors" className="section-link">演员库</Link>}
+          title={t('home.actors')}
+          sub={performers.data?.paged ? t('home.actorsSub') : undefined}
+          action={<Link to="/discover?tab=actors" className="section-link">{t('home.actorLibrary')}</Link>}
         />
         {performers.error ? (
           <ErrorBanner error={performers.error} onRetry={performers.reload} />
@@ -124,7 +126,7 @@ export default function Home() {
                 key={p.id}
                 slug={p.slug}
                 name={p.canonical_name}
-                sub={typeof p.works_count === 'number' ? `${p.works_count} 部作品` : p.canonical_name_ja}
+                sub={typeof p.works_count === 'number' ? t('home.worksCount', {n: p.works_count}) : p.canonical_name_ja}
               />
             ))}
           </div>

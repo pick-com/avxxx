@@ -9,6 +9,7 @@ import {BlockSkeleton, CardGridSkeleton, EmptyState, ErrorBanner} from '../compo
 import {getFavorites, getPerformerReleases, getWatchLater, getRelease, getReleasePerformers, getWatchHistory, setFavorite, type Performer, type ReleaseDetail} from '../lib/api';
 import {track} from '../lib/analytics';
 import {useAuth} from '../lib/auth';
+import {useT} from '../lib/i18n';
 import {markAutoplayNavigation} from '../lib/playAnalytics';
 import {usePlayerPrefs} from '../lib/playerPrefs';
 import {ageAt, formatDate, formatRuntime} from '../lib/format';
@@ -408,6 +409,7 @@ function AutoplayNext({fromId, next, onGo, onCancel}: {
   onGo: () => void;
   onCancel: () => void;
 }) {
+  const t = useT();
   const [left, setLeft] = useState(AUTOPLAY_SECONDS);
   const done = useRef(false);
   const report = (cancelled: boolean, remaining: number) => {
@@ -431,8 +433,8 @@ function AutoplayNext({fromId, next, onGo, onCancel}: {
   }, [left]);
 
   return (
-    <div className="autoplay-next" role="dialog" aria-label="自动播放下一个" aria-live="polite">
-      <span className="autoplay-next-label">{left} 秒后播放下一个</span>
+    <div className="autoplay-next" role="dialog" aria-label={t('autoplay.label')} aria-live="polite">
+      <span className="autoplay-next-label">{t('autoplay.countdown', {s: left})}</span>
       <strong className="autoplay-next-title">{next.title}</strong>
       <div className="autoplay-next-actions">
         <button
@@ -443,7 +445,7 @@ function AutoplayNext({fromId, next, onGo, onCancel}: {
             onGo();
           }}
         >
-          立即播放
+          {t('autoplay.now')}
         </button>
         <button
           type="button"
@@ -453,7 +455,7 @@ function AutoplayNext({fromId, next, onGo, onCancel}: {
             onCancel();
           }}
         >
-          取消
+          {t('autoplay.cancel')}
         </button>
       </div>
     </div>

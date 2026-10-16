@@ -1347,3 +1347,12 @@ a.notif-main:hover {
     max-width: none;
   }
 }
+
+/* TopBar language switcher (PRD 8). */
+.lang-switch {
+  position: relative;
+  flex-shrink: 0;
+}
+.lang-menu {
+  min-width: 220px;
+}

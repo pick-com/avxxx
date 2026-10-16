@@ -16,6 +16,8 @@ export default [
     route('notifications', 'routes/notifications.tsx'),
     route('settings', 'routes/settings.tsx'),
     route('legal/:doc', 'routes/legal.tsx'),
+    // PRD 8 language prefix as an entry URL (/en/..., /zh-TW/...).
+    route(':lang/*', 'routes/lang-prefix.tsx'),
     route('*', 'routes/not-found.tsx'),
   ]),
   route('login', 'routes/login.tsx'),

@@ -89,6 +89,62 @@ function errorDetail(data: unknown): string | undefined {
   return typeof data === 'string' && data ? data : undefined;
 }
 
+// ---- Content language (PRD 8, i18n backend) ----
+//
+// Catalog reads carry ?lang=<content language>. A backend with the i18n
+// routes answers with display_<field> (+ display_<field>_lang) next to the
+// original fields; older backends ignore the parameter. localizeBody() puts
+// the display value in the field the UI already reads (canonical_title,
+// canonical_name, name, synopsis, biography, tag name) and keeps the original
+// as original_<field>, so every screen prefers the translation when present.
+
+let contentLang: string | null = null;
+export function setContentLang(lang: string | null) {
+  contentLang = lang;
+}
+
+const LOCALIZED_PATH = /^(releases|performers|catalog\/search)(\/|\?|$)/;
+const UNLOCALIZED_PATH = /\/(play-config|playback)(\?|$)/;
+const isLocalizedPath = (path: string) => LOCALIZED_PATH.test(path) && !UNLOCALIZED_PATH.test(path);
+
+function withLang(path: string): string {
+  if (!contentLang || !isLocalizedPath(path) || /[?&]lang=/.test(path)) return path;
+  return `${path}${path.includes('?') ? '&' : '?'}lang=${encodeURIComponent(contentLang)}`;
+}
+
+const DISPLAY_TARGETS: Record<string, string[]> = {
+  display_title: ['canonical_title', 'title'],
+  display_name: ['canonical_name', 'name'],
+  display_synopsis: ['synopsis'],
+  display_biography: ['biography'],
+};
+
+function localizeObject(o: Record<string, unknown>): Record<string, unknown> {
+  let out = o;
+  for (const [display, targets] of Object.entries(DISPLAY_TARGETS)) {
+    const v = o[display];
+    if (typeof v !== 'string' || !v) continue;
+    const target = targets.find(t => t in o) ?? targets[0];
+    if (o[target] === v) continue;
+    if (out === o) out = {...o};
+    out[`original_${target}`] = o[target];
+    out[target] = v;
+  }
+  if (Array.isArray(o.tags)) {
+    if (out === o) out = {...o};
+    out.tags = o.tags.map(t => (t && typeof t === 'object' ? localizeObject(t as Record<string, unknown>) : t));
+  }
+  return out;
+}
+
+export function localizeBody(data: unknown): unknown {
+  if (Array.isArray(data)) return data.map(localizeBody);
+  if (!data || typeof data !== 'object') return data;
+  const o = data as Record<string, unknown>;
+  if (Array.isArray(o.items)) return {...o, items: o.items.map(localizeBody)};
+  return localizeObject(o);
+}
+
 type RequestOptions = {
   method?: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
   body?: unknown;
@@ -97,7 +153,7 @@ type RequestOptions = {
 };
 
 export async function api<T>(path: string, options: RequestOptions = {}): Promise<T> {
-  const clean = path.replace(/^\/+/, '').replace(/^api\//, '');
+  const clean = withLang(path.replace(/^\/+/, '').replace(/^api\//, ''));
   const headers = new Headers({Accept: 'application/json'});
   const token = tokenFor(clean);
   if (token) headers.set('Authorization', `Bearer ${token}`);
@@ -125,7 +181,7 @@ export async function api<T>(path: string, options: RequestOptions = {}): Promis
     }
   }
   if (!response.ok) throw new ApiError(errorMessage(data, response.status), response.status, errorDetail(data));
-  return data as T;
+  return (isLocalizedPath(clean) ? localizeBody(data) : data) as T;
 }
 
 export function isAbort(error: unknown): boolean {

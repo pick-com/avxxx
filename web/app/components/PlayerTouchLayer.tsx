@@ -1,5 +1,6 @@
 import {useEffect, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent, type RefObject} from 'react';
 import {formatClock} from '../lib/format';
+import {useT} from '../lib/i18n';
 import {Icon} from './Icon';
 
 const TAP_MS = 250;
@@ -58,6 +59,7 @@ export function PlayerTouchLayer({videoRef, title, rate, qualityLabel, onExit, o
   onOpenSettings: (tab: 'quality' | 'rate' | 'source') => void;
   reducedMotion: boolean;
 }) {
+  const t = useT();
   const clock = useVideoClock(videoRef);
   const [controls, setControls] = useState(true);
   const [locked, setLocked] = useState(false);
@@ -255,12 +257,12 @@ export function PlayerTouchLayer({videoRef, title, rate, qualityLabel, onExit, o
       {showControls && (
         <>
           <div className="touch-top">
-            <button type="button" className="touch-btn" aria-label="退出全屏" onClick={onExit}>
+            <button type="button" className="touch-btn" aria-label={t('player.exitFullscreen')} onClick={onExit}>
               <Icon name="back" size={22} />
             </button>
             <span className="touch-title">{title}</span>
             <button type="button" className="touch-text-btn" onClick={() => onOpenSettings('source')}>
-              片源
+              {t('player.source')}
             </button>
             <button type="button" className="touch-text-btn" onClick={() => onOpenSettings('quality')}>
               {qualityLabel}
@@ -268,7 +270,7 @@ export function PlayerTouchLayer({videoRef, title, rate, qualityLabel, onExit, o
           </div>
 
           <div className="touch-center">
-            <button type="button" className="touch-play" aria-label={clock.paused ? '播放' : '暂停'} onClick={togglePlay}>
+            <button type="button" className="touch-play" aria-label={clock.paused ? t('player.play') : t('player.pause')} onClick={togglePlay}>
               <Icon name={clock.paused ? 'play' : 'pause'} size={28} filled={clock.paused} />
             </button>
           </div>
@@ -277,7 +279,7 @@ export function PlayerTouchLayer({videoRef, title, rate, qualityLabel, onExit, o
             <input
               type="range"
               className="touch-seek"
-              aria-label="播放进度"
+              aria-label={t('player.progress')}
               aria-valuetext={`${formatClock(clock.time)} / ${formatClock(clock.duration)}`}
               min={0}
               max={clock.duration || 0}
@@ -295,7 +297,7 @@ export function PlayerTouchLayer({videoRef, title, rate, qualityLabel, onExit, o
               </span>
               <span className="section-spacer" />
               <button type="button" className="touch-text-btn" onClick={() => onOpenSettings('rate')}>
-                {rate === 1 ? '倍速' : `${rate}×`}
+                {rate === 1 ? t('player.rate') : `${rate}×`}
               </button>
             </div>
           </div>
@@ -306,7 +308,7 @@ export function PlayerTouchLayer({videoRef, title, rate, qualityLabel, onExit, o
         <button
           type="button"
           className="touch-lock"
-          aria-label={locked ? '解锁屏幕' : '锁定屏幕'}
+          aria-label={locked ? t('player.unlockScreen') : t('player.lockScreen')}
           aria-pressed={locked}
           onClick={() => {
             setLocked(l => !l);
@@ -337,18 +339,18 @@ export function PlayerTouchLayer({videoRef, title, rate, qualityLabel, onExit, o
           ) : hud.kind === 'boost' ? (
             <>
               <Icon name="forward" size={18} />
-              <span>2× 倍速中</span>
+              <span>{t('player.boost')}</span>
             </>
           ) : hud.kind === 'skip' ? (
             <>
               <Icon name={hud.side === 'left' ? 'rewind' : 'forward'} size={20} />
-              <span>{hud.side === 'left' ? '后退 10 秒' : '前进 10 秒'}</span>
+              <span>{hud.side === 'left' ? t('player.rewind', {s: 10}) : t('player.forward', {s: 10})}</span>
             </>
           ) : null}
         </div>
       )}
 
-      {locked && controls && <span className="touch-locked-note">屏幕已锁定</span>}
+      {locked && controls && <span className="touch-locked-note">{t('player.locked')}</span>}
     </div>
   );
 }
