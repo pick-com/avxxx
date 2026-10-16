@@ -122,6 +122,13 @@
   color: var(--text);
 }
 
+.support-link-btn {
+  text-align: start;
+  font: inherit;
+  background: none;
+  cursor: pointer;
+}
+
 .support-link:hover {
   background: var(--surface2);
 }
