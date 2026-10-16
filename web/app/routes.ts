@@ -18,6 +18,8 @@ export default [
     route(L(''), 'routes/home.tsx', {id: 'routes/home'}),
     route(L('releases/:slug'), 'routes/release.tsx'),
     route(L('performers/:slug'), 'routes/performer.tsx'),
+    route(L('series'), 'routes/series-list.tsx'),
+    route(L('series/:slug'), 'routes/series.tsx'),
     route(L('search'), 'routes/search.tsx'),
     route(L('discover'), 'routes/discover.tsx'),
     route(L('trending'), 'routes/trending.tsx'),

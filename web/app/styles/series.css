@@ -1,0 +1,364 @@
+/* Series pages (/series, /series/{slug}), the 信息来源 section and source
+   credits on release / performer / series pages. Uses the app.css tokens. */
+
+/* ---------- /series ---------- */
+
+.series-list-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+.series-list-head h1 {
+  font-size: 26px;
+  font-weight: 700;
+}
+
+.series-search {
+  display: flex;
+  gap: 8px;
+  flex: 0 1 360px;
+  min-width: 0;
+}
+
+.series-search input {
+  flex: 1;
+  min-width: 0;
+  height: 36px;
+  padding: 0 12px;
+  border: 1px solid var(--line2);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+  font-size: 14px;
+}
+
+.series-grid {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 12px;
+}
+
+.series-card {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 14px 16px;
+  border-radius: 12px;
+  background: var(--surface);
+  border: 1px solid transparent;
+  min-width: 0;
+}
+
+.series-card:hover,
+.series-card:focus-visible {
+  border-color: var(--line2);
+  background: var(--surface2);
+}
+
+.series-card-name {
+  font-size: 15px;
+  font-weight: 500;
+  overflow-wrap: anywhere;
+}
+
+.series-card-sub {
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.series-card-meta {
+  margin-top: 4px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+  font-size: 12px;
+  color: var(--faint);
+}
+
+.series-card-meta strong {
+  font-weight: 500;
+  color: var(--text2);
+}
+
+/* ---------- /series/{slug} ---------- */
+
+.series-crumbs {
+  margin-bottom: -16px;
+}
+
+.series-hero {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.series-hero h1 {
+  font-size: 34px;
+  line-height: 1.2;
+  font-weight: 700;
+  overflow-wrap: anywhere;
+}
+
+.series-hero .stat-row {
+  flex-wrap: wrap;
+  gap: 12px 32px;
+}
+
+.series-facet {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  margin-top: 6px;
+  min-width: 0;
+}
+
+.series-facet-label {
+  flex: none;
+  font-size: 12px;
+  color: var(--faint);
+}
+
+.series-release-grid {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.series-release-grid > li {
+  min-width: 0;
+}
+
+/* ---------- 信息来源 ---------- */
+
+/* Performer page: the profile card, then 信息来源. */
+.performer-info {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.evidence {
+  border-radius: 12px;
+  background: var(--surface);
+  font-size: 13px;
+}
+
+.evidence-summary {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+  padding: 12px 16px;
+  cursor: pointer;
+  list-style: none;
+}
+
+.evidence-summary::-webkit-details-marker {
+  display: none;
+}
+
+.evidence-summary::before {
+  content: '▸';
+  color: var(--faint);
+  transition: transform 0.15s;
+}
+
+.evidence[open] > .evidence-summary::before {
+  transform: rotate(90deg);
+}
+
+.evidence-title {
+  font-weight: 500;
+  font-size: 14px;
+}
+
+.evidence-hint {
+  color: var(--faint);
+  font-size: 12px;
+}
+
+.evidence-body {
+  padding: 0 16px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.evidence-status {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.evidence-list {
+  margin: 0;
+  display: grid;
+  grid-template-columns: minmax(84px, max-content) 1fr;
+  border-top: 1px solid var(--line);
+}
+
+.evidence-row {
+  display: contents;
+}
+
+.evidence-row > dt,
+.evidence-row > dd {
+  padding: 8px 0;
+  border-bottom: 1px solid var(--line);
+  min-width: 0;
+}
+
+.evidence-row > dt {
+  padding-right: 16px;
+  color: var(--faint);
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+}
+
+.evidence-row > dd {
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.evidence-value {
+  color: var(--text);
+  overflow-wrap: anywhere;
+}
+
+.evidence-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 2px 8px;
+  font-size: 12px;
+  color: var(--faint);
+}
+
+.evidence-others {
+  display: block;
+  overflow-wrap: anywhere;
+}
+
+.evidence-source-name {
+  color: var(--text2);
+  overflow-wrap: anywhere;
+}
+
+.evidence-tier {
+  padding: 0 6px;
+  border-radius: 4px;
+  background: var(--surface3);
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 18px;
+  white-space: nowrap;
+}
+
+.evidence-badge {
+  padding: 0 6px;
+  border-radius: 4px;
+  background: var(--warn-bg);
+  color: var(--warn-fg);
+  font-size: 11px;
+  line-height: 18px;
+  white-space: nowrap;
+}
+
+.evidence-subtitle {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--faint);
+  margin-bottom: 6px;
+}
+
+.evidence-sources ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.evidence-sources li {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 2px 8px;
+}
+
+/* ---------- Source credits (sources.attribution_html) ---------- */
+
+.source-credits {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding-top: 12px;
+  border-top: 1px solid var(--line);
+  font-size: 12px;
+  color: var(--faint);
+}
+
+.source-credit a {
+  color: var(--text2);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+@media (max-width: 767px) {
+  .series-list-head h1 {
+    font-size: 20px;
+  }
+
+  .series-search {
+    flex-basis: 100%;
+  }
+
+  .series-grid {
+    grid-template-columns: 1fr;
+    gap: 8px;
+  }
+
+  .series-hero h1 {
+    font-size: 24px;
+  }
+
+  .series-crumbs {
+    margin-bottom: -12px;
+  }
+
+  .evidence-summary {
+    padding: 10px 12px;
+  }
+
+  .evidence-body {
+    padding: 0 12px 12px;
+  }
+
+  /* One column on phones: label above value. */
+  .evidence-list {
+    grid-template-columns: 1fr;
+  }
+
+  .evidence-row > dt {
+    flex-direction: row;
+    align-items: baseline;
+    padding-bottom: 0;
+    border-bottom: 0;
+  }
+
+  .evidence-row > dd {
+    padding-top: 2px;
+  }
+}

@@ -15,9 +15,11 @@ import {playerZhCN} from './messages.player.zh-CN';
 import {recsZhCN} from './messages.recs.zh-CN';
 import {searchZhCN} from './messages.search.zh-CN';
 import {seoZhCN} from './messages.seo.zh-CN';
+import {seriesZhCN} from './messages.series.zh-CN';
 
 export const zhCN = {
   ...pagesZhCN,
+  ...seriesZhCN,
   ...communityZhCN,
   ...recsZhCN,
   ...searchZhCN,
