@@ -34,6 +34,9 @@ export const zhCN = {
   'error.retryHint': '请刷新页面重试；如果问题持续出现，请稍后再来。',
   'error.backHome': '回到首页',
   'shell.skipToMain': '跳到主要内容',
+  'shell.announcements': '网站公告',
+  'shell.announcementDismiss': '关闭公告',
+  'shell.announcementMore': '了解详情',
 
   // top bar
   'topbar.openNav': '打开导航菜单',
@@ -194,6 +197,22 @@ export const zhCN = {
   'home.actorsSub': '作品最多',
   'home.actorLibrary': '演员库',
   'home.worksCount': '{n} 部作品',
+  'home.hero': '主推',
+  'home.heroGoTo': '第 {n} 个：{title}',
+  'home.heroPick': '编辑推荐',
+  'home.heroFill': '新上线',
+  'home.heroWatch': '立即观看',
+  'home.heroSeries': '查看系列',
+  'home.heroOpen': '去看看',
+  'home.heroSeriesCount': '共 {n} 部',
+  'home.picks': '编辑精选',
+  'home.picksSub': '运营推荐',
+  'home.shortTop': '高分短片',
+  'home.shortTopSub': '{n} 分钟以内，按评分',
+  'home.shortFewVotes': '评分人数较少，仅供参考',
+  'home.shortFallback': '评分还不够多，先看最新短片',
+  'home.shortScore': '{score} 分',
+  'home.shortVotes': '{n} 人评分',
   'card.minutes': '{n} 分',
 
   // settings
