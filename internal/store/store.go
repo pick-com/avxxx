@@ -559,9 +559,10 @@ func (s *Store) SaveCatalogRecord(ctx context.Context, sourceID int64, parserVer
 		if name == "" {
 			return 0, fmt.Errorf("performer name is required")
 		}
-		slug := catalog.Slug(name)
-		if slug == "" {
-			slug = catalog.Slug(rec.SourceKey)
+		ref := recordPerformerRef(rec.Fields, name)
+		slug, err := performerRecordSlug(ctx, tx, sourceID, rec, ref)
+		if err != nil {
+			return 0, err
 		}
 		var id int64
 		nameJA, _ := rec.Fields["name_ja"].(string)
@@ -576,6 +577,9 @@ func (s *Store) SaveCatalogRecord(ctx context.Context, sourceID int64, parserVer
 			return 0, err
 		}
 		if id, err = survivingID(ctx, tx, "performers", id); err != nil {
+			return 0, err
+		}
+		if err = linkPerformerIdentity(ctx, tx, sourceID, id, ref); err != nil {
 			return 0, err
 		}
 		if err = markStale(ctx, tx, i18n.EntityPerformer, strconv.FormatInt(id, 10)); err != nil {
@@ -609,10 +613,8 @@ func (s *Store) SaveCatalogRecord(ctx context.Context, sourceID int64, parserVer
 		}
 		releaseID = &id
 		if code != "" {
-			scope := "global"
-			if maker != "" {
-				scope = "maker:" + catalog.Slug(maker)
-			}
+			// Never the bare "maker:" (Japanese maker names have no ASCII slug).
+			scope := catalog.MakerScope(maker, recordText(rec.Fields["maker_id"]))
 			_, err = tx.Exec(ctx, `INSERT INTO release_identifiers(release_id,identifier_type,identifier_value,normalized_value,identifier_scope,source_id) VALUES($1,'dvd_code',$2,$3,$4,$5) ON CONFLICT DO NOTHING`, id, code, catalog.NormalizeIdentifier(code), scope, sourceID)
 			if err != nil {
 				return 0, err
@@ -647,31 +649,39 @@ func (s *Store) SaveCatalogRecord(ctx context.Context, sourceID int64, parserVer
 		return 0, err
 	}
 	if rec.EntityType == catalog.Release && releaseID != nil {
-		if names, ok := rec.Fields["performers"].([]string); ok {
-			for order, name := range names {
-				name = strings.TrimSpace(name)
-				if name == "" || catalog.BoilerplateName(name) != "" {
-					continue // never create a performer from site chrome text
-				}
-				slug := catalog.Slug(name)
-				if slug == "" {
-					continue
-				}
-				var performerID int64
+		for order, ref := range performerRefs(rec.Fields) {
+			name := ref.Name
+			if name == "" || catalog.BoilerplateName(name) != "" {
+				continue // never create a performer from site chrome text
+			}
+			// Japanese-only names (DMM) resolve by actress id or name match,
+			// or are created under a romaji / source-scoped slug.
+			performerID, slug, err := resolvePerformer(ctx, tx, sourceID, ref)
+			if err != nil {
+				return 0, err
+			}
+			if performerID == 0 {
 				if err = tx.QueryRow(ctx, `INSERT INTO performers(slug,canonical_name) VALUES($1,$2) ON CONFLICT(slug) DO UPDATE SET updated_at=now() RETURNING id`, slug, name).Scan(&performerID); err != nil {
 					return 0, err
 				}
-				if performerID, err = survivingID(ctx, tx, "performers", performerID); err != nil {
+			}
+			if performerID, err = survivingID(ctx, tx, "performers", performerID); err != nil {
+				return 0, err
+			}
+			if err = linkPerformerIdentity(ctx, tx, sourceID, performerID, ref); err != nil {
+				return 0, err
+			}
+			primary := order == 0
+			if ref.Primary != nil {
+				primary = *ref.Primary
+			}
+			if !overridden[OverridePerformers] {
+				if _, err = tx.Exec(ctx, `INSERT INTO release_performers(release_id,performer_id,billing_order,credited_name,is_primary) VALUES($1,$2,$3,$4,$5) ON CONFLICT(release_id,performer_id) DO UPDATE SET billing_order=EXCLUDED.billing_order,credited_name=EXCLUDED.credited_name`, *releaseID, performerID, order, name, primary); err != nil {
 					return 0, err
 				}
-				if !overridden[OverridePerformers] {
-					if _, err = tx.Exec(ctx, `INSERT INTO release_performers(release_id,performer_id,billing_order,credited_name,is_primary) VALUES($1,$2,$3,$4,$5) ON CONFLICT(release_id,performer_id) DO UPDATE SET billing_order=EXCLUDED.billing_order,credited_name=EXCLUDED.credited_name`, *releaseID, performerID, order, name, order == 0); err != nil {
-						return 0, err
-					}
-				}
-				if _, err = tx.Exec(ctx, `INSERT INTO release_performer_sources(release_id,performer_id,source_record_id,billing_order,credited_name) VALUES($1,$2,$3,$4,$5) ON CONFLICT DO NOTHING`, *releaseID, performerID, sourceRecordID, order, name); err != nil {
-					return 0, err
-				}
+			}
+			if _, err = tx.Exec(ctx, `INSERT INTO release_performer_sources(release_id,performer_id,source_record_id,billing_order,credited_name) VALUES($1,$2,$3,$4,$5) ON CONFLICT DO NOTHING`, *releaseID, performerID, sourceRecordID, order, name); err != nil {
+				return 0, err
 			}
 		}
 		if tags, ok := rec.Fields["tags"].([]string); ok {

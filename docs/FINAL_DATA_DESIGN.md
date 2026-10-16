@@ -94,6 +94,47 @@ yui-hatano--jp-name
 yui-hatano--source-12345
 ```
 
+#### 3.1.1 非 ASCII 名称（已实现：`internal/catalog/slug.go`、`romaji.go`，`internal/store/performer_resolve.go`，migration 028）
+
+只有日文名（DMM 等）的演员在入库时先**解析**到已有演员，找不到才**新建**；slug 只在新建时决定，之后永不改写。
+
+解析顺序（`SaveCatalogRecord` 的演员记录和作品 `performer_refs` / `performers` 共用）：
+
+1. 同一来源记录之前解析到的演员（演员记录按 `(source, key)`），其 slug 原样沿用，即使来源改名；
+2. 来源颁发的 ID：`performer_external_ids(namespace='dmm_actress', external_id)`，或已用 `dmm-actress-<id>` 发布的演员；
+3. 名称含拉丁字母（`NameSlug`，与原 `Slug` 结果完全相同）时按 slug upsert（原行为，ASCII slug 不变）；
+4. 否则按 `identity.NormalizeName` 匹配 `canonical_name` / `canonical_name_ja` / alias，**唯一**命中才采用；带不同 DMM actress id 的同名演员不算命中；多个命中留给 identity 审核。
+
+新建时依次取第一个未被占用（含 `slug_redirects`）的候选：
+
+```text
+拉丁名 / 英文名           Yui Hatano            -> yui-hatano
+罗马字或英文别名           name_romaji / name_en -> yui-hatano
+假名读音（DMM ruby、name_kana）→ 罗马字   あさみゆま -> asamiyuma
+纯假名名称 → 罗马字        うんぱい               -> unpai
+来源作用域                 DMM actress 15187     -> dmm-actress-15187
+最终兜底                   -> performer-<id>
+```
+
+罗马字为小型、内置、有测试的平文式（Hepburn，无长音符号）假名表，不联网、无第三方依赖：`ん`→`n`，`っ` 双写辅音（`っち`→`tch`），`ー` 重复前一元音，片假名/半角先 NFKC 折叠为平假名；含汉字的名称不做部分转写。
+
+- slug 永不为空：所有写入经过 `catalog.RequireSlug`，数据库另有 `performers_slug_nonempty` / `releases_slug_nonempty` 约束。
+- 已发布 slug 不改：若演员当前是兜底 slug（`dmm-actress-<id>` / `performer-<id>`），之后来源提供了罗马字读音，则把罗马字 slug 写入 `slug_redirects`（301 到现有 slug），并加 `alias_type='romaji'` 的别名，不改 `performers.slug`。
+- DMM actress id 写入 `performer_external_ids`，`performer_refs` 中的 `is_primary` 若存在则采用，否则第一位为主演。手工 override（`performers` 关系）仍优先，来源证据照常记录在 `release_performer_sources`。
+
+#### 3.1.2 厂商作用域（DVD code）
+
+`release_identifiers.identifier_scope` 由 `catalog.MakerScope(maker, maker_id)` 计算，永不为裸 `maker:`：
+
+```text
+无厂商                        -> global
+Slug(maker) 非空              -> maker:<slug>            （ASCII 厂商名，与原规则相同）
+DMM maker id（数字）已知       -> dmm-maker:<id>
+其它（日文厂商名）             -> maker-name:<md5(maker) 前 16 位>
+```
+
+后两种都可以由已存的来源记录（`raw_data` 的 `maker` / `maker_id`）在 SQL 里精确重算，因此 migration 028 直接把历史裸 `maker:` 行改为同一结果（幂等；目标作用域已存在时跳过，同一作品的冗余裸行删除）。品番匹配（identity code key、media link 精确品番）只看 `identifier_value` / `normalized_value`，不受作用域影响。
+
 ### 3.2 作品 slug
 
 有可信品番时统一采用品番 slug：

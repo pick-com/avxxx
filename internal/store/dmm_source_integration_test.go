@@ -105,7 +105,7 @@ WHERE sr.source_id=$1 AND sr.source_record_key='sone00156'`, itemListID).Scan(&s
 		}
 		ids = append(ids, v)
 	}
-	if got := strings.Join(ids, ","); !strings.Contains(got, "content_id=sone00156@global") || !strings.Contains(got, "dvd_code=sone-156@maker:") {
+	if got := strings.Join(ids, ","); !strings.Contains(got, "content_id=sone00156@global") || !strings.Contains(got, "dvd_code=sone-156@dmm-maker:3152") {
 		t.Errorf("identifiers = %s", got)
 	}
 	var stored string
