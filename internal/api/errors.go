@@ -59,6 +59,7 @@ func errorStatus(e error) (int, string) {
 	var he *httpError
 	var ce *store.ConflictError
 	var ve *store.ValidationError
+	var ae *store.AgeGateError
 	switch {
 	case errors.As(e, &he):
 		return he.status, he.msg
@@ -66,6 +67,8 @@ func errorStatus(e error) (int, string) {
 		return http.StatusConflict, ce.Msg
 	case errors.As(e, &ve):
 		return http.StatusBadRequest, ve.Msg
+	case errors.As(e, &ae):
+		return http.StatusConflict, ae.Error()
 	case errors.Is(e, store.ErrInvalidMergeTarget):
 		return http.StatusBadRequest, store.ErrInvalidMergeTarget.Error()
 	case errors.Is(e, store.ErrEmailTaken):

@@ -281,7 +281,7 @@ func (srv *Server) resolveConflict(w http.ResponseWriter, r *http.Request) {
 		reply(w, nil, badRequest("note too long", nil))
 		return
 	}
-	res, err := srv.store.ResolveConflict(r.Context(), id, req.SourceRecordID, req.Value, req.Note, actor)
+	res, err := srv.editor.ResolveConflict(r.Context(), id, req.SourceRecordID, req.Value, req.Note, actor)
 	reply(w, res, err)
 }
 
