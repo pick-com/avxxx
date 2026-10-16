@@ -22,6 +22,10 @@ export default [
   ]),
   route('login', 'routes/login.tsx'),
   route('welcome', 'routes/welcome.tsx'),
-  route('admin/review', 'routes/admin-review.tsx'),
-  route('admin/dedupe', 'routes/admin-dedupe.tsx'),
+  // Back office (PRD 11): AdminNav shell with the shared token and 操作人.
+  layout('routes/admin-layout.tsx', [
+    route('admin', 'routes/admin-dashboard.tsx'),
+    route('admin/review', 'routes/admin-review.tsx'),
+    route('admin/dedupe', 'routes/admin-dedupe.tsx'),
+  ]),
 ] satisfies RouteConfig;

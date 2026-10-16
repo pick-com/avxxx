@@ -1,10 +1,9 @@
 import {useEffect, useState} from 'react';
 import {Link} from 'react-router';
-import {AdminBar, AdminTokenForm} from '../components/AdminChrome';
 import {ErrorBanner} from '../components/States';
 import {adminConflicts, adminIdentityCandidates, adminResolveConflict, tokens, type Conflict, type IdentityCandidate} from '../lib/api';
 
-export const meta = () => [{title: 'REEL · 数据审核'}];
+export const meta = () => [{title: 'REEL · 字段冲突'}];
 
 // Admin review queue, ported from the previous single-file client.
 // Uses only the admin token (never the user token). Identity candidates are
@@ -46,15 +45,16 @@ export default function AdminReview() {
   };
 
   return (
-    <div className="admin">
-      <AdminBar />
-      <main className="admin-main">
+    <div className="admin-main">
         <p className="eyebrow">ADMIN · REVIEW QUEUE</p>
-        <h1>数据审核</h1>
+        <h1>字段冲突</h1>
 
-        <AdminTokenForm busy={busy} onSubmit={() => void load()} submitLabel="加载审核队列">
-          {error && <ErrorBanner error={error.includes('需要登录') ? '管理员令牌无效或未设置' : error} onRetry={load} />}
-        </AdminTokenForm>
+        <div className="admin-fields">
+          <button type="button" className="btn btn-secondary btn-sm" disabled={busy} onClick={() => void load()}>
+            {busy ? '加载中…' : '刷新'}
+          </button>
+        </div>
+        {error && <ErrorBanner error={error.includes('需要登录') ? '管理员令牌无效或未设置' : error} onRetry={load} />}
 
         <section className="admin-card">
           <h2>待处理字段冲突（{conflicts.length}）</h2>
@@ -114,7 +114,6 @@ export default function AdminReview() {
             </div>
           )}
         </section>
-      </main>
     </div>
   );
 }

@@ -1,6 +1,5 @@
 import {useEffect, useState, type ReactNode} from 'react';
 import {Link} from 'react-router';
-import {AdminBar, AdminTokenForm} from '../components/AdminChrome';
 import {Icon} from '../components/Icon';
 import {ErrorBanner} from '../components/States';
 import {
@@ -309,9 +308,7 @@ export default function AdminDedupe() {
   const kindInfo = KINDS.find(k => k.value === kind)!;
 
   return (
-    <div className="admin">
-      <AdminBar />
-      <main className="admin-main admin-main-wide">
+    <div className="admin-main admin-main-wide">
         <p className="eyebrow">ADMIN · DEDUPE</p>
         <h1>重复与归并</h1>
         <p className="muted">
@@ -319,14 +316,12 @@ export default function AdminDedupe() {
           按相似度排序。
         </p>
 
-        <AdminTokenForm busy={busy} onSubmit={() => void load(kind)} submitLabel="加载候选">
-          <div className="admin-fields">
-            <label className="field-inline">
-              <span>操作人</span>
-              <input value={actor} onChange={e => setActor(e.target.value)} placeholder="admin" maxLength={100} />
-            </label>
-          </div>
-        </AdminTokenForm>
+        <div className="admin-fields">
+          <button type="button" className="btn btn-secondary btn-sm" disabled={busy} onClick={() => void load(kind)}>
+            {busy ? '加载中…' : '刷新候选'}
+          </button>
+          <span className="muted">操作人：{actor || 'admin'}（在左侧栏设置）</span>
+        </div>
 
         {error && <ErrorBanner error={error} onRetry={() => void load(kind)} />}
         {message && (
@@ -461,7 +456,6 @@ export default function AdminDedupe() {
             </button>
           </form>
         </section>
-      </main>
     </div>
   );
 }
