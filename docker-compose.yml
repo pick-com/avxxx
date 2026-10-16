@@ -28,6 +28,10 @@ services:
       # Web Push: public key only; empty disables the subscribe routes.
       VAPID_PUBLIC_KEY: ${VAPID_PUBLIC_KEY:-}
       PUSH_ALLOWED_HOSTS: ${PUSH_ALLOWED_HOSTS:-}
+      # false = playback mappings come only from the offline media_link job.
+      MEDIA_LINK_ON_DEMAND: ${MEDIA_LINK_ON_DEMAND:-true}
+      MEDIA_LINK_MIN_INTERVAL: ${MEDIA_LINK_MIN_INTERVAL:-2s}
+      MEDIA_RESOLVE_TTL: ${MEDIA_RESOLVE_TTL:-5m}
     depends_on:
       db:
         condition: service_healthy
@@ -39,6 +43,7 @@ services:
     environment:
       DATABASE_URL: ${DATABASE_URL:-postgres://avxxx:avxxx@db:5432/avxxx?sslmode=disable}
       AUDIT_NIGHTLY_AT: ${AUDIT_NIGHTLY_AT:-04:30}
+      MEDIA_LINK_EVERY: ${MEDIA_LINK_EVERY:-1h}
     depends_on:
       db:
         condition: service_healthy
@@ -57,6 +62,10 @@ services:
     command: ["/usr/local/bin/audit"]
     environment:
       DATABASE_URL: ${DATABASE_URL:-postgres://avxxx:avxxx@db:5432/avxxx?sslmode=disable}
+      # Offline playback linking (media_link job) politeness.
+      MEDIA_LINK_MIN_INTERVAL: ${MEDIA_LINK_MIN_INTERVAL:-2s}
+      MEDIA_LINK_MAX_PER_RUN: ${MEDIA_LINK_MAX_PER_RUN:-200}
+      MEDIA_LINK_DAILY_CAP: ${MEDIA_LINK_DAILY_CAP:-2000}
     depends_on:
       db:
         condition: service_healthy
