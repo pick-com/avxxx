@@ -28,8 +28,9 @@ export const meta = () => [{title: 'REEL · 举报与审核'}];
 
 // AdminOps moderation (PRD 5.5 / 11 / 19, tech plan 3.8): the queue tabs
 // (reports by deadline, shadowed danmaku, shadowed reviews, suspected rating
-// floods), moderator actions, the keyword list and unmute. Every write sends
-// X-Admin-User. The backend has no list of current mutes, so 解除禁言 takes a
+// floods), moderator actions, the keyword list and unmute. Every write is
+// recorded with the signed-in admin. Removing a rating flood needs a second
+// admin's approval (the API answers 202; /admin/approvals). The backend has no list of current mutes, so 解除禁言 takes a
 // user id (from a queue row).
 
 const TABS: {kind: QueueKind; label: string}[] = [
@@ -195,7 +196,7 @@ export default function AdminModeration() {
     const ok = await act.attempt(
       `flood-${f.release_id}-${f.score}-${f.window_start}`,
       () => removeRatingFlood({release_id: f.release_id, score: f.score, window_start: f.window_start, reason: reason.trim() || undefined}),
-      v => `已移除 ${v.removed} 条评分`,
+      v => ('approval_required' in v ? `已提交审批 #${v.approval.id}：另一位管理员在「待审批」中批准后才会删除` : `已移除 ${v.removed} 条评分`),
     );
     if (ok) after();
   };

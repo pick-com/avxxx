@@ -1,8 +1,9 @@
 import {useCallback, useEffect, useMemo, useState, type FormEvent} from 'react';
-import {Link, NavLink, Outlet} from 'react-router';
+import {Link, NavLink, Outlet, useLocation} from 'react-router';
 import {ThemeToggle} from '../components/TopBar';
-import {tokens, validAdminActor} from '../lib/api';
-import {getDashboard, getModerationOverview, getPerformerRequests, type Dashboard, type QueueCounts} from '../lib/adminApi';
+import {ApiError, isAbort, tokens, validAdminActor} from '../lib/api';
+import {adminErrorText, getDashboard, getModerationOverview, getPerformerRequests, type Dashboard, type QueueCounts} from '../lib/adminApi';
+import {adminLogout, getAdminSession, getApprovals, roleLabel, type AdminMe} from '../lib/adminUsersApi';
 import {AdminContext} from '../lib/adminContext';
 import {getAdminTakedowns, type TakedownCounts} from '../lib/adminComplianceApi';
 import '../styles/admin.css';
@@ -12,9 +13,11 @@ import '../styles/admin-gov.css';
 export const meta = () => [{title: 'REEL · 后台'}];
 
 // AdminNav (PRD 11) sidebar shell for every /admin page: section links with
-// work-queue badges, the shared admin token (sent only to admin/*), and the
-// 操作人 name sent as X-Admin-User on every admin write. Desktop-first: PRD 3
-// does not require the back office on phones.
+// work-queue badges, filtered by the signed-in admin's permissions (role
+// matrix, AdminUsers). Sign-in is /admin/login (password + TOTP; HttpOnly
+// session cookie). The ADMIN_TOKEN break-glass path is a link on the
+// signed-out card, kept for emergencies only. Desktop-first: PRD 3 does not
+// require the back office on phones.
 
 const ICONS = {
   dashboard: 'M4 13h6V4H4zM14 20h6v-9h-6zM4 20h6v-3H4zM14 7h6V4h-6z',
@@ -34,10 +37,14 @@ const ICONS = {
   legal: 'M7 3h7l5 5v13H7zM14 3v5h5M10 13h6M10 17h6',
   feedback: 'M4 5h16v11H9l-5 4zM8 9h8M8 12h5',
   copyright: 'M12 21a9 9 0 100-18 9 9 0 000 18zM15 9.5a3.5 3.5 0 100 5',
+  users: 'M9 11a4 4 0 100-8 4 4 0 000 8zM2 21c.8-3.5 3.5-5.5 7-5.5s6.2 2 7 5.5M17 3.5a4 4 0 010 7.5M22 21c-.5-2.6-2-4.4-4-5.2',
+  approvals: 'M9 11l2 2 4-4M5 4h14v16H5zM9 17h6',
+  oplog: 'M5 4h14v16H5zM8 8h8M8 12h8M8 16h5',
 };
 
 type Badge = {n: number; tone: 'red' | 'amber' | 'plain'} | null;
-type NavItem = {to: string; label: string; icon: keyof typeof ICONS; end?: boolean; badge?: Badge};
+// perm: the "group:read" permission the page needs (internal/adminauth roles matrix).
+type NavItem = {to: string; label: string; icon: keyof typeof ICONS; end?: boolean; badge?: Badge; perm?: string};
 
 const badge = (n: number | undefined, tone: 'red' | 'amber' | 'plain'): Badge => (n && n > 0 ? {n, tone} : null);
 
@@ -46,138 +53,192 @@ function failedJobs(d: Dashboard | null) {
   return Object.values(d.jobs ?? {}).reduce((sum, j) => sum + (j.failed_24h || 0), 0);
 }
 
+type Status = 'checking' | 'signed_in' | 'signed_out';
+
 export default function AdminLayout() {
-  const [hasToken, setHasToken] = useState(false);
+  const location = useLocation();
+  const [status, setStatus] = useState<Status>('checking');
+  const [me, setMe] = useState<AdminMe | null>(null);
   const [epoch, setEpoch] = useState(0);
+  const [glassOpen, setGlassOpen] = useState(false);
   const [tokenDraft, setTokenDraft] = useState('');
-  const [editingToken, setEditingToken] = useState(false);
-  const [actor, setActor] = useState('');
-  const [actorDraft, setActorDraft] = useState('');
-  const [actorError, setActorError] = useState('');
+  const [labelDraft, setLabelDraft] = useState('');
+  const [glassError, setGlassError] = useState('');
   const [dash, setDash] = useState<Dashboard | null>(null);
   const [counts, setCounts] = useState<QueueCounts | null>(null);
   const [badgeTick, setBadgeTick] = useState(0);
   const [openRequests, setOpenRequests] = useState<number | null>(null);
   const [takedowns, setTakedowns] = useState<TakedownCounts | null>(null);
+  const [pendingApprovals, setPendingApprovals] = useState<number | null>(null);
 
-  // Read storage after mount: route modules avoid browser globals during render.
+  // Who is signed in: the session cookie or a break-glass token (api.ts).
   useEffect(() => {
-    setHasToken(!!tokens.admin());
-    const a = tokens.adminActor();
-    setActor(a);
-    setActorDraft(a);
-  }, []);
+    const ctrl = new AbortController();
+    setStatus('checking');
+    getAdminSession(ctrl.signal)
+      .then(m => {
+        setMe(m);
+        setStatus('signed_in');
+      })
+      .catch(cause => {
+        if (isAbort(cause)) return;
+        setMe(null);
+        setStatus('signed_out');
+        if (tokens.admin()) {
+          // A stored break-glass token was refused (wrong, or ADMIN_TOKEN_DISABLED).
+          tokens.setAdmin(null);
+          setGlassError(cause instanceof ApiError && cause.status === 401 ? '紧急令牌无效或已停用' : adminErrorText(cause));
+          setGlassOpen(true);
+        }
+      });
+    return () => ctrl.abort();
+  }, [epoch]);
 
+  const hasToken = status === 'signed_in';
+  const can = useCallback((perm: string) => !!me && (me.auth === 'token' || me.permissions.includes(perm)), [me]);
   const refreshBadges = useCallback(() => setBadgeTick(t => t + 1), []);
 
   useEffect(() => {
     if (!hasToken) return;
     let live = true;
-    getDashboard()
-      .then(d => live && setDash(d))
-      .catch(() => live && setDash(null));
-    getModerationOverview(1)
-      .then(m => live && setCounts(m.counts))
-      .catch(() => live && setCounts(null));
+    if (can('dashboard:read')) {
+      getDashboard()
+        .then(d => live && setDash(d))
+        .catch(() => live && setDash(null));
+    }
+    if (can('moderation:read')) {
+      getModerationOverview(1)
+        .then(m => live && setCounts(m.counts))
+        .catch(() => live && setCounts(null));
+    }
     // 更正与隐藏申请 (admin-performers backend; absent → no badge).
-    getPerformerRequests({status: 'open', limit: 100})
-      .then(p => live && setOpenRequests(p.items.length))
-      .catch(() => live && setOpenRequests(null));
+    if (can('catalog:read')) {
+      getPerformerRequests({status: 'open', limit: 100})
+        .then(p => live && setOpenRequests(p.items.length))
+        .catch(() => live && setOpenRequests(null));
+    }
     // 版权投诉 (compliance backend; absent → no badge): overdue SLA is red.
-    getAdminTakedowns({open: true, limit: 1})
-      .then(d => live && setTakedowns(d.counts))
-      .catch(() => live && setTakedowns(null));
+    if (can('compliance:read')) {
+      getAdminTakedowns({open: true, limit: 1})
+        .then(d => live && setTakedowns(d.counts))
+        .catch(() => live && setTakedowns(null));
+    }
+    // 待审批: requests this admin can approve.
+    getApprovals('pending')
+      .then(list => live && setPendingApprovals(list.filter(a => a.can_approve).length))
+      .catch(() => live && setPendingApprovals(null));
     return () => {
       live = false;
     };
-  }, [hasToken, epoch, badgeTick]);
+  }, [hasToken, can, epoch, badgeTick]);
 
-  const saveToken = (event: FormEvent) => {
+  const submitBreakGlass = (event: FormEvent) => {
     event.preventDefault();
     const v = tokenDraft.trim();
-    tokens.setAdmin(v || null);
-    setHasToken(!!v);
-    setTokenDraft('');
-    setEditingToken(false);
-    setEpoch(e => e + 1);
-  };
-
-  const signOut = () => {
-    tokens.setAdmin(null);
-    setHasToken(false);
-    setDash(null);
-    setCounts(null);
-    setEpoch(e => e + 1);
-  };
-
-  const saveActor = (event: FormEvent) => {
-    event.preventDefault();
-    const v = actorDraft.trim();
-    if (!validAdminActor(v)) {
-      setActorError('请用英文字母、数字或拼音（请求头只支持 ASCII），最多 100 个字符');
+    const label = labelDraft.trim();
+    if (!validAdminActor(label)) {
+      setGlassError('标签只能用英文字母、数字和符号，不含空格，最多 64 个字符');
       return;
     }
-    tokens.setAdminActor(v);
-    setActor(v);
-    setActorError('');
+    setGlassError('');
+    tokens.setAdmin(v || null);
+    tokens.setAdminActor(label);
+    setTokenDraft('');
+    setEpoch(e => e + 1);
+  };
+
+  const signOut = async () => {
+    if (me?.auth === 'session') {
+      try {
+        await adminLogout();
+      } catch {
+        /* the cookie may already be gone */
+      }
+    }
+    tokens.setAdmin(null);
+    tokens.setAdminActor('');
+    setMe(null);
+    setDash(null);
+    setCounts(null);
+    setStatus('signed_out');
+    setEpoch(e => e + 1);
   };
 
   const groups = useMemo(() => {
     const moderation = counts ? counts.reports + counts.danmaku + counts.reviews + counts.rating_floods : 0;
     const g: {title: string; items: NavItem[]}[] = [
-      {title: '概览', items: [{to: '/admin', label: '总览', icon: 'dashboard', end: true}]},
+      {title: '概览', items: [{to: '/admin', label: '总览', icon: 'dashboard', end: true, perm: 'dashboard:read'}]},
       {
         title: '内容',
         items: [
-          {to: '/admin/videos', label: '视频', icon: 'videos'},
-          {to: '/admin/actors', label: '演员', icon: 'actors', badge: badge(openRequests ?? undefined, 'amber')},
-          {to: '/admin/pipeline', label: '入库流水线', icon: 'pipeline', badge: badge(failedJobs(dash), 'red')},
-          {to: '/admin/dedupe', label: '重复与归并', icon: 'dedupe', badge: badge(dash?.identity_candidates_open, 'amber')},
-          {to: '/admin/review', label: '字段冲突', icon: 'conflicts', badge: badge(dash?.conflicts_open, 'amber')},
+          {to: '/admin/videos', label: '视频', icon: 'videos', perm: 'catalog:read'},
+          {to: '/admin/actors', label: '演员', icon: 'actors', badge: badge(openRequests ?? undefined, 'amber'), perm: 'catalog:read'},
+          {to: '/admin/pipeline', label: '入库流水线', icon: 'pipeline', badge: badge(failedJobs(dash), 'red'), perm: 'ingest:read'},
+          {to: '/admin/dedupe', label: '重复与归并', icon: 'dedupe', badge: badge(dash?.identity_candidates_open, 'amber'), perm: 'catalog:read'},
+          {to: '/admin/review', label: '字段冲突', icon: 'conflicts', badge: badge(dash?.conflicts_open, 'amber'), perm: 'catalog:read'},
           {
             to: '/admin/audit',
             label: '数据质量',
             icon: 'audit',
             badge: badge(dash?.issues.open, dash?.issues.by_rule?.['R-AGE'] ? 'red' : 'amber'),
+            perm: 'quality:read',
           },
         ],
       },
       {
         title: '数据治理',
         items: [
-          {to: '/admin/field-policies', label: '字段优先级', icon: 'priority'},
-          {to: '/admin/media-links', label: '片源映射', icon: 'links'},
-          {to: '/admin/reports/completeness', label: '完整性报告', icon: 'completeness'},
+          {to: '/admin/field-policies', label: '字段优先级', icon: 'priority', perm: 'ingest:read'},
+          {to: '/admin/media-links', label: '片源映射', icon: 'links', perm: 'ingest:read'},
+          {to: '/admin/reports/completeness', label: '完整性报告', icon: 'completeness', perm: 'dashboard:read'},
         ],
       },
       {
         title: '社区',
-        items: [{to: '/admin/moderation', label: '举报与审核', icon: 'reports', badge: badge(moderation, counts?.reports_overdue ? 'red' : 'amber')}],
+        items: [
+          {to: '/admin/moderation', label: '举报与审核', icon: 'reports', badge: badge(moderation, counts?.reports_overdue ? 'red' : 'amber'), perm: 'moderation:read'},
+        ],
       },
       {
         title: '运营',
-        items: [{to: '/admin/ops', label: '首页排期与公告', icon: 'ops'}],
+        items: [{to: '/admin/ops', label: '首页排期与公告', icon: 'ops', perm: 'ops:read'}],
       },
       {
         title: '系统',
         items: [
-          {to: '/admin/search', label: '搜索词情报', icon: 'search'},
-          {to: '/admin/i18n', label: '翻译管理', icon: 'i18n'},
+          {to: '/admin/search', label: '搜索词情报', icon: 'search', perm: 'search:read'},
+          {to: '/admin/i18n', label: '翻译管理', icon: 'i18n', perm: 'i18n:read'},
         ],
       },
       {
         title: '合规',
         items: [
-          {to: '/admin/legal', label: '法律文本', icon: 'legal'},
-          {to: '/admin/feedback', label: '用户反馈', icon: 'feedback'},
-          {to: '/admin/takedowns', label: '版权投诉', icon: 'copyright', badge: badge(takedowns?.overdue || takedowns?.open, takedowns?.overdue ? 'red' : 'amber')},
+          {to: '/admin/legal', label: '法律文本', icon: 'legal', perm: 'legal:read'},
+          {to: '/admin/feedback', label: '用户反馈', icon: 'feedback', perm: 'compliance:read'},
+          {
+            to: '/admin/takedowns',
+            label: '版权投诉',
+            icon: 'copyright',
+            badge: badge(takedowns?.overdue || takedowns?.open, takedowns?.overdue ? 'red' : 'amber'),
+            perm: 'compliance:read',
+          },
+        ],
+      },
+      {
+        title: '账号与权限',
+        items: [
+          {to: '/admin/users', label: '用户与权限', icon: 'users'},
+          {to: '/admin/approvals', label: '待审批', icon: 'approvals', badge: badge(pendingApprovals ?? undefined, 'amber')},
+          {to: '/admin/oplog', label: '操作日志', icon: 'oplog', perm: 'audit_log:read'},
         ],
       },
     ];
-    return g;
-  }, [dash, counts, openRequests, takedowns]);
+    if (!hasToken) return g;
+    return g.map(group => ({...group, items: group.items.filter(i => !i.perm || can(i.perm))})).filter(group => group.items.length > 0);
+  }, [dash, counts, openRequests, takedowns, pendingApprovals, hasToken, can]);
 
-  const session = useMemo(() => ({hasToken, epoch, refreshBadges}), [hasToken, epoch, refreshBadges]);
+  const session = useMemo(() => ({hasToken, epoch, refreshBadges, me, can}), [hasToken, epoch, refreshBadges, me, can]);
+  const next = encodeURIComponent(location.pathname + location.search);
 
   return (
     <AdminContext.Provider value={session}>
@@ -205,41 +266,24 @@ export default function AdminLayout() {
           ))}
 
           <div className="adm-side-foot">
-            <form className="adm-actor" onSubmit={saveActor}>
-              <label htmlFor="adm-actor">操作人</label>
-              <div className="adm-actor-row">
-                <input
-                  id="adm-actor"
-                  value={actorDraft}
-                  onChange={e => setActorDraft(e.target.value)}
-                  placeholder="例如 nc"
-                  maxLength={100}
-                  autoComplete="off"
-                />
-                <button type="submit" className="btn btn-secondary btn-sm" disabled={actorDraft.trim() === actor}>
-                  保存
-                </button>
-              </div>
-              {actorError ? (
-                <span className="adm-actor-err">{actorError}</span>
-              ) : (
-                <span className="adm-actor-hint">{actor ? `写操作记为「${actor}」` : '未设置：写操作记为 admin'}</span>
-              )}
-            </form>
             <div className="adm-token-row">
               <span className={`adm-token-dot ${hasToken ? 'on' : ''}`} aria-hidden="true" />
-              <span className="adm-token-state">{hasToken ? '已设置管理员令牌' : '未设置令牌'}</span>
+              <span className="adm-token-state">
+                {status === 'checking'
+                  ? '正在确认登录…'
+                  : me?.auth === 'token'
+                    ? `紧急令牌：${me.actor}`
+                    : me
+                      ? `${me.admin.display_name || me.admin.username} · ${me.admin.roles.map(roleLabel).join('、')}`
+                      : '未登录'}
+              </span>
               {hasToken && (
-                <>
-                  <button type="button" className="adm-link" onClick={() => setEditingToken(v => !v)}>
-                    更换
-                  </button>
-                  <button type="button" className="adm-link" onClick={signOut}>
-                    清除
-                  </button>
-                </>
+                <button type="button" className="adm-link" onClick={() => void signOut()}>
+                  退出
+                </button>
               )}
             </div>
+            {me?.auth === 'token' && <span className="adm-actor-err">紧急令牌每次使用都会记入操作日志</span>}
             <div className="adm-side-tools">
               <ThemeToggle />
               <Link to="/" className="btn btn-secondary btn-sm">
@@ -250,29 +294,50 @@ export default function AdminLayout() {
         </nav>
 
         <main className="adm-main">
-          {!hasToken || editingToken ? (
+          {status === 'checking' ? (
+            <p className="muted">正在确认登录…</p>
+          ) : status === 'signed_out' ? (
             <section className="adm-card adm-token-card">
-              <h2>管理员令牌</h2>
-              <p className="muted">令牌只发送到 /api/admin/*，保存在本浏览器。</p>
-              <form className="admin-token" onSubmit={saveToken}>
-                <input
-                  type="password"
-                  value={tokenDraft}
-                  onChange={e => setTokenDraft(e.target.value)}
-                  placeholder="ADMIN_TOKEN"
-                  aria-label="管理员令牌"
-                  autoComplete="off"
-                  autoFocus
-                />
-                <button type="submit" className="btn btn-primary">
-                  进入后台
+              <h2>请先登录后台</h2>
+              <p className="muted">后台使用个人管理员账号：密码 + 两步验证。会话 30 分钟无操作自动过期。</p>
+              <p>
+                <Link to={`/admin/login?next=${next}`} className="btn btn-primary">
+                  登录后台
+                </Link>
+              </p>
+              {!glassOpen ? (
+                <button type="button" className="adm-link" onClick={() => setGlassOpen(true)}>
+                  使用紧急令牌（break-glass）
                 </button>
-                {editingToken && (
-                  <button type="button" className="btn btn-secondary" onClick={() => setEditingToken(false)}>
-                    取消
+              ) : (
+                <form className="admin-token adm-glass" onSubmit={submitBreakGlass}>
+                  <p className="muted">
+                    仅在账号体系不可用时使用 ADMIN_TOKEN。令牌只保存在当前标签页，每次请求都会连同来源 IP 摘要记入操作日志，写操作记为「token:标签」。
+                  </p>
+                  <input
+                    type="password"
+                    value={tokenDraft}
+                    onChange={e => setTokenDraft(e.target.value)}
+                    placeholder="ADMIN_TOKEN"
+                    aria-label="紧急令牌"
+                    autoComplete="off"
+                    autoFocus
+                  />
+                  <input
+                    value={labelDraft}
+                    onChange={e => setLabelDraft(e.target.value)}
+                    placeholder="标签，例如 nc-oncall"
+                    aria-label="紧急令牌标签"
+                    maxLength={64}
+                    autoComplete="off"
+                    required
+                  />
+                  <button type="submit" className="btn btn-secondary">
+                    用紧急令牌进入
                   </button>
-                )}
-              </form>
+                  {glassError && <span className="adm-actor-err">{glassError}</span>}
+                </form>
+              )}
             </section>
           ) : (
             <Outlet />

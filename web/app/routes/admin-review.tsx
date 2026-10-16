@@ -1,7 +1,8 @@
 import {useEffect, useState} from 'react';
 import {Link} from 'react-router';
 import {ErrorBanner} from '../components/States';
-import {adminConflicts, adminIdentityCandidates, adminResolveConflict, tokens, type Conflict, type IdentityCandidate} from '../lib/api';
+import {adminConflicts, adminIdentityCandidates, adminResolveConflict, type Conflict, type IdentityCandidate} from '../lib/api';
+import {useAdmin} from '../lib/adminContext';
 
 export const meta = () => [{title: 'REEL · 字段冲突'}];
 
@@ -31,9 +32,11 @@ export default function AdminReview() {
     }
   };
 
+  const {hasToken, epoch} = useAdmin();
   useEffect(() => {
-    if (tokens.admin()) void load();
-  }, []);
+    if (hasToken) void load();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [hasToken, epoch]);
 
   const resolve = async (id: number, value: unknown) => {
     try {

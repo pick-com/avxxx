@@ -46,7 +46,10 @@ export default [
   // Emailed password reset link (internal/notify.ResetPath).
   route(L('reset-password'), 'routes/reset-password.tsx'),
   route(L('welcome'), 'routes/welcome.tsx'),
-  // Back office (PRD 11): AdminNav shell with the shared token and 操作人.
+  // Back office (PRD 11): AdminNav shell; signed-in admin (AdminUsers) or break-glass token.
+  // Back-office sign-in and enrollment (outside the AdminNav shell).
+  route('admin/login', 'routes/admin-login.tsx'),
+  route('admin/enroll', 'routes/admin-enroll.tsx'),
   layout('routes/admin-layout.tsx', [
     route('admin', 'routes/admin-dashboard.tsx'),
     route('admin/videos', 'routes/admin-videos.tsx'),
@@ -66,5 +69,9 @@ export default [
     route('admin/legal', 'routes/admin-legal.tsx'),
     route('admin/feedback', 'routes/admin-feedback.tsx'),
     route('admin/takedowns', 'routes/admin-takedowns.tsx'),
+    // AdminUsers: accounts and roles, dual approvals, op log.
+    route('admin/users', 'routes/admin-users.tsx'),
+    route('admin/approvals', 'routes/admin-approvals.tsx'),
+    route('admin/oplog', 'routes/admin-oplog.tsx'),
   ]),
 ] satisfies RouteConfig;

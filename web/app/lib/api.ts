@@ -1,11 +1,16 @@
 // Typed client for the Go API (cmd/api/main.go). All paths are relative to /api.
 //
-// Token rule (tech plan 2.6): the admin token is sent only to `admin/*`, the
-// user token only to `me/*`, `auth/me`, play-config (for `resume`) and the
-// community routes (danmaku, rating, reviews, reports: posting needs it, reads
-// add the caller's own state). Every other endpoint is public and gets no
-// Authorization header. Tokens stay in
-// localStorage until cookie sessions land (tech plan 3.6).
+// Token rule (tech plan 2.6): the user token is sent only to `me/*`,
+// `auth/me`, play-config (for `resume`) and the community routes (danmaku,
+// rating, reviews, reports: posting needs it, reads add the caller's own
+// state). Every other endpoint is public and gets no Authorization header.
+//
+// Back office (tech plan 3.6, internal/api/admin_auth.go): admins sign in at
+// /admin/login; the session is an HttpOnly cookie scoped to /api/admin that
+// page scripts never see. Every `admin/*` and `admin-auth/*` request carries
+// X-Admin-CSRF: 1 (the API refuses the cookie without it). The ADMIN_TOKEN
+// break-glass credential, when entered, lives in sessionStorage only (never
+// localStorage) and is sent as a bearer with its label in X-Admin-User.
 //
 // Several endpoints exist only on newer backends (catalog-filters, play-config,
 // identity-merge). Callers feature-detect from the response shape and degrade
@@ -14,9 +19,8 @@
 import {t} from './i18n';
 
 const USER_TOKEN_KEY = 'user_token';
+// Break-glass ADMIN_TOKEN and its label (recorded as token:<label>).
 const ADMIN_TOKEN_KEY = 'admin_token';
-// 操作人 label for review_events.actor (admin auth is one shared token).
-// Stored as a JSON string; AdminDedupe reads the same key.
 const ADMIN_ACTOR_KEY = 'admin_actor';
 
 function readStorage(key: string): string | null {
@@ -36,26 +40,61 @@ function writeStorage(key: string, value: string | null) {
   }
 }
 
+function readSession(key: string): string | null {
+  try {
+    return window.sessionStorage.getItem(key);
+  } catch {
+    return null;
+  }
+}
+
+function writeSession(key: string, value: string | null) {
+  try {
+    if (value) window.sessionStorage.setItem(key, value);
+    else window.sessionStorage.removeItem(key);
+  } catch {
+    /* storage unavailable */
+  }
+}
+
+/** Drops the pre-account admin token and 操作人 from localStorage (long-lived admin secrets must not persist). */
+function dropLegacyAdminStorage() {
+  try {
+    window.localStorage.removeItem(ADMIN_TOKEN_KEY);
+    window.localStorage.removeItem(ADMIN_ACTOR_KEY);
+  } catch {
+    /* ignore */
+  }
+}
+
 export const tokens = {
   user: () => readStorage(USER_TOKEN_KEY),
-  admin: () => readStorage(ADMIN_TOKEN_KEY),
   setUser: (value: string | null) => writeStorage(USER_TOKEN_KEY, value),
-  setAdmin: (value: string | null) => writeStorage(ADMIN_TOKEN_KEY, value),
-  adminActor: (): string => {
-    const raw = readStorage(ADMIN_ACTOR_KEY);
-    if (!raw) return '';
-    try {
-      const v = JSON.parse(raw);
-      return typeof v === 'string' ? v : '';
-    } catch {
-      return raw;
-    }
+  /** Break-glass ADMIN_TOKEN for this tab (sessionStorage), or null. */
+  admin: () => {
+    dropLegacyAdminStorage();
+    return readSession(ADMIN_TOKEN_KEY);
   },
-  setAdminActor: (value: string) => writeStorage(ADMIN_ACTOR_KEY, value.trim() ? JSON.stringify(value.trim()) : null),
+  setAdmin: (value: string | null) => writeSession(ADMIN_TOKEN_KEY, value),
+  /** Break-glass label, recorded as token:<label>. */
+  adminActor: (): string => readSession(ADMIN_ACTOR_KEY) ?? '',
+  setAdminActor: (value: string) => writeSession(ADMIN_ACTOR_KEY, value.trim() || null),
 };
 
-/** HTTP header values must be ISO-8859-1; the 操作人 name is limited to printable ASCII. */
-export const validAdminActor = (v: string) => /^[\x20-\x7e]{0,100}$/.test(v.trim());
+/** HTTP header values must be ISO-8859-1; the break-glass label is printable ASCII without spaces. */
+export const validAdminActor = (v: string) => /^[\x21-\x7e]{0,64}$/.test(v.trim());
+
+/** Headers for an admin request: the CSRF header, plus the break-glass bearer and label when set. */
+export function adminRequestHeaders(headers: Headers = new Headers()): Headers {
+  headers.set('X-Admin-CSRF', '1');
+  const glass = tokens.admin();
+  if (glass) {
+    headers.set('Authorization', `Bearer ${glass}`);
+    const label = tokens.adminActor();
+    if (label && validAdminActor(label)) headers.set('X-Admin-User', label.trim());
+  }
+  return headers;
+}
 
 export class ApiError extends Error {
   status: number;
@@ -78,7 +117,6 @@ const RECS_PATH = /^recs(\?|$)/;
 const COMMUNITY_PATH = /^(releases\/[^/?]+\/(danmaku|rating|reviews)|danmaku\/\d+\/report|reviews\/\d+(\/(like|report))?|reports)(\?|$)/;
 
 function tokenFor(path: string): string | null {
-  if (path.startsWith('admin/')) return tokens.admin();
   if (path.startsWith('me/') || path === 'auth/me' || PLAY_CONFIG_PATH.test(path) || COMMUNITY_PATH.test(path) || RECS_PATH.test(path)) return tokens.user();
   return null;
 }
@@ -184,11 +222,8 @@ export async function api<T>(path: string, options: RequestOptions = {}): Promis
   const headers = new Headers({...options.headers, Accept: 'application/json'});
   const token = tokenFor(clean);
   if (token) headers.set('Authorization', `Bearer ${token}`);
-  // Every admin write names its 操作人 (recorded as review_events.actor / updated_by).
-  if (clean.startsWith('admin/') && (options.method ?? 'GET') !== 'GET') {
-    const actor = tokens.adminActor();
-    if (actor && validAdminActor(actor)) headers.set('X-Admin-User', actor);
-  }
+  if (clean.startsWith('admin/')) adminRequestHeaders(headers);
+  else if (clean.startsWith('admin-auth/')) headers.set('X-Admin-CSRF', '1');
   if (options.body !== undefined) headers.set('Content-Type', 'application/json');
   let response: Response;
   try {

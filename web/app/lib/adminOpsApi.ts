@@ -1,6 +1,6 @@
 // AdminOps client (internal/api/home.go): home slot schedule, drag reorder,
-// live preview and announcements. Every write sends X-Admin-User (api.ts),
-// recorded as review_events.actor.
+// live preview and announcements. The signed-in admin is recorded as
+// review_events.actor.
 
 import {api, query, type ApiImage} from './api';
 import type {Announcement, HomeSlot, Severity} from './home';
