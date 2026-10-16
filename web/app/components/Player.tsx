@@ -10,8 +10,10 @@ import {PlayTracker, takeEndReason, takeEntryOverride} from '../lib/playAnalytic
 import {heightCap, prefHeight, qualityParam, rememberRate, rememberedRate, usePlayerPrefs} from '../lib/playerPrefs';
 import {guestResume, saveGuestProgress} from '../lib/guestProgress';
 import {entriesFromConfig, entriesFromStreams, isHlsEntry, type PlayEntry, type SourceDetailKey} from '../lib/playSources';
+import type {ApiImage} from '../lib/api';
 import {useAsync} from '../lib/useAsync';
 import {useMediaQuery} from '../lib/useMediaQuery';
+import {useMediaSession} from '../lib/useMediaSession';
 import {useDanmakuPrefs} from '../lib/danmakuPrefs';
 import {useOnline} from '../lib/useOnline';
 import {applyVolume, writeVolume} from '../lib/volumePrefs';
@@ -95,10 +97,17 @@ type LockableOrientation = ScreenOrientation & {lock?: (orientation: string) => 
  * 选集 (MobilePlayerFull): with `episodes` (the release's series, 2+ works)
  * the fullscreen touch controls get a 选集 button that opens EpisodesSheet;
  * picking one is the page's navigation (Episodes.tsx).
+ *
+ * Media Session (lib/useMediaSession.ts): a playing <video> source publishes
+ * title / `artist` / `album` / the cover (`posterImage` sizes, else `poster`)
+ * to the OS media controls, lock screen, headset and media keys, which can
+ * play / pause / stop / skip ±10 s / seek; previous / next track call
+ * `onPreviousTrack` / `onNextTrack` (the page's queue, series or autoplay
+ * next) and are hidden without them.
  */
 export type PlayerProps = Parameters<typeof Player>[0];
 
-export function Player({slug, releaseId, title, resumeAt, startAt, onBack, theater = false, onToggleTheater, onEnded, autoStart = false, overlay, entryReason, related = [], onReplay, mini = false, episodes, poster, resumePending = false}: {
+export function Player({slug, releaseId, title, resumeAt, startAt, onBack, theater = false, onToggleTheater, onEnded, autoStart = false, overlay, entryReason, related = [], onReplay, mini = false, episodes, poster, posterImage, artist, album, onPreviousTrack, onNextTrack, resumePending = false}: {
   slug: string;
   /** releases.id for analytics (play_request / progress); no tracking without it. */
   releaseId?: number;
@@ -127,6 +136,15 @@ export function Player({slug, releaseId, title, resumeAt, startAt, onBack, theat
   episodes?: PlayerEpisodes;
   /** The release's stored cover: shown behind the start / status states. */
   poster?: string;
+  /** The same cover with its stored sizes / srcset: Media Session artwork with `sizes`. */
+  posterImage?: ApiImage | null;
+  /** Lead performers (Media Session artist), already joined by the page. */
+  artist?: string;
+  /** Maker or series (Media Session album). */
+  album?: string;
+  /** previoustrack / nexttrack media keys; unset (hidden by the OS) without them. */
+  onPreviousTrack?: () => void;
+  onNextTrack?: () => void;
   /** The saved position (watch history) is still loading: autoStart waits so playback resumes there. */
   resumePending?: boolean;
 }) {
@@ -251,6 +269,11 @@ export function Player({slug, releaseId, title, resumeAt, startAt, onBack, theat
   const finePointer = useMediaQuery('(hover: hover) and (pointer: fine)');
   const online = useOnline();
   const clock = useVideoClock(stream ? videoEl : null);
+  useMediaSession(
+    stream ? videoEl : null,
+    {title, artist, album, artwork: posterImage ?? (poster ? {url: poster} : null)},
+    {onPrevious: onPreviousTrack, onNext: onNextTrack},
+  );
   const buffering = useBuffering(stream ? videoEl : null);
   // play-config chapters belong to the main timeline only.
   const chapters = useMemo<Chapter[]>(() => {
