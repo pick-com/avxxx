@@ -12,6 +12,7 @@ import './styles/app.css';
 import './styles/beta.css';
 import './styles/community.css';
 import './styles/recs.css';
+import './styles/player.css';
 
 export const links = () => [
   {rel: 'preconnect', href: 'https://fonts.googleapis.com'},
