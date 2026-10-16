@@ -1,11 +1,12 @@
 import {useEffect, useState} from 'react';
-import {Outlet, useLocation, useMatches} from 'react-router';
+import {Outlet, useLocation, useMatches, useNavigate} from 'react-router';
 import {BottomTabs} from '../components/BottomTabs';
 import {Footer} from '../components/Footer';
 import {NetworkBanner} from '../components/NetworkBanner';
 import {SideNav, type NavVariant} from '../components/SideNav';
 import {TopBar} from '../components/TopBar';
 import {useT} from '../lib/i18n';
+import {useRecsAvailable} from '../lib/recs';
 import {useMediaQuery} from '../lib/useMediaQuery';
 
 export type ShellHandle = {
@@ -28,6 +29,26 @@ export default function Shell() {
   const wide = useMediaQuery('(min-width: 1200px)');
   const mobile = useMediaQuery('(max-width: 767px)');
   const [mode, setMode] = useState<NavMode>('auto');
+
+  // 今晚看什么 shortcut T (PRD 18): never while typing, with a modifier, inside
+  // a menu or dialog, or on the video page (the player owns the keyboard there).
+  const navigate = useNavigate();
+  const recs = useRecsAvailable();
+  useEffect(() => {
+    if (recs === 'no') return;
+    const onKey = (event: KeyboardEvent) => {
+      if (event.defaultPrevented || event.ctrlKey || event.metaKey || event.altKey || event.repeat) return;
+      if (event.key !== 't' && event.key !== 'T') return;
+      const target = event.target instanceof HTMLElement ? event.target : null;
+      if (target && (target.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(target.tagName))) return;
+      if (target?.closest('[role="menu"], [role="dialog"], [role="listbox"]')) return;
+      if (immersive || location.pathname === '/tonight') return;
+      event.preventDefault();
+      navigate('/tonight');
+    };
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, [recs, immersive, location.pathname, navigate]);
 
   // The overlay closes on navigation.
   useEffect(() => setMode(m => (m === 'open' ? 'auto' : m)), [location.pathname, location.search]);
