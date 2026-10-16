@@ -1,0 +1,64 @@
+import type {ReactNode} from 'react';
+import {Link, Links, Meta, Outlet, Scripts, ScrollRestoration, isRouteErrorResponse, useRouteError} from 'react-router';
+import {AuthProvider} from './lib/auth';
+import {ThemeProvider, themeInitScript} from './lib/theme';
+import './styles/app.css';
+
+export const links = () => [
+  {rel: 'preconnect', href: 'https://fonts.googleapis.com'},
+  {rel: 'preconnect', href: 'https://fonts.gstatic.com', crossOrigin: 'anonymous' as const},
+  {
+    rel: 'stylesheet',
+    href: 'https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;500;700&family=IBM+Plex+Mono:wght@400;500&display=swap',
+  },
+];
+
+export const meta = () => [{title: 'REEL'}, {name: 'description', content: 'REEL：看视频时随时认识演员，认识演员后一路看下去。'}];
+
+export function Layout({children}: {children: ReactNode}) {
+  return (
+    <html lang="zh-CN">
+      <head>
+        <meta charSet="utf-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+        <meta name="color-scheme" content="dark light" />
+        <script dangerouslySetInnerHTML={{__html: themeInitScript}} />
+        <Meta />
+        <Links />
+      </head>
+      <body>
+        {children}
+        <ScrollRestoration />
+        <Scripts />
+      </body>
+    </html>
+  );
+}
+
+export default function App() {
+  return (
+    <ThemeProvider>
+      <AuthProvider>
+        <Outlet />
+      </AuthProvider>
+    </ThemeProvider>
+  );
+}
+
+export function HydrateFallback() {
+  return <div className="boot" aria-busy="true" aria-label="正在加载" />;
+}
+
+export function ErrorBoundary() {
+  const error = useRouteError();
+  const title = isRouteErrorResponse(error) && error.status === 404 ? '页面不存在' : '页面出错了';
+  return (
+    <main className="fatal">
+      <h1>{title}</h1>
+      <p>请刷新页面重试；如果问题持续出现，请稍后再来。</p>
+      <Link to="/" className="btn btn-primary">
+        回到首页
+      </Link>
+    </main>
+  );
+}

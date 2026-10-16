@@ -80,7 +80,10 @@ func (s *Store) IdentityCandidates(ctx context.Context, entityType string, limit
 	if limit <= 0 || limit > 100 {
 		limit = 50
 	}
-	r, err := s.Query(ctx, `SELECT id,entity_type,left_id,right_id,score,evidence,status FROM identity_candidates WHERE ($1='' OR entity_type=$1) AND status='pending' ORDER BY score DESC,id LIMIT $2`, entityType, limit)
+	r, err := s.Query(ctx, `SELECT id,entity_type,left_id,right_id,score,evidence,status FROM identity_candidates c WHERE ($1='' OR entity_type=$1) AND status='pending'
+		AND NOT EXISTS (SELECT 1 FROM performers p WHERE c.entity_type='performer' AND p.id IN (c.left_id,c.right_id) AND p.merged_into_id IS NOT NULL)
+		AND NOT EXISTS (SELECT 1 FROM releases r WHERE c.entity_type='release' AND r.id IN (c.left_id,c.right_id) AND r.merged_into_id IS NOT NULL)
+		ORDER BY score DESC,id LIMIT $2`, entityType, limit)
 	if err != nil {
 		return nil, err
 	}
@@ -168,7 +171,7 @@ func (s *Store) EnqueueDue(ctx context.Context) (int, error) {
 		return 0, err
 	}
 	defer tx.Rollback(ctx)
-	r, err := tx.Query(ctx, `SELECT s.id FROM sources s LEFT JOIN source_crawl_policies p ON p.source_id=s.id WHERE s.enabled AND (s.next_run_at IS NULL OR s.next_run_at<=now()) ORDER BY COALESCE(s.next_run_at,now()),s.id FOR UPDATE OF s SKIP LOCKED`)
+	r, err := tx.Query(ctx, `SELECT s.id FROM sources s LEFT JOIN source_crawl_policies p ON p.source_id=s.id WHERE s.enabled AND (s.blocked_until IS NULL OR s.blocked_until<=now()) AND (s.next_run_at IS NULL OR s.next_run_at<=now()) ORDER BY COALESCE(s.next_run_at,now()),s.id FOR UPDATE OF s SKIP LOCKED`)
 	if err != nil {
 		return 0, err
 	}
@@ -536,6 +539,9 @@ func (s *Store) SaveCatalogRecord(ctx context.Context, sourceID int64, parserVer
 		if err != nil {
 			return 0, err
 		}
+		if id, err = survivingID(ctx, tx, "performers", id); err != nil {
+			return 0, err
+		}
 		performerID = &id
 	} else if rec.EntityType == catalog.Release {
 		title, _ := rec.Fields["title"].(string)
@@ -555,6 +561,9 @@ func (s *Store) SaveCatalogRecord(ctx context.Context, sourceID int64, parserVer
 			VALUES($1,$2,$3,$4,$5) ON CONFLICT(slug) DO UPDATE SET canonical_title=EXCLUDED.canonical_title,
 			maker_name=COALESCE(NULLIF(EXCLUDED.maker_name,''),releases.maker_name),updated_at=now() RETURNING id`, slug, title, date, maker, director).Scan(&id)
 		if err != nil {
+			return 0, err
+		}
+		if id, err = survivingID(ctx, tx, "releases", id); err != nil {
 			return 0, err
 		}
 		releaseID = &id
@@ -598,6 +607,9 @@ func (s *Store) SaveCatalogRecord(ctx context.Context, sourceID int64, parserVer
 				}
 				var performerID int64
 				if err = tx.QueryRow(ctx, `INSERT INTO performers(slug,canonical_name) VALUES($1,$2) ON CONFLICT(slug) DO UPDATE SET updated_at=now() RETURNING id`, slug, name).Scan(&performerID); err != nil {
+					return 0, err
+				}
+				if performerID, err = survivingID(ctx, tx, "performers", performerID); err != nil {
 					return 0, err
 				}
 				if _, err = tx.Exec(ctx, `INSERT INTO release_performers(release_id,performer_id,billing_order,credited_name,is_primary) VALUES($1,$2,$3,$4,$5) ON CONFLICT(release_id,performer_id) DO UPDATE SET billing_order=EXCLUDED.billing_order,credited_name=EXCLUDED.credited_name`, *releaseID, performerID, order, name, order == 0); err != nil {
@@ -660,7 +672,7 @@ func (s *Store) SaveCatalogRecord(ctx context.Context, sourceID int64, parserVer
 	return sourceRecordID, nil
 }
 func (s *Store) Jobs(ctx context.Context) ([]model.Job, error) {
-	r, e := s.Query(ctx, "SELECT id,source_id,status,error,created_at,attempt,lease_until,execution_version FROM jobs ORDER BY id DESC LIMIT 100")
+	r, e := s.Query(ctx, "SELECT id,COALESCE(source_id,0),status,error,created_at,attempt,lease_until,execution_version FROM jobs ORDER BY id DESC LIMIT 100")
 	if e != nil {
 		return nil, e
 	}
@@ -679,7 +691,7 @@ func (s *Store) Claim(ctx context.Context) (int64, model.Source, error) {
 	var id int64
 	var x model.Source
 	worker := s.workerID
-	e := s.QueryRow(ctx, `WITH picked AS (SELECT j.id FROM jobs j JOIN sources s ON s.id=j.source_id WHERE j.status='pending' AND j.available_at<=now() AND s.enabled ORDER BY j.id FOR UPDATE OF j SKIP LOCKED LIMIT 1), claimed AS (UPDATE jobs j SET status='running',started_at=COALESCE(started_at,now()),attempt=attempt+1,worker_id=$1,lease_until=now()+interval '90 seconds',heartbeat_at=now(),execution_version=execution_version+1 WHERE j.id IN (SELECT id FROM picked) RETURNING j.id,j.source_id) SELECT c.id,s.id,s.name,s.url,s.enabled,s.version,s.adapter,s.source_kind,s.license_status,s.egress_policy FROM claimed c JOIN sources s ON s.id=c.source_id`, worker).Scan(&id, &x.ID, &x.Name, &x.URL, &x.Enabled, &x.Version, &x.Adapter, &x.SourceKind, &x.LicenseStatus, &x.EgressPolicy)
+	e := s.QueryRow(ctx, `WITH picked AS (SELECT j.id FROM jobs j JOIN sources s ON s.id=j.source_id WHERE j.status='pending' AND j.available_at<=now() AND s.enabled AND (s.blocked_until IS NULL OR s.blocked_until<=now()) ORDER BY j.id FOR UPDATE OF j SKIP LOCKED LIMIT 1), claimed AS (UPDATE jobs j SET status='running',started_at=COALESCE(started_at,now()),attempt=attempt+1,worker_id=$1,lease_until=now()+interval '90 seconds',heartbeat_at=now(),execution_version=execution_version+1 WHERE j.id IN (SELECT id FROM picked) RETURNING j.id,j.source_id) SELECT c.id,s.id,s.name,s.url,s.enabled,s.version,s.adapter,s.source_kind,s.license_status,s.egress_policy FROM claimed c JOIN sources s ON s.id=c.source_id`, worker).Scan(&id, &x.ID, &x.Name, &x.URL, &x.Enabled, &x.Version, &x.Adapter, &x.SourceKind, &x.LicenseStatus, &x.EgressPolicy)
 	return id, x, e
 }
 func (s *Store) Heartbeat(ctx context.Context, id int64, worker string, version int64) error {
@@ -694,6 +706,12 @@ func (s *Store) ReapExpired(ctx context.Context) error {
 	return e
 }
 func (s *Store) Finish(ctx context.Context, id int64, items []model.Item, cause error) error {
+	if b, blocked := catalog.IsBlocked(cause); blocked {
+		// A blocked source is not retried by the job queue: BlockSource parks
+		// the source and the scheduler creates a fresh job after Retry-After.
+		_, e := s.Exec(ctx, "UPDATE jobs SET status='failed',error=$2,error_code='source_blocked',finished_at=now(),worker_id=NULL,lease_until=NULL WHERE id=$1 AND status='running'", id, b.Error())
+		return e
+	}
 	if cause != nil {
 		_, e := s.Exec(ctx, "UPDATE jobs SET status=CASE WHEN attempt<max_attempts THEN 'pending' ELSE 'failed' END,error=$2,error_code='fetch_failed',available_at=now()+interval '5 seconds',finished_at=CASE WHEN attempt>=max_attempts THEN now() ELSE NULL END,worker_id=NULL,lease_until=NULL WHERE id=$1 AND status='running'", id, cause.Error())
 		return e

@@ -37,13 +37,20 @@ DATABASE_URL='postgres://user:password@host:5432/avxxx?sslmode=require' \
 
 ## 发布验收清单
 
+发布的提交必须在 GitHub Actions CI（`.github/workflows/ci.yml`）中全部通过：`go`（build、vet、单元测试，gofmt 仅告警）、`integration`（Postgres 17 服务容器中的集成测试）、`web`（`npm ci` + `npm run build`）。
+
+本地发布前再执行：
+
 ```bash
 go test ./...
 go vet ./...
+make test-integration   # 需要 docker；启动一次性 postgres:17 容器（随机端口，--rm），结束后自动清理
 go build ./cmd/...
 (cd web && npm run build)
 docker compose config
 API_URL=http://127.0.0.1:8080 ./scripts/smoke.sh
 ```
 
-只有上述检查全部通过，且最近一次备份可以读取，才将部署标记为可用。
+集成测试会删除 `AVXXX_TEST_DATABASE_URL` 指向数据库的 public schema，因此该变量只能指向一次性测试库，绝不能指向 `DATABASE_URL`、compose 的 `db` 服务或生产库；`make test-integration` 会自动创建并销毁专用容器。
+
+只有 CI 与上述检查全部通过，且最近一次备份可以读取，才将部署标记为可用。

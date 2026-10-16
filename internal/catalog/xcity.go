@@ -85,6 +85,11 @@ func (a XCITYAdapter) Parse(ctx context.Context, doc Document, entity EntityType
 	return Record{EntityType: entity, SourceKey: key, URL: doc.FinalURL, Fields: f}, nil
 }
 
+// NextPage follows XCITY list pagination (?page=N, labelled 次へ).
+func (XCITYAdapter) NextPage(doc Document) string {
+	return nextPageLink(doc, []string{".pageScroll a.next", ".pager a.next", ".pager li.next a"}, []string{"次へ", "次へ »", "次へ>", "次のページ", "Next", "»"})
+}
+
 func xcityClassify(raw string) (EntityType, string) {
 	u, _ := url.Parse(raw)
 	parts := strings.Split(strings.Trim(u.Path, "/"), "/")
