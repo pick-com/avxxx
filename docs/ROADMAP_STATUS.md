@@ -79,7 +79,7 @@
 - [x] PostgreSQL 集成测试（`make test-integration`，一次性 postgres:17 容器）
 - [x] identity candidate 审核队列（API + `admin-dedupe` / `admin-review` 页面）
 - [x] 合并、人工覆盖和撤销合并审计（`review_events`）
-- [ ] 拆分非合并产生的实体（当前“拆分”只能通过撤销合并实现）
+- [x] 拆分非合并产生的实体（`identity.BuildSplitPlan` 纯函数计划 + `store.SplitEntity`：选中的来源记录/署名证据及只由它们支持的别名、外部 ID、番号、署名、标签移到新实体，两边按字段策略重算规范字段，原实体保留 override、slug 和用户数据；不可变 `review_events(action='split')` + `not_duplicate_pairs` 防止候选生成和入库回并；`GET/POST /api/admin/{performers|releases}/{id}/split-preview|split`，`POST /api/admin/splits/{event_id}/undo` 经合并路径撤销；见 FINAL_DATA_DESIGN 5.5）
 - [x] 来源可信度和字段优先级策略
 - [x] 目录 source record 与 Javtiful media record 自动关联（离线 `media_link` 任务按番号精确匹配，`media_link_attempts` 记录尝试与退避；后台 `/api/admin/media-links` 可重试和人工选择）
 - [x] 作品、演员和字段完整性报告（`GET /api/admin/reports/completeness?entity=release|performer&source=&group_by=field|source|maker&format=csv`，`internal/completeness`；夜间 `completeness_snapshot` 任务写 `completeness_snapshots` 作趋势）
