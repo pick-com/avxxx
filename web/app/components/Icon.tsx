@@ -53,6 +53,11 @@ const paths = {
   calendar: 'M4 6h16v14H4zM4 10h16M8 3v4M16 3v4',
   trash: 'M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3',
   chevronRight: 'M9 6l6 6-6 6',
+  // Community (DanmakuPlayer, Ratings).
+  list: 'M9 6h11M9 12h11M9 18h11M4.5 6h.01M4.5 12h.01M4.5 18h.01',
+  flag: 'M5 21V4h12l-2.5 4L17 12H5',
+  thumb: 'M7 11v9H4v-9zM7 11l4-8a2 2 0 012 2v4h5.5a2 2 0 012 2.3l-1.2 6.5A2 2 0 0117.3 20H7',
+  star: 'M12 3l2.6 5.6 6.1.7-4.5 4.2 1.2 6L12 16.6 6.6 19.5l1.2-6-4.5-4.2 6.1-.7z',
   cookie: 'M12 3a9 9 0 109 9 4 4 0 01-5-4 4 4 0 01-4-5zM8.5 12h.01M12 16h.01M15.5 14h.01',
 } as const;
 

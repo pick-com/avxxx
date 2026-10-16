@@ -1,13 +1,17 @@
 // Typed client for the Go API (cmd/api/main.go). All paths are relative to /api.
 //
 // Token rule (tech plan 2.6): the admin token is sent only to `admin/*`, the
-// user token only to `me/*`, `auth/me` and play-config (for `resume`). Every
-// other endpoint is public and gets no Authorization header. Tokens stay in
+// user token only to `me/*`, `auth/me`, play-config (for `resume`) and the
+// community routes (danmaku, rating, reviews, reports: posting needs it, reads
+// add the caller's own state). Every other endpoint is public and gets no
+// Authorization header. Tokens stay in
 // localStorage until cookie sessions land (tech plan 3.6).
 //
 // Several endpoints exist only on newer backends (catalog-filters, play-config,
 // identity-merge). Callers feature-detect from the response shape and degrade
 // to the older behaviour instead of showing an error.
+
+import {t} from './i18n';
 
 const USER_TOKEN_KEY = 'user_token';
 const ADMIN_TOKEN_KEY = 'admin_token';
@@ -50,26 +54,28 @@ export class ApiError extends Error {
 
 // play-config is public, but a user token adds `resume` (tech plan 3.3).
 const PLAY_CONFIG_PATH = /^releases\/[^/?]+\/play-config(\?|$)/;
+// Community routes (internal/api/community.go).
+const COMMUNITY_PATH = /^(releases\/[^/?]+\/(danmaku|rating|reviews)|danmaku\/\d+\/report|reviews\/\d+(\/(like|report))?|reports)(\?|$)/;
 
 function tokenFor(path: string): string | null {
   if (path.startsWith('admin/')) return tokens.admin();
-  if (path.startsWith('me/') || path === 'auth/me' || PLAY_CONFIG_PATH.test(path)) return tokens.user();
+  if (path.startsWith('me/') || path === 'auth/me' || PLAY_CONFIG_PATH.test(path) || COMMUNITY_PATH.test(path)) return tokens.user();
   return null;
 }
 
 function fallbackMessage(status: number): string {
-  if (status === 401) return '需要登录后才能继续';
-  if (status === 404) return '内容不存在或已下架';
-  if (status === 409) return '请求冲突，请刷新后重试';
-  if (status === 501) return '该片源尚未配置';
-  if (status >= 500) return '服务暂时不可用，请稍后重试';
-  return `请求失败（${status}）`;
+  if (status === 401) return t('api.needLogin');
+  if (status === 404) return t('api.notFound');
+  if (status === 409) return t('api.conflict');
+  if (status === 501) return t('api.sourceMissing');
+  if (status >= 500) return t('api.unavailable');
+  return t('api.failed', {status});
 }
 
 // The API answers errors in three shapes: `{"error":"request failed"}` from the
 // catalog handlers, `{"error":{"code","message"}}` from internal/media, and a
 // plain-text body from the admin middleware. Only the media shape carries a
-// useful message; the others fall back to a status-based Chinese message.
+// useful message; the others fall back to a status-based message (t()).
 function errorMessage(data: unknown, status: number): string {
   if (data && typeof data === 'object' && 'error' in data) {
     const err = (data as {error: unknown}).error;
@@ -89,16 +95,73 @@ function errorDetail(data: unknown): string | undefined {
   return typeof data === 'string' && data ? data : undefined;
 }
 
+// ---- Content language (PRD 8, i18n backend) ----
+//
+// Catalog reads carry ?lang=<content language>. A backend with the i18n
+// routes answers with display_<field> (+ display_<field>_lang) next to the
+// original fields; older backends ignore the parameter. localizeBody() puts
+// the display value in the field the UI already reads (canonical_title,
+// canonical_name, name, synopsis, biography, tag name) and keeps the original
+// as original_<field>, so every screen prefers the translation when present.
+
+let contentLang: string | null = null;
+export function setContentLang(lang: string | null) {
+  contentLang = lang;
+}
+
+const LOCALIZED_PATH = /^(releases|performers|catalog\/search)(\/|\?|$)/;
+const UNLOCALIZED_PATH = /\/(play-config|playback|danmaku|rating|reviews)(\?|$)/;
+const isLocalizedPath = (path: string) => LOCALIZED_PATH.test(path) && !UNLOCALIZED_PATH.test(path);
+
+function withLang(path: string): string {
+  if (!contentLang || !isLocalizedPath(path) || /[?&]lang=/.test(path)) return path;
+  return `${path}${path.includes('?') ? '&' : '?'}lang=${encodeURIComponent(contentLang)}`;
+}
+
+const DISPLAY_TARGETS: Record<string, string[]> = {
+  display_title: ['canonical_title', 'title'],
+  display_name: ['canonical_name', 'name'],
+  display_synopsis: ['synopsis'],
+  display_biography: ['biography'],
+};
+
+function localizeObject(o: Record<string, unknown>): Record<string, unknown> {
+  let out = o;
+  for (const [display, targets] of Object.entries(DISPLAY_TARGETS)) {
+    const v = o[display];
+    if (typeof v !== 'string' || !v) continue;
+    const target = targets.find(t => t in o) ?? targets[0];
+    if (o[target] === v) continue;
+    if (out === o) out = {...o};
+    out[`original_${target}`] = o[target];
+    out[target] = v;
+  }
+  if (Array.isArray(o.tags)) {
+    if (out === o) out = {...o};
+    out.tags = o.tags.map(t => (t && typeof t === 'object' ? localizeObject(t as Record<string, unknown>) : t));
+  }
+  return out;
+}
+
+export function localizeBody(data: unknown): unknown {
+  if (Array.isArray(data)) return data.map(localizeBody);
+  if (!data || typeof data !== 'object') return data;
+  const o = data as Record<string, unknown>;
+  if (Array.isArray(o.items)) return {...o, items: o.items.map(localizeBody)};
+  return localizeObject(o);
+}
+
 type RequestOptions = {
   method?: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
   body?: unknown;
   signal?: AbortSignal;
   keepalive?: boolean;
+  headers?: Record<string, string>;
 };
 
 export async function api<T>(path: string, options: RequestOptions = {}): Promise<T> {
-  const clean = path.replace(/^\/+/, '').replace(/^api\//, '');
-  const headers = new Headers({Accept: 'application/json'});
+  const clean = withLang(path.replace(/^\/+/, '').replace(/^api\//, ''));
+  const headers = new Headers({...options.headers, Accept: 'application/json'});
   const token = tokenFor(clean);
   if (token) headers.set('Authorization', `Bearer ${token}`);
   if (options.body !== undefined) headers.set('Content-Type', 'application/json');
@@ -113,7 +176,7 @@ export async function api<T>(path: string, options: RequestOptions = {}): Promis
     });
   } catch (cause) {
     if (cause instanceof DOMException && cause.name === 'AbortError') throw cause;
-    throw new ApiError('网络连接失败，请检查网络后重试', 0);
+    throw new ApiError(t('api.network'), 0);
   }
   const text = await response.text();
   let data: unknown = null;
@@ -125,7 +188,7 @@ export async function api<T>(path: string, options: RequestOptions = {}): Promis
     }
   }
   if (!response.ok) throw new ApiError(errorMessage(data, response.status), response.status, errorDetail(data));
-  return data as T;
+  return (isLocalizedPath(clean) ? localizeBody(data) : data) as T;
 }
 
 export function isAbort(error: unknown): boolean {
@@ -323,7 +386,7 @@ export const getPlayback = (slug: string, signal?: AbortSignal) =>
 export function resolvePlayback(resolvePath: string, signal?: AbortSignal) {
   // Only follow resolve paths the API hands out; never POST to arbitrary URLs.
   if (!/^\/api\/resolve\/[a-z0-9_-]+\//i.test(resolvePath)) {
-    return Promise.reject(new ApiError('播放地址无效', 400));
+    return Promise.reject(new ApiError(t('api.badPlayUrl'), 400));
   }
   return api<{streams: Stream[] | null}>(resolvePath, {method: 'POST', signal}).then(data => data.streams ?? []);
 }
@@ -346,18 +409,23 @@ export type PlaySource = {
   priority: number;
 };
 export type PlayConfig = {
-  release: {slug: string; title: string; duration_seconds: number | null};
+  release: {id?: number; slug: string; title: string; duration_seconds: number | null};
   sources: PlaySource[];
   resume: {source_id: number; position_seconds: number} | null;
+  /** enabled, segment_ms, alt_curves (peak curves of alternate versions keyed by source id). */
+  danmaku?: {enabled?: boolean; segment_ms?: number; alt_curves?: Record<string, number[] | null> | null} | null;
+  /** 高能波峰 of the main timeline (PRD 5.5.1): 200 values 0-255, null under 50 valid danmaku. */
+  danmaku_curve?: number[] | null;
 };
 
 /**
- * GET /api/releases/{slug}/play-config (tech plan 3.3). Resolves to null when
+ * GET /api/releases/{slug}/play-config (tech plan 3.3); `quality` is the
+ * preferred max height (settings.quality_pref, capped on cellular). Resolves to null when
  * the endpoint is not deployed (404) or fails for any reason, so the player
  * falls back to the playback?source=javtiful flow without showing an error.
  */
-export const getPlayConfig = (slug: string, signal?: AbortSignal): Promise<PlayConfig | null> =>
-  api<PlayConfig>(`releases/${enc(slug)}/play-config`, {signal}).then(
+export const getPlayConfig = (slug: string, signal?: AbortSignal, quality?: number): Promise<PlayConfig | null> =>
+  api<PlayConfig>(`releases/${enc(slug)}/play-config${query({quality})}`, {signal}).then(
     data => (data && typeof data === 'object' && Array.isArray(data.sources) ? data : null),
     error => {
       if (isAbort(error)) throw error;

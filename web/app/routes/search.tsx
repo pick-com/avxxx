@@ -1,20 +1,54 @@
-import {useEffect, useState} from 'react';
+import {useEffect, useRef, useState} from 'react';
 import {Link, useSearchParams} from 'react-router';
 import {FollowButton} from '../components/SocialButtons';
 import {Avatar, ReleaseCard, SectionHeader} from '../components/Cards';
 import {FilterBar, ReleaseResults, type SortOption} from '../components/ReleaseFilters';
 import {SearchBox} from '../components/SearchBox';
 import {CardGridSkeleton, EmptyState, ErrorBanner} from '../components/States';
+import {onUnload, track} from '../lib/analytics';
 import {catalogSearch, type ReleaseFilter, type SearchHit} from '../lib/api';
 import {formatDate, formatYear} from '../lib/format';
+import {t, useT} from '../lib/i18n';
 import {clearRecentSearches, readRecentSearches, rememberSearch} from '../lib/recentSearches';
 import {RELEASE_SORTS, parseReleaseFilter, withFilter} from '../lib/releaseFilter';
 import {useAsync} from '../lib/useAsync';
 
-export const meta = () => [{title: 'REEL · 搜索'}];
+export const meta = () => [{title: t('title.search')}];
 
 const LIMIT = 60;
-const SORTS: SortOption[] = [{value: 'relevance', label: '相关度'}, ...RELEASE_SORTS];
+const RETRY_WINDOW_MS = 2 * 60_000;
+
+// PRD 14 `search`: one event per search, sent when it ends — on a result
+// click (with clicked_rank, 1-based in display order: performers, then
+// videos), on the next query, on leaving the page. is_retry: the previous
+// search in this tab ended without a click less than 2 minutes earlier.
+let lastSearch: {at: number; clicked: boolean} | null = null;
+type PendingSearch = {query: string; count: number; isRetry: boolean};
+
+function useSearchTracking(q: string, hits: SearchHit[] | undefined) {
+  const pending = useRef<PendingSearch | null>(null);
+  const finish = (rank?: number) => {
+    const p = pending.current;
+    if (!p) return;
+    pending.current = null;
+    lastSearch = {at: Date.now(), clicked: rank !== undefined};
+    track('search', {query: p.query.slice(0, 200), result_count: p.count, is_retry: p.isRetry, clicked_rank: rank});
+  };
+  const finishRef = useRef(finish);
+  finishRef.current = finish;
+  useEffect(() => {
+    if (!q || !hits) return;
+    const isRetry = !!lastSearch && !lastSearch.clicked && Date.now() - lastSearch.at < RETRY_WINDOW_MS;
+    pending.current = {query: q, count: hits.length, isRetry};
+    const off = onUnload(() => finishRef.current());
+    return () => {
+      off();
+      finishRef.current();
+    };
+  }, [q, hits]);
+  return (rank: number) => finishRef.current(rank);
+}
+const SORTS: SortOption[] = [{value: 'relevance', get label() { return t('search.relevance'); }}, ...RELEASE_SORTS];
 
 // Browse / MobileSearch / MobileSearchTyping.
 //
@@ -25,6 +59,7 @@ const SORTS: SortOption[] = [{value: 'relevance', label: '相关度'}, ...RELEAS
 //   cross-language recall, modifier-word retry (PRD 4.5).
 // TODO(tech plan 3.13 search_queries): 大家都在搜; log zero-result queries for AdminSearch.
 export default function SearchPage() {
+  const t = useT();
   const [params, setParams] = useSearchParams();
   const q = (params.get('q') ?? '').trim();
   const filter = parseReleaseFilter(params);
@@ -39,6 +74,7 @@ export default function SearchPage() {
 
   const performers = (results.data ?? []).filter(h => h.type === 'performer');
   const releases = (results.data ?? []).filter(h => h.type === 'release');
+  const clicked = useSearchTracking(q, results.data);
 
   const update = (patch: Partial<Record<keyof ReleaseFilter, string | number | undefined>>) =>
     setParams(withFilter(params, patch), {replace: true});
@@ -53,7 +89,7 @@ export default function SearchPage() {
           {recent.length > 0 ? (
             <>
               <SectionHeader
-                title="最近搜索"
+                title={t('search.recent')}
                 action={
                   <button
                     type="button"
@@ -63,7 +99,7 @@ export default function SearchPage() {
                       setRecent([]);
                     }}
                   >
-                    清除
+                    {t('common.clear')}
                   </button>
                 }
               />
@@ -76,31 +112,39 @@ export default function SearchPage() {
               </div>
             </>
           ) : (
-            <EmptyState icon="search" title="搜索视频和演员" body="输入作品标题或演员名（中文或日文）。" actions={[{to: '/discover', label: '先逛逛发现页', primary: false}]} />
+            <EmptyState icon="search" title={t('search.emptyTitle')} body={t('search.emptyBody')} actions={[{to: '/discover', label: t('search.browseDiscover'), primary: false}]} />
           )}
         </section>
       ) : (
         <>
           <div className="search-head">
-            <h1>搜索：{q}</h1>
+            <h1>{t('search.heading', {q})}</h1>
             {!browse && results.data && results.data.length > 0 && (
-              <span className="muted">{results.data.length >= LIMIT ? `显示前 ${LIMIT} 个结果` : `${results.data.length} 个结果`}</span>
+              <span className="muted">{results.data.length >= LIMIT ? t('search.firstN', {n: LIMIT}) : t('search.count', {n: results.data.length})}</span>
             )}
           </div>
 
           {performers.length > 0 && (
             <div className="performer-hits">
-              {performers.map(hit => (
+              {performers.map((hit, i) => (
                 <div key={hit.id} className="performer-hit">
-                  <Link to={`/performers/${encodeURIComponent(hit.slug)}`} className="performer-hit-link">
+                  <Link
+                    to={`/performers/${encodeURIComponent(hit.slug)}`}
+                    className="performer-hit-link"
+                    state={{slot: `search:p${i + 1}`}}
+                    onClick={() => {
+                      clicked(i + 1);
+                      track('actor_card_open', {performer_id: hit.id, source: 'search'});
+                    }}
+                  >
                     <Avatar seed={hit.slug} name={hit.name} size={64} />
                     <span className="performer-hit-text">
-                      <span className="performer-hit-kind">演员</span>
+                      <span className="performer-hit-kind">{t('search.kindActor')}</span>
                       <span className="performer-hit-name">{hit.name}</span>
                       {performerSub(hit) && <span className="muted">{performerSub(hit)}</span>}
                     </span>
                   </Link>
-                  <FollowButton slug={hit.slug} name={hit.name} size="sm" />
+                  <FollowButton slug={hit.slug} name={hit.name} performerId={hit.id} source="search" size="sm" />
                 </div>
               ))}
             </div>
@@ -121,21 +165,21 @@ export default function SearchPage() {
 
           {browse ? (
             <section className="shelf">
-              {performers.length > 0 && <SectionHeader title="视频" />}
+              {performers.length > 0 && <SectionHeader title={t('search.videos')} />}
               <ReleaseResults
                 filter={{...filter, q, sort: filter.sort ?? 'newest'}}
                 onClear={clearFilters}
-                clearLabel="按相关度查看结果"
+                clearLabel={t('search.byRelevance')}
                 gridClassName="card-grid card-grid-4 search-grid"
                 empty={
                   <EmptyState
                     icon="search"
-                    title={`没有符合条件的「${q}」相关视频`}
-                    body="试试放宽时长或年份。"
+                    title={t('search.noFiltered', {q})}
+                    body={t('search.noFilteredBody')}
                   >
                     <div className="empty-actions">
                       <button type="button" className="btn btn-primary" onClick={clearFilters}>
-                        清除筛选
+                        {t('common.clearFilters')}
                       </button>
                     </div>
                   </EmptyState>
@@ -149,21 +193,23 @@ export default function SearchPage() {
           ) : results.data && results.data.length === 0 ? (
             <EmptyState
               icon="search"
-              title={`没有找到「${q}」相关的视频`}
-              body="试试换个关键词，或者用日文标题 / 演员名搜索。"
-              actions={[{to: '/', label: '去首页逛逛'}, {to: '/discover?tab=actors', label: '浏览演员库', primary: false}]}
+              title={t('search.none', {q})}
+              body={t('search.noneBody')}
+              actions={[{to: '/', label: t('common.goHome')}, {to: '/discover?tab=actors', label: t('common.browseActors'), primary: false}]}
             />
           ) : (
             releases.length > 0 && (
               <section className="shelf">
-                {performers.length > 0 && <SectionHeader title="视频" />}
+                {performers.length > 0 && <SectionHeader title={t('search.videos')} />}
                 <div className="card-grid card-grid-4 search-grid">
-                  {releases.map(hit => (
+                  {releases.map((hit, i) => (
                     <ReleaseCard
                       key={hit.id}
+                      slot={`search:r${i + 1}`}
+                      onOpen={() => clicked(performers.length + i + 1)}
                       slug={hit.slug}
                       title={hit.name}
-                      badge={hit.runtime_minutes ? `${hit.runtime_minutes} 分` : undefined}
+                      badge={hit.runtime_minutes ? t('card.minutes', {n: hit.runtime_minutes}) : undefined}
                       meta={[hit.maker_name, formatDate(hit.release_date)].filter(Boolean).join(' · ') || undefined}
                     />
                   ))}
@@ -179,5 +225,5 @@ export default function SearchPage() {
 
 function performerSub(hit: SearchHit): string {
   const year = formatYear(hit.birth_date);
-  return [hit.canonical_name_ja, year && `${year} 年生`].filter(Boolean).join(' · ');
+  return [hit.canonical_name_ja, year && t('search.born', {year})].filter(Boolean).join(' · ');
 }

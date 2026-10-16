@@ -1,6 +1,7 @@
 import {useEffect, useId, useRef, useState, type FormEvent, type KeyboardEvent} from 'react';
 import {useNavigate} from 'react-router';
 import {catalogSearch, isAbort, type SearchHit} from '../lib/api';
+import {useT} from '../lib/i18n';
 import {Icon} from './Icon';
 
 const SUGGEST_DELAY_MS = 250;
@@ -10,6 +11,7 @@ const SUGGEST_DELAY_MS = 250;
  * Suggestions come from GET /api/catalog/search; submitting goes to /search?q=.
  */
 export function SearchBox({initialQuery = '', autoFocus = false, className = ''}: {initialQuery?: string; autoFocus?: boolean; className?: string}) {
+  const t = useT();
   const navigate = useNavigate();
   const listId = useId();
   const [value, setValue] = useState(initialQuery);
@@ -92,8 +94,8 @@ export function SearchBox({initialQuery = '', autoFocus = false, className = ''}
           autoFocus={autoFocus}
           autoComplete="off"
           enterKeyHint="search"
-          placeholder="搜索视频、演员"
-          aria-label="搜索视频、演员"
+          placeholder={t('discover.searchHint')}
+          aria-label={t('discover.searchHint')}
           role="combobox"
           aria-expanded={expanded}
           aria-controls={listId}
@@ -109,7 +111,7 @@ export function SearchBox({initialQuery = '', autoFocus = false, className = ''}
           onKeyDown={onKeyDown}
         />
       </label>
-      <ul id={listId} role="listbox" className="suggest" hidden={!expanded} aria-label="搜索建议">
+      <ul id={listId} role="listbox" className="suggest" hidden={!expanded} aria-label={t('search.suggest')}>
         {hits.map((hit, i) => (
           <li
             key={`${hit.type}-${hit.id}`}
@@ -120,7 +122,7 @@ export function SearchBox({initialQuery = '', autoFocus = false, className = ''}
             onMouseDown={event => event.preventDefault()}
             onClick={() => go(hit)}
           >
-            <span className="suggest-kind">{hit.type === 'performer' ? '演员' : '视频'}</span>
+            <span className="suggest-kind">{hit.type === 'performer' ? t('search.kindActor') : t('search.videos')}</span>
             <span className="suggest-text">{hit.name}</span>
           </li>
         ))}

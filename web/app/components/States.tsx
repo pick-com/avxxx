@@ -1,9 +1,11 @@
 import type {ReactNode} from 'react';
 import {Link} from 'react-router';
+import {useT} from '../lib/i18n';
 import {Icon, type IconName} from './Icon';
 
 /** States 05-style banner: what happened + a retry. */
 export function ErrorBanner({error, onRetry, children}: {error: Error | string; onRetry?: () => void; children?: ReactNode}) {
+  const t = useT();
   const message = typeof error === 'string' ? error : error.message;
   return (
     <div className="banner banner-warn" role="alert">
@@ -11,7 +13,7 @@ export function ErrorBanner({error, onRetry, children}: {error: Error | string; 
       <span className="banner-text">{children ?? message}</span>
       {onRetry && (
         <button type="button" className="banner-action" onClick={onRetry}>
-          重试
+          {t('common.retry')}
         </button>
       )}
     </div>
@@ -51,8 +53,9 @@ export function EmptyState({icon = 'empty', title, body, actions = [], children}
 
 /** Skeleton shaped like the real cards (States 03). Render only when `slow`. */
 export function CardGridSkeleton({count = 10, variant = 'video'}: {count?: number; variant?: 'video' | 'avatar' | 'row'}) {
+  const t = useT();
   return (
-    <div className={variant === 'avatar' ? 'avatar-row' : variant === 'row' ? 'row-list' : 'card-grid'} aria-busy="true" aria-label="正在加载">
+    <div className={variant === 'avatar' ? 'avatar-row' : variant === 'row' ? 'row-list' : 'card-grid'} aria-busy="true" aria-label={t('app.loading')}>
       {Array.from({length: count}, (_, i) => (
         <div key={i} className={`skeleton-card skeleton-${variant}`}>
           <span className="sk sk-media" />
@@ -68,8 +71,9 @@ export function CardGridSkeleton({count = 10, variant = 'video'}: {count?: numbe
 
 /** Text skeleton block for detail headers. */
 export function BlockSkeleton({lines = 3}: {lines?: number}) {
+  const t = useT();
   return (
-    <div className="sk-block" aria-busy="true" aria-label="正在加载">
+    <div className="sk-block" aria-busy="true" aria-label={t('app.loading')}>
       {Array.from({length: lines}, (_, i) => (
         <span key={i} className="sk sk-line" style={{width: `${90 - i * 18}%`}} />
       ))}

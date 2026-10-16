@@ -41,6 +41,13 @@ type Server struct {
 	// push stores Web Push subscriptions (push.go); pushCfg is read from env.
 	push    pushStore
 	pushCfg pushConfig
+	// editor backs the admin video editor and conflict resolution
+	// (admin_release.go, admin.go).
+	editor releaseEditor
+	// recs backs /api/recs and /api/trending, recsAdmin the similarity
+	// weights and rebuild routes (recs.go).
+	recs      recsStore
+	recsAdmin recsAdmin
 	// adminToken is ADMIN_TOKEN, read once at construction. Empty disables
 	// every admin route (they all return 401).
 	adminToken string
@@ -70,6 +77,9 @@ func Register(mux *http.ServeMux, s *store.Store, mediaHandler *media.Handler) {
 		srv.i18n = s
 		srv.community = s
 		srv.moderation = s
+		srv.editor = s
+		srv.recs = s
+		srv.recsAdmin = s
 	}
 	for _, rt := range srv.routes() {
 		mux.HandleFunc(rt.pattern, rt.handler)
@@ -88,11 +98,14 @@ func (srv *Server) routes() []route {
 	rs = append(rs, srv.mediaRoutes()...)
 	rs = append(rs, srv.playbackRoutes()...)
 	rs = append(rs, srv.adminRoutes()...)
+	rs = append(rs, srv.adminReleaseRoutes()...)
 	rs = append(rs, srv.eventRoutes()...)
 	rs = append(rs, srv.adminAuditRoutes()...)
 	rs = append(rs, srv.adminI18nRoutes()...)
 	rs = append(rs, srv.communityRoutes()...)
 	rs = append(rs, srv.moderationRoutes()...)
+	rs = append(rs, srv.adminCurveRoutes()...)
+	rs = append(rs, srv.recsRoutes()...)
 	return srv.followMerges(rs)
 }
 

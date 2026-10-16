@@ -74,6 +74,9 @@ type Field struct {
 	Min, Max *float64
 	// MaxLen bounds String length in bytes (0 = defaultMaxLen).
 	MaxLen int
+	// Format, when set, checks the content of a String value after the
+	// length check and returns a reason ("" when valid).
+	Format func(string) string
 }
 
 const defaultMaxLen = 256
@@ -122,6 +125,11 @@ func (f Field) check(v any) string {
 		}
 		if len(f.Enum) > 0 && !slices.Contains(f.Enum, s) {
 			return fmt.Sprintf("field %q: %q not in [%s]", f.Name, s, strings.Join(f.Enum, " "))
+		}
+		if f.Format != nil {
+			if reason := f.Format(s); reason != "" {
+				return fmt.Sprintf("field %q: %s", f.Name, reason)
+			}
 		}
 	case Int:
 		n, ok := v.(json.Number)

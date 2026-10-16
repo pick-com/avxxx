@@ -22,7 +22,7 @@ var validProps = map[string]map[string]any{
 	"quality_change":  {"from": "720p", "to": "1080p", "mode": "auto"},
 	"rate_change":     {"from": 1, "to": 1.25, "mode": "manual"},
 	"source_switch":   {"from_source_id": 2, "to_source_id": 3, "mode": "auto", "reason": "first_frame_timeout"},
-	"play_end":        {"reason": "completed", "watched_seconds": 3600, "buckets": "eJzLSM3JyQcABiwCFQ=="},
+	"play_end":        {"reason": "completed", "watched_seconds": 3600, "buckets": "r1:0*40,1*150,2*10"},
 	"peak_click":      {"curve": "playback", "position_ms": 120000, "top3": true, "watched_30s": true},
 	"autoplay_next":   {"from_release_id": 1, "to_release_id": 4, "cancelled": false, "countdown_left_s": 3},
 	"progress":        {"release_id": 1, "milestone": 50},

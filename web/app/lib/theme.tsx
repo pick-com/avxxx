@@ -1,4 +1,6 @@
 import {createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode} from 'react';
+import {track} from './analytics';
+import {t} from './i18n';
 
 export type ThemePref = 'system' | 'dark' | 'light';
 const STORAGE_KEY = 'theme';
@@ -36,7 +38,10 @@ export function ThemeProvider({children}: {children: ReactNode}) {
 
   const setPref = useCallback((next: ThemePref, origin: 'user' | 'sync' = 'user') => {
     setPrefState(next);
-    if (origin === 'user') setUserChange(prev => ({pref: next, n: (prev?.n ?? 0) + 1}));
+    if (origin === 'user') {
+      setUserChange(prev => ({pref: next, n: (prev?.n ?? 0) + 1}));
+      track('theme_change', {theme: next});
+    }
     const root = document.documentElement;
     if (next === 'system') root.removeAttribute('data-theme');
     else root.setAttribute('data-theme', next);
@@ -54,7 +59,18 @@ export function ThemeProvider({children}: {children: ReactNode}) {
 
 export const useTheme = () => useContext(ThemeContext);
 
-export const themeLabels: Record<ThemePref, string> = {system: '跟随系统', dark: '深色', light: '浅色'};
+/** Localized labels (read at render time, so they follow the UI language). */
+export const themeLabels: Record<ThemePref, string> = {
+  get system() {
+    return t('theme.system');
+  },
+  get dark() {
+    return t('theme.dark');
+  },
+  get light() {
+    return t('theme.light');
+  },
+};
 
 /** Local preference without React (for the first settings sync). */
 export const readThemePref = readPref;

@@ -2,6 +2,7 @@ package api
 
 import (
 	"avxxx/internal/community"
+	"avxxx/internal/playcurve"
 	"avxxx/internal/store"
 	"context"
 	"encoding/json"
@@ -28,6 +29,7 @@ type playbackStore interface {
 	ResumePosition(ctx context.Context, userID, releaseID int64) (int, bool, error)
 	UserIDByToken(ctx context.Context, token string) (int64, error)
 	DanmakuCurves(ctx context.Context, releaseID int64) (map[string][]int16, error)
+	ReplayCurves(ctx context.Context, releaseID int64) (map[string][]int16, error)
 }
 
 func (srv *Server) playConfig(w http.ResponseWriter, r *http.Request) {
@@ -49,8 +51,15 @@ type playConfigResponse struct {
 	// values 0-255), null with fewer than 50 valid danmaku. Alternate
 	// versions' curves are in danmaku.alt_curves keyed by source id.
 	DanmakuCurve []int16 `json:"danmaku_curve"`
-	Subtitles    []any   `json:"subtitles"`
-	Chapters     []any   `json:"chapters"`
+	// ReplayCurve is the playback replay peak of the main timeline (PRD
+	// 14.3: replay rate, 200 values 0-255), null with fewer than 1000 valid
+	// plays. Shown when danmaku is off ("最多重看" at its highest point).
+	ReplayCurve []int16 `json:"replay_curve"`
+	// PeakCurve is the curve to show when danmaku is on: 70% danmaku + 30%
+	// replay rate when both exist, otherwise whichever exists, else null.
+	PeakCurve []int16 `json:"peak_curve"`
+	Subtitles []any   `json:"subtitles"`
+	Chapters  []any   `json:"chapters"`
 }
 
 var regionCode = regexp.MustCompile(`^[A-Za-z]{2}$`)
@@ -97,6 +106,8 @@ func servePlayConfig(w http.ResponseWriter, r *http.Request, ps playbackStore) {
 		Chapters:  []any{},
 	}
 	resp.DanmakuCurve, resp.Danmaku["alt_curves"] = danmakuCurves(r.Context(), ps, rel.ID, plan.Sources)
+	resp.ReplayCurve = replayCurve(r.Context(), ps, rel.ID)
+	resp.PeakCurve = playcurve.PeakCurve(resp.DanmakuCurve, resp.ReplayCurve)
 	if resp.Sources == nil {
 		resp.Sources = []store.PlaybackSource{}
 	}
@@ -140,6 +151,16 @@ func danmakuCurves(ctx context.Context, ps playbackStore, releaseID int64, sourc
 		}
 	}
 	return curves[community.DefaultVersion], alt
+}
+
+// replayCurve loads the main timeline's replay peak; a failure only drops it.
+func replayCurve(ctx context.Context, ps playbackStore, releaseID int64) []int16 {
+	curves, err := ps.ReplayCurves(ctx, releaseID)
+	if err != nil {
+		log.Print(err)
+		return nil
+	}
+	return curves[community.DefaultVersion]
 }
 
 func writePlayJSON(w http.ResponseWriter, code int, v any) {

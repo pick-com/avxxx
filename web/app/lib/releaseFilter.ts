@@ -3,22 +3,24 @@
 // min_runtime, max_runtime, sort.
 
 import type {ReleaseFilter, ReleaseSort} from './api';
+import {t} from './i18n';
 
 export type DurationBucket = {key: string; label: string; min?: number; max?: number};
 
 // Runtime facets (NavCategories 按时长), in minutes. Bounds are inclusive on
-// the server, so adjacent buckets share their edge minute.
+// the server, so adjacent buckets share their edge minute. Labels are getters
+// so they follow the current UI language.
 export const DURATION_BUCKETS: DurationBucket[] = [
-  {key: 'lt60', label: '60 分钟内', max: 60},
-  {key: '60-120', label: '60–120 分钟', min: 60, max: 120},
-  {key: '120-180', label: '120–180 分钟', min: 120, max: 180},
-  {key: 'gt180', label: '180 分钟以上', min: 180},
+  {key: 'lt60', get label() { return t('filter.durMax', {n: 60}); }, max: 60},
+  {key: '60-120', get label() { return t('filter.durRange', {min: 60, max: 120}); }, min: 60, max: 120},
+  {key: '120-180', get label() { return t('filter.durRange', {min: 120, max: 180}); }, min: 120, max: 180},
+  {key: 'gt180', get label() { return t('filter.durMin', {n: 180}); }, min: 180},
 ];
 
 export const RELEASE_SORTS: {value: ReleaseSort; label: string}[] = [
-  {value: 'newest', label: '最新'},
-  {value: 'oldest', label: '最早'},
-  {value: 'runtime', label: '时长'},
+  {value: 'newest', get label() { return t('filter.sortNewest'); }},
+  {value: 'oldest', get label() { return t('filter.sortOldest'); }},
+  {value: 'runtime', get label() { return t('filter.sortRuntime'); }},
 ];
 
 /** The years offered by the year facet: this year back through the last 15. */
@@ -66,9 +68,9 @@ export function bucketFor(filter: ReleaseFilter): DurationBucket | undefined {
 export function durationLabel(filter: ReleaseFilter): string {
   const bucket = bucketFor(filter);
   if (bucket) return bucket.label;
-  if (filter.min_runtime && filter.max_runtime) return `${filter.min_runtime}–${filter.max_runtime} 分钟`;
-  if (filter.min_runtime) return `${filter.min_runtime} 分钟以上`;
-  if (filter.max_runtime) return `${filter.max_runtime} 分钟内`;
+  if (filter.min_runtime && filter.max_runtime) return t('filter.durRange', {min: filter.min_runtime, max: filter.max_runtime});
+  if (filter.min_runtime) return t('filter.durMin', {n: filter.min_runtime});
+  if (filter.max_runtime) return t('filter.durMax', {n: filter.max_runtime});
   return '';
 }
 

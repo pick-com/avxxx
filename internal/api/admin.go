@@ -247,10 +247,20 @@ func (srv *Server) conflicts(w http.ResponseWriter, r *http.Request) {
 	reply(w, v, e)
 }
 
+// resolveConflict settles a pending field conflict. Body:
+// {"value": <json>, "source_record_id": n, "note": "..."}; value may be
+// omitted when source_record_id is given (adopt that source's value). The
+// actor is X-Admin-User. 400 for an unreviewable field or a bad value, 404
+// for an unknown conflict, 409 when it is no longer pending.
 func (srv *Server) resolveConflict(w http.ResponseWriter, r *http.Request) {
-	id, e := strconv.ParseInt(r.PathValue("id"), 10, 64)
-	if e != nil || id <= 0 {
-		http.Error(w, "invalid id", 400)
+	id, err := pathID(r)
+	if err != nil {
+		reply(w, nil, err)
+		return
+	}
+	actor, err := adminActor(r)
+	if err != nil {
+		reply(w, nil, err)
 		return
 	}
 	var req struct {
@@ -259,11 +269,20 @@ func (srv *Server) resolveConflict(w http.ResponseWriter, r *http.Request) {
 		Note           string          `json:"note"`
 	}
 	r.Body = http.MaxBytesReader(w, r.Body, 16384)
-	if json.NewDecoder(r.Body).Decode(&req) != nil || len(req.Value) == 0 {
-		http.Error(w, "value is required", 400)
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		reply(w, nil, badRequest("invalid JSON body", err))
 		return
 	}
-	reply(w, map[string]bool{"ok": true}, srv.store.ResolveConflict(r.Context(), id, req.SourceRecordID, req.Value, req.Note))
+	if len(req.Value) == 0 && req.SourceRecordID <= 0 {
+		reply(w, nil, badRequest("value or source_record_id is required", nil))
+		return
+	}
+	if len(req.Note) > store.MaxReasonLen {
+		reply(w, nil, badRequest("note too long", nil))
+		return
+	}
+	res, err := srv.editor.ResolveConflict(r.Context(), id, req.SourceRecordID, req.Value, req.Note, actor)
+	reply(w, res, err)
 }
 
 func (srv *Server) addSource(w http.ResponseWriter, r *http.Request) {

@@ -4,13 +4,15 @@ import {CardGridSkeleton, EmptyState, ErrorBanner} from '../components/States';
 import {getFavorites, setFavorite} from '../lib/api';
 import {useAuth} from '../lib/auth';
 import {formatDate} from '../lib/format';
+import {t, useT} from '../lib/i18n';
 import {useAsync} from '../lib/useAsync';
 
-export const meta = () => [{title: 'REEL · 收藏夹'}];
+export const meta = () => [{title: t('title.favorites')}];
 
 // NavFavorites on GET/POST /api/me/favorites (a single list).
 // TODO(tech plan 3.13 playlists): multiple folders, visibility, sharing.
 export default function Favorites() {
+  const t = useT();
   const {status} = useAuth();
   const favorites = useAsync(signal => getFavorites(signal), [status], status === 'user');
   const [removed, setRemoved] = useState<Set<string>>(new Set());
@@ -19,7 +21,7 @@ export default function Favorites() {
   if (status === 'anon') {
     return (
       <div className="page">
-        <EmptyState icon="favorites" title="登录后查看收藏夹" body="收藏喜欢的作品，换设备也能找到。" actions={[{to: '/login?next=%2Ffavorites', label: '登录'}]} />
+        <EmptyState icon="favorites" title={t('favorites.anonTitle')} body={t('favorites.anonBody')} actions={[{to: '/login?next=%2Ffavorites', label: t('auth.login')}]} />
       </div>
     );
   }
@@ -37,26 +39,26 @@ export default function Favorites() {
         next.delete(slug);
         return next;
       });
-      setError(cause instanceof Error ? cause.message : '取消收藏失败');
+      setError(cause instanceof Error ? cause.message : t('favorites.removeFailed'));
     }
   };
 
   return (
     <div className="page narrow">
-      <h1 className="page-title">收藏夹</h1>
+      <h1 className="page-title">{t('nav.favorites')}</h1>
       {error && <ErrorBanner error={error} />}
       {favorites.error ? (
         <ErrorBanner error={favorites.error} onRetry={favorites.reload} />
       ) : favorites.slow ? (
         <CardGridSkeleton count={5} variant="row" />
       ) : favorites.data && list.length === 0 ? (
-        <EmptyState icon="favorites" title="收藏夹还是空的" body="在视频页点「收藏」，作品会出现在这里。" actions={[{to: '/', label: '去首页逛逛'}]} />
+        <EmptyState icon="favorites" title={t('favorites.emptyTitle')} body={t('favorites.emptyBody')} actions={[{to: '/', label: t('common.goHome')}]} />
       ) : (
         <div className="row-list">
           {list.map(item => (
-            <ReleaseRow key={item.slug} slug={item.slug} title={item.title} meta={`收藏于 ${formatDate(item.created_at)}`}>
-              <button type="button" className="text-btn" onClick={() => remove(item.slug)} aria-label={`取消收藏 ${item.title}`}>
-                取消收藏
+            <ReleaseRow key={item.slug} slug={item.slug} title={item.title} meta={t('favorites.savedAt', {date: formatDate(item.created_at)})}>
+              <button type="button" className="text-btn" onClick={() => remove(item.slug)} aria-label={t('favorites.removeLabel', {title: item.title})}>
+                {t('favorites.remove')}
               </button>
             </ReleaseRow>
           ))}

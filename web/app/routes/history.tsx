@@ -4,20 +4,22 @@ import {CardGridSkeleton, EmptyState, ErrorBanner} from '../components/States';
 import {getWatchHistory, type WatchItem} from '../lib/api';
 import {useAuth} from '../lib/auth';
 import {dayLabel, formatClock} from '../lib/format';
+import {t, useT} from '../lib/i18n';
 import {useAsync} from '../lib/useAsync';
 
-export const meta = () => [{title: 'REEL · 观看记录'}];
+export const meta = () => [{title: t('title.history')}];
 
 // NavHistory (grouped by day) on GET /api/me/watch-history.
 // TODO(tech plan 3.13): single-item delete, pause history, clear all, 未看完 / 已看完 filter.
 export default function History() {
+  const t = useT();
   const {status} = useAuth();
   const history = useAsync(signal => getWatchHistory(signal), [status], status === 'user');
 
   if (status === 'anon') {
     return (
       <div className="page">
-        <EmptyState icon="history" title="登录后查看观看记录" body="登录后，看过的视频会出现在这里，换设备也能接着看。" actions={[{to: '/login?next=%2Fhistory', label: '登录'}]} />
+        <EmptyState icon="history" title={t('history.anonTitle')} body={t('history.anonBody')} actions={[{to: '/login?next=%2Fhistory', label: t('auth.login')}]} />
       </div>
     );
   }
@@ -32,13 +34,13 @@ export default function History() {
 
   return (
     <div className="page narrow">
-      <h1 className="page-title">观看记录</h1>
+      <h1 className="page-title">{t('nav.history')}</h1>
       {history.error ? (
         <ErrorBanner error={history.error} onRetry={history.reload} />
       ) : history.slow ? (
         <CardGridSkeleton count={5} variant="row" />
       ) : history.data && history.data.length === 0 ? (
-        <EmptyState icon="history" title="还没有观看记录" body="看过的视频会出现在这里，下次可以从上次的位置接着看。" actions={[{to: '/', label: '去首页逛逛'}]} />
+        <EmptyState icon="history" title={t('history.emptyTitle')} body={t('history.emptyBody')} actions={[{to: '/', label: t('common.goHome')}]} />
       ) : (
         groups.map(([label, list]) => (
           <Fragment key={label}>
@@ -54,10 +56,10 @@ export default function History() {
                     progress={item.duration_seconds > 0 ? item.progress_seconds / item.duration_seconds : undefined}
                     meta={
                       done
-                        ? '已看完'
+                        ? t('home.finished')
                         : item.duration_seconds > 0
-                          ? `看到 ${formatClock(item.progress_seconds)} / ${formatClock(item.duration_seconds)}`
-                          : `看到 ${formatClock(item.progress_seconds)}`
+                          ? t('history.watchedOf', {pos: formatClock(item.progress_seconds), total: formatClock(item.duration_seconds)})
+                          : t('history.watched', {pos: formatClock(item.progress_seconds)})
                     }
                   />
                 );

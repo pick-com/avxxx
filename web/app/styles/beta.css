@@ -1305,3 +1305,54 @@ a.notif-main:hover {
     padding-left: 16px;
   }
 }
+
+/* Autoplay next countdown (PRD 5.4): over the ended video, always dark. */
+.autoplay-next {
+  position: absolute;
+  right: 16px;
+  bottom: 16px;
+  z-index: 3;
+  max-width: min(360px, calc(100% - 32px));
+  padding: 14px 16px;
+  border-radius: 12px;
+  border: 1px solid #33363c;
+  background: rgba(27, 28, 32, 0.96);
+  color: #ececee;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.autoplay-next-label {
+  font-size: 13px;
+  color: #a3a6ad;
+}
+.autoplay-next-title {
+  font-size: 15px;
+  line-height: 1.35;
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+}
+.autoplay-next-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 4px;
+}
+@media (max-width: 767px) {
+  .autoplay-next {
+    left: 12px;
+    right: 12px;
+    bottom: 12px;
+    max-width: none;
+  }
+}
+
+/* TopBar language switcher (PRD 8). */
+.lang-switch {
+  position: relative;
+  flex-shrink: 0;
+}
+.lang-menu {
+  min-width: 220px;
+}

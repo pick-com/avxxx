@@ -3,6 +3,8 @@ import {Link, useLocation} from 'react-router';
 import {getNotifications, getUnreadCount, isAbort, isMissingEndpoint, markNotificationsRead, type NotificationItem, type NotificationRelease} from '../lib/api';
 import {useAuth} from '../lib/auth';
 import {timeAgo} from '../lib/format';
+import {t, useT} from '../lib/i18n';
+import type {MessageKey} from '../lib/messages.zh-CN';
 import {usePaged} from '../lib/usePaged';
 import {Avatar} from './Cards';
 import {Icon} from './Icon';
@@ -25,11 +27,11 @@ const CHANGED = 'reel:notifications-changed';
 export const notifyNotificationsChanged = () => window.dispatchEvent(new Event(CHANGED));
 
 type Filter = 'all' | 'new' | 'live' | 'reply';
-const FILTERS: [Filter, string][] = [
-  ['all', '全部'],
-  ['new', '新作'],
-  ['live', '上线 · 更新'],
-  ['reply', '回复'],
+const FILTERS: [Filter, MessageKey][] = [
+  ['all', 'notif.filterAll'],
+  ['new', 'notif.filterNew'],
+  ['live', 'notif.filterLive'],
+  ['reply', 'notif.filterReply'],
 ];
 const PAGE_SIZE = 20;
 const POLL_MS = 60_000;
@@ -49,7 +51,7 @@ function categories(n: NotificationItem): Set<Filter> {
   return out;
 }
 
-const names = (i: NotificationRelease) => (i.performers ?? []).map(p => p.name).filter(Boolean).join('、');
+const names = (i: NotificationRelease) => (i.performers ?? []).map(p => p.name).filter(Boolean).join(t('common.listSep'));
 
 function headline(n: NotificationItem): {kind: string; text: string} {
   const items = releasesOf(n);
@@ -60,17 +62,17 @@ function headline(n: NotificationItem): {kind: string; text: string} {
     if (count <= 1 && items[0]) {
       const i = items[0];
       return i.reason === 'reservation'
-        ? {kind: '预约提醒', text: `你预约的《${i.title}》已上线`}
-        : {kind: '关注的演员', text: `${names(i) || '你关注的演员'} 有新作上线：《${i.title}》`};
+        ? {kind: t('notif.kindReservation'), text: t('notif.reservedLive', {title: i.title})}
+        : {kind: t('notif.kindFollow'), text: t('notif.followedNew', {names: names(i) || t('notif.followedFallback'), title: i.title})};
     }
-    if (reserved > 0 && followed === 0) return {kind: '预约提醒', text: `你预约的 ${count} 部作品已上线`};
-    if (reserved > 0) return {kind: '关注 · 预约', text: `你关注和预约的 ${count} 部作品上线了`};
-    return {kind: '关注的演员', text: `你关注的演员有 ${count} 部新作上线`};
+    if (reserved > 0 && followed === 0) return {kind: t('notif.kindReservation'), text: t('notif.reservedCount', {count})};
+    if (reserved > 0) return {kind: t('notif.kindMixed'), text: t('notif.mixedCount', {count})};
+    return {kind: t('notif.kindFollow'), text: t('notif.followedCount', {count})};
   }
-  if (n.kind === 'comment_reply') return {kind: '评论回复', text: '有人回复了你'};
-  if (n.kind === 'favorite_update') return {kind: '收藏更新', text: items[0] ? `你收藏的《${items[0].title}》有更新` : '你收藏的视频有更新'};
-  if (n.kind === 'reservation') return {kind: '预约提醒', text: items[0] ? `你预约的《${items[0].title}》即将上线` : '你预约的视频即将上线'};
-  return {kind: '通知', text: '你有一条新通知'};
+  if (n.kind === 'comment_reply') return {kind: t('notif.kindReply'), text: t('notif.replyText')};
+  if (n.kind === 'favorite_update') return {kind: t('notif.kindFavorite'), text: items[0] ? t('notif.favoriteUpdated', {title: items[0].title}) : t('notif.favoriteUpdatedGeneric')};
+  if (n.kind === 'reservation') return {kind: t('notif.kindReservation'), text: items[0] ? t('notif.reservedSoon', {title: items[0].title}) : t('notif.reservedSoonGeneric')};
+  return {kind: t('notif.kindGeneric'), text: t('notif.generic')};
 }
 
 /** Unread count for the bell; null when signed out or the endpoint is missing. */
@@ -115,6 +117,7 @@ function useUnread(enabled: boolean) {
 
 /** TopBar bell with unread badge; opens the Notifications panel. */
 export function NotificationBell() {
+  const t = useT();
   const {status} = useAuth();
   const location = useLocation();
   const unread = useUnread(status === 'user');
@@ -128,7 +131,7 @@ export function NotificationBell() {
 
   if (status !== 'user' || unread.missing) return null;
   const n = unread.count ?? 0;
-  const label = n > 0 ? `通知，${n} 条未读` : '通知';
+  const label = n > 0 ? t('notif.bellUnread', {n}) : t('notif.title');
   return (
     <div className="notif-anchor" ref={rootRef}>
       <button
@@ -150,7 +153,7 @@ export function NotificationBell() {
         )}
       </button>
       {open && (
-        <div className="popover notif-panel" id={panelId} role="dialog" aria-label="通知">
+        <div className="popover notif-panel" id={panelId} role="dialog" aria-label={t('notif.title')}>
           <NotificationList compact onChanged={unread.refresh} onNavigate={() => setOpen(false)} />
         </div>
       )}
@@ -160,6 +163,7 @@ export function NotificationBell() {
 
 /** Tabs, list, 全部标为已读. `compact` is the TopBar panel; the page passes false. */
 export function NotificationList({compact = false, onChanged, onNavigate}: {compact?: boolean; onChanged?: () => void; onNavigate?: () => void}) {
+  const t = useT();
   const [filter, setFilter] = useState<Filter>('all');
   const [readIds, setReadIds] = useState<Set<number>>(new Set());
   const [allRead, setAllRead] = useState(false);
@@ -183,7 +187,7 @@ export function NotificationList({compact = false, onChanged, onNavigate}: {comp
       changed();
     } catch (cause) {
       setAllRead(false);
-      setError(cause instanceof Error ? cause.message : '操作失败');
+      setError(cause instanceof Error ? cause.message : t('notif.failed'));
     }
   };
 
@@ -202,16 +206,16 @@ export function NotificationList({compact = false, onChanged, onNavigate}: {comp
   return (
     <div className={compact ? 'notif notif-compact' : 'notif'}>
       <div className="notif-head">
-        {compact ? <h2 className="notif-title">通知</h2> : <span className="section-spacer" />}
+        {compact ? <h2 className="notif-title">{t('notif.title')}</h2> : <span className="section-spacer" />}
         <span className="section-spacer" />
         <button type="button" className="text-btn" onClick={markAll} disabled={!anyUnread}>
-          全部标为已读
+          {t('notif.markAll')}
         </button>
       </div>
-      <div className="chip-row notif-filters" role="tablist" aria-label="通知类型">
+      <div className="chip-row notif-filters" role="tablist" aria-label={t('notif.types')}>
         {FILTERS.map(([key, label]) => (
           <button key={key} type="button" role="tab" aria-selected={filter === key} className={filter === key ? 'chip chip-on' : 'chip'} onClick={() => setFilter(key)}>
-            {label}
+            {t(label)}
           </button>
         ))}
       </div>
@@ -222,7 +226,7 @@ export function NotificationList({compact = false, onChanged, onNavigate}: {comp
         ) : list.loading ? (
           list.slow && <CardGridSkeleton count={3} variant="row" />
         ) : shown.length === 0 ? (
-          <p className="notif-empty">{filter === 'all' ? '还没有通知。关注演员或预约作品后，上线时会在这里提醒你。' : '这一类暂时没有通知'}</p>
+          <p className="notif-empty">{filter === 'all' ? t('notif.empty') : t('notif.emptyFilter')}</p>
         ) : (
           <ul className="notif-list">
             {shown.map(n => (
@@ -233,15 +237,15 @@ export function NotificationList({compact = false, onChanged, onNavigate}: {comp
             ))}
           </ul>
         )}
-        {!compact && <LoadMore state={list} label="更早的通知" />}
+        {!compact && <LoadMore state={list} label={t('notif.older')} />}
       </div>
       {compact && (
         <div className="notif-foot">
           <Link to="/notifications" className="text-btn" onClick={onNavigate}>
-            查看全部通知
+            {t('notif.viewAll')}
           </Link>
           <Link to="/settings?s=notify" className="text-btn" onClick={onNavigate}>
-            通知设置
+            {t('notif.settings')}
           </Link>
         </div>
       )}
@@ -250,12 +254,13 @@ export function NotificationList({compact = false, onChanged, onNavigate}: {comp
 }
 
 function NotificationRow({item, unread, onOpen}: {item: NotificationItem; unread: boolean; onOpen: () => void}) {
+  const t = useT();
   const {kind, text} = headline(item);
   const items = releasesOf(item);
   const count = Math.max(item.payload?.count ?? items.length, items.length);
   const first = items[0];
   const avatarSeed = first?.performers?.[0]?.slug ?? first?.slug ?? String(item.id);
-  const avatarName = first?.performers?.[0]?.name ?? first?.title ?? '通';
+  const avatarName = first?.performers?.[0]?.name ?? first?.title ?? t('notif.avatarFallback');
   const when = timeAgo(item.updated_at || item.created_at);
   const single = items.length === 1 && count <= 1;
 
@@ -268,7 +273,7 @@ function NotificationRow({item, unread, onOpen}: {item: NotificationItem; unread
           {kind} · {when}
         </span>
       </span>
-      {unread && <span className="new-dot" aria-label="未读" />}
+      {unread && <span className="new-dot" aria-label={t('notif.unread')} />}
     </>
   );
 
@@ -282,16 +287,16 @@ function NotificationRow({item, unread, onOpen}: {item: NotificationItem; unread
         <div className="notif-main">{body}</div>
       )}
       {!single && items.length > 0 && (
-        <ul className="notif-releases" aria-label="这条通知包含的作品">
+        <ul className="notif-releases" aria-label={t('notif.releases')}>
           {items.map(i => (
             <li key={i.slug}>
               <Link to={`/releases/${encodeURIComponent(i.slug)}`} className="notif-release" onClick={onOpen}>
-                <span className="notif-release-title">《{i.title}》</span>
-                <span className="notif-meta">{i.reason === 'reservation' ? '预约' : names(i) || '关注的演员'}</span>
+                <span className="notif-release-title">{t('notif.releaseTitle', {title: i.title})}</span>
+                <span className="notif-meta">{i.reason === 'reservation' ? t('notif.reserved') : names(i) || t('notif.kindFollow')}</span>
               </Link>
             </li>
           ))}
-          {count > items.length && <li className="notif-meta notif-more">还有 {count - items.length} 部</li>}
+          {count > items.length && <li className="notif-meta notif-more">{t('notif.more', {n: count - items.length})}</li>}
         </ul>
       )}
     </li>

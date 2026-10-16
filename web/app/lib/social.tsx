@@ -15,6 +15,7 @@ import {
   type NotifyMode,
 } from './api';
 import {useAuth} from './auth';
+import {t} from './i18n';
 
 // Signed-in user's follows, watch-later and reservation sets, shared by every
 // button on the page (performer page, search, hover card, cards, feed) so they
@@ -158,7 +159,7 @@ export function SocialProvider({children}: {children: ReactNode}) {
       return '';
     } catch (cause) {
       setFollows(rollbackFollow(followsRef.current, before, slug));
-      return message(cause, mode === null ? '取消关注失败' : '关注失败');
+      return message(cause, mode === null ? t('social.unfollowFailed') : t('social.followFailed'));
     }
   }, []);
 
@@ -170,7 +171,7 @@ export function SocialProvider({children}: {children: ReactNode}) {
       return '';
     } catch (cause) {
       setLaterSet(prev => toggled(prev, slug, !on));
-      return message(cause, on ? '加入稍后观看失败' : '移出稍后观看失败');
+      return message(cause, on ? t('social.laterAddFailed') : t('social.laterRemoveFailed'));
     }
   }, []);
 
@@ -183,8 +184,8 @@ export function SocialProvider({children}: {children: ReactNode}) {
     } catch (cause) {
       setReservedSet(prev => toggled(prev, slug, !on));
       // 409: the release went live in the meantime.
-      if (cause instanceof Error && 'status' in cause && (cause as {status: number}).status === 409) return '这部作品已经上线，无需预约';
-      return message(cause, on ? '预约失败' : '取消预约失败');
+      if (cause instanceof Error && 'status' in cause && (cause as {status: number}).status === 409) return t('social.alreadyLive');
+      return message(cause, on ? t('social.reserveFailed') : t('social.unreserveFailed'));
     }
   }, []);
 

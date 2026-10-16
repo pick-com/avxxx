@@ -1,17 +1,20 @@
-import {useEffect, useState} from 'react';
+import {useEffect, useState, type ReactNode} from 'react';
+import {useT} from '../lib/i18n';
+import type {MessageKey} from '../lib/messages.zh-CN';
 import {Icon} from './Icon';
 import {Sheet, SheetTabs} from './Sheet';
 
-export type SettingsTab = 'source' | 'quality' | 'captions' | 'audio' | 'rate';
+export type SettingsTab = 'source' | 'quality' | 'captions' | 'audio' | 'rate' | 'danmaku';
 
 export type Choice<T> = {value: T; label: string; hint?: string};
 
-const TABS: {id: SettingsTab; label: string}[] = [
-  {id: 'source', label: '片源'},
-  {id: 'quality', label: '清晰度'},
-  {id: 'captions', label: '字幕'},
-  {id: 'audio', label: '音轨'},
-  {id: 'rate', label: '倍速'},
+const TAB_KEYS: {id: SettingsTab; label: MessageKey}[] = [
+  {id: 'source', label: 'player.source'},
+  {id: 'quality', label: 'player.quality'},
+  {id: 'captions', label: 'player.captions'},
+  {id: 'audio', label: 'player.audio'},
+  {id: 'rate', label: 'player.rate'},
+  {id: 'danmaku', label: 'danmaku.tab'},
 ];
 
 function ChoiceList<T extends string | number>({label, options, value, onChange}: {
@@ -51,7 +54,7 @@ function ChoiceList<T extends string | number>({label, options, value, onChange}
  * (片源 / 清晰度 / 字幕 / 音轨 / 倍速). Only what the current stream exposes is
  * listed; nothing is filled with sample data.
  */
-export function PlayerSettingsSheet({open, onClose, container, initialTab = 'quality', source, quality, rate, captions, audio}: {
+export function PlayerSettingsSheet({open, onClose, container, initialTab = 'quality', source, quality, rate, captions, audio, danmaku}: {
   open: boolean;
   onClose: () => void;
   container?: HTMLElement | null;
@@ -62,7 +65,11 @@ export function PlayerSettingsSheet({open, onClose, container, initialTab = 'qua
   rate: {options: Choice<number>[]; value: number; onChange: (value: number) => void};
   captions: {options: Choice<number>[]; value: number; onChange: (value: number) => void};
   audio: {options: Choice<number>[]; value: number; onChange: (value: number) => void};
+  /** 弹幕 settings (video sources only). */
+  danmaku?: ReactNode;
 }) {
+  const t = useT();
+  const TABS = TAB_KEYS.filter(x => x.id !== 'danmaku' || danmaku).map(x => ({id: x.id, label: t(x.label)}));
   const [tab, setTab] = useState<SettingsTab>(initialTab);
   useEffect(() => {
     if (open) setTab(initialTab);
@@ -75,41 +82,44 @@ export function PlayerSettingsSheet({open, onClose, container, initialTab = 'qua
         source.options.length > 1 ? (
           <>
             <p className="sheet-note">
-              {source.versioned ? '切换片源会保留播放进度；时长不同的版本从头播放。' : '切换线路会保留播放进度。'}
-              播放失败时自动换到下一个可用片源。
+              {source.versioned ? t('player.sourcesNote') : t('player.linesNote')}
+              {t('player.autoSwitchNote')}
             </p>
-            <ChoiceList label="片源" options={source.options} value={source.value} onChange={source.onChange} />
+            <ChoiceList label={t('player.source')} options={source.options} value={source.value} onChange={source.onChange} />
           </>
         ) : (
-          <p className="sheet-note">当前只有一个片源。播放失败时会提示并可重试。</p>
+          <p className="sheet-note">{t('player.oneSource')}</p>
         );
       break;
     case 'quality':
       body =
         quality.options.length > 1 ? (
-          <ChoiceList label="清晰度" options={quality.options} value={quality.value} onChange={quality.onChange} />
+          <ChoiceList label={t('player.quality')} options={quality.options} value={quality.value} onChange={quality.onChange} />
         ) : (
-          <p className="sheet-note">当前片源只提供一种清晰度。</p>
+          <p className="sheet-note">{t('player.oneQuality')}</p>
         );
       break;
     case 'captions':
       body =
         captions.options.length > 1 ? (
-          <ChoiceList label="字幕" options={captions.options} value={captions.value} onChange={captions.onChange} />
+          <ChoiceList label={t('player.captions')} options={captions.options} value={captions.value} onChange={captions.onChange} />
         ) : (
-          <p className="sheet-note">这部作品暂无字幕。</p>
+          <p className="sheet-note">{t('player.noCaptions')}</p>
         );
       break;
     case 'audio':
       body =
         audio.options.length > 1 ? (
-          <ChoiceList label="音轨" options={audio.options} value={audio.value} onChange={audio.onChange} />
+          <ChoiceList label={t('player.audio')} options={audio.options} value={audio.value} onChange={audio.onChange} />
         ) : (
-          <p className="sheet-note">当前片源只有一条音轨。</p>
+          <p className="sheet-note">{t('player.oneAudio')}</p>
         );
       break;
     case 'rate':
-      body = <ChoiceList label="倍速" options={rate.options} value={rate.value} onChange={rate.onChange} />;
+      body = <ChoiceList label={t('player.rate')} options={rate.options} value={rate.value} onChange={rate.onChange} />;
+      break;
+    case 'danmaku':
+      body = danmaku ?? null;
       break;
   }
 
@@ -117,10 +127,10 @@ export function PlayerSettingsSheet({open, onClose, container, initialTab = 'qua
     <Sheet
       open={open}
       onClose={onClose}
-      label="播放设置"
+      label={t('player.settingsSheet')}
       container={container}
       className="sheet-settings"
-      header={<SheetTabs tabs={TABS} value={tab} onChange={setTab} label="播放设置" />}
+      header={<SheetTabs tabs={TABS} value={tab} onChange={setTab} label={t('player.settingsSheet')} />}
     >
       <div role="tabpanel" aria-label={TABS.find(t => t.id === tab)?.label}>
         {body}

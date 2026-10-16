@@ -4,13 +4,14 @@ import {Avatar, ReleaseCard, SectionHeader} from '../components/Cards';
 import {LoadMore} from '../components/Paging';
 import {FollowButton} from '../components/SocialButtons';
 import {BlockSkeleton, CardGridSkeleton, EmptyState, ErrorBanner} from '../components/States';
-import {getPerformer, getPerformerReleases, listPerformerPage, listReleasePage, type PerformerDetail} from '../lib/api';
+import {ApiError, getPerformer, getPerformerReleases, listPerformerPage, listReleasePage, type PerformerDetail} from '../lib/api';
 import {ageAt, formatCount, formatDate, formatYear} from '../lib/format';
+import {t, useT} from '../lib/i18n';
 import {useAsync} from '../lib/useAsync';
 import {useCanonicalSlug} from '../lib/useCanonicalSlug';
 import {usePaged} from '../lib/usePaged';
 
-export const meta = () => [{title: 'REEL · 演员'}];
+export const meta = () => [{title: t('title.performer')}];
 
 const PAGE_SIZE = 24;
 const LEGACY_LIMIT = 100;
@@ -32,6 +33,7 @@ const LEGACY_LIMIT = 100;
 // TODO(tech plan 2.4 media_assets): 主照片 and 照片集.
 // TODO: aliases and multi-language names beyond canonical_name_ja are not in GET /api/performers/{slug}.
 export default function PerformerPage() {
+  const t = useT();
   const {slug = ''} = useParams();
   const detail = useAsync(signal => getPerformer(slug, signal), [slug]);
   const works = usePaged(async (cursor, signal) => {
@@ -52,15 +54,15 @@ export default function PerformerPage() {
   useCanonicalSlug('performers', slug, detail.data?.slug);
   useEffect(() => setTab('works'), [slug]);
   useEffect(() => {
-    if (detail.data) document.title = `${detail.data.canonical_name} · REEL`;
+    if (detail.data) document.title = t('title.named', {name: detail.data.canonical_name});
   }, [detail.data]);
 
   if (detail.error) {
-    const missing = detail.error.message === '内容不存在或已下架';
+    const missing = detail.error instanceof ApiError && detail.error.status === 404;
     return (
       <div className="page">
         {missing ? (
-          <EmptyState icon="me" title="没有找到这位演员" body="演员资料可能已合并或下架。" actions={[{to: '/discover?tab=actors', label: '浏览演员库'}]} />
+          <EmptyState icon="me" title={t('performer.notFound')} body={t('performer.notFoundBody')} actions={[{to: '/discover?tab=actors', label: t('common.browseActors')}]} />
         ) : (
           <ErrorBanner error={detail.error} onRetry={detail.reload} />
         )}
@@ -91,12 +93,12 @@ export default function PerformerPage() {
           <div className="performer-head">
             <h1>{p.canonical_name}</h1>
             {p.canonical_name_ja && <p className="muted">{p.canonical_name_ja}</p>}
-            <FollowButton slug={p.slug} name={p.canonical_name} />
+            <FollowButton slug={p.slug} name={p.canonical_name} performerId={p.id} source="actor_page" />
             {countLabel && (
               <div className="stat-row">
                 <div className="stat">
                   <span className="stat-value">{countLabel}</span>
-                  <span className="stat-label">作品</span>
+                  <span className="stat-label">{t('performer.works')}</span>
                 </div>
               </div>
             )}
@@ -104,12 +106,12 @@ export default function PerformerPage() {
         </section>
       )}
 
-      <div className="tabbar show-mobile" role="tablist" aria-label="演员页内容">
+      <div className="tabbar show-mobile" role="tablist" aria-label={t('performer.tabs')}>
         <button type="button" role="tab" aria-selected={tab === 'works'} className="tabbar-tab" onClick={() => setTab('works')}>
-          作品
+          {t('performer.works')}
         </button>
         <button type="button" role="tab" aria-selected={tab === 'info'} className="tabbar-tab" onClick={() => setTab('info')}>
-          资料
+          {t('performer.info')}
         </button>
       </div>
 
@@ -120,13 +122,13 @@ export default function PerformerPage() {
       )}
 
       <section className="performer-works shelf">
-        <SectionHeader title={countLabel ? `出演作品 · ${countLabel}` : '出演作品'} sub="按发行日期，最新在前" />
+        <SectionHeader title={countLabel ? t('performer.filmographyCount', {count: countLabel}) : t('performer.filmography')} sub={t('discover.sortNewest')} />
         {works.error ? (
           <ErrorBanner error={works.error} onRetry={works.reload} />
         ) : works.loading ? (
           works.slow && <CardGridSkeleton count={10} />
         ) : works.items.length === 0 ? (
-          <EmptyState title="还没有收录作品" body="这位演员的作品还在整理中。" actions={[{to: '/', label: '去首页逛逛'}]} />
+          <EmptyState title={t('performer.noWorks')} body={t('performer.noWorksBody')} actions={[{to: '/', label: t('common.goHome')}]} />
         ) : (
           <>
             <div className="card-grid">
@@ -138,14 +140,14 @@ export default function PerformerPage() {
                     key={r.id}
                     slug={r.slug}
                     title={r.canonical_title}
-                    badge={r.runtime_minutes ? `${r.runtime_minutes} 分` : undefined}
+                    badge={r.runtime_minutes ? t('card.minutes', {n: r.runtime_minutes}) : undefined}
                     meta={[r.maker_name, formatDate(r.release_date)].filter(Boolean).join(' · ')}
-                    sub={year && age !== null ? `${year} 年发行 · 约 ${age} 岁` : undefined}
+                    sub={year && age !== null ? t('performer.workSub', {year, age}) : undefined}
                   />
                 );
               })}
             </div>
-            <LoadMore state={works} label="更多作品" />
+            <LoadMore state={works} label={t('performer.moreWorks')} />
           </>
         )}
       </section>
@@ -157,21 +159,27 @@ const present = (value: unknown) => value !== null && value !== undefined && Str
 
 /** Same fields as the previous PerformerMetadata. */
 function PerformerMetadata({detail}: {detail: PerformerDetail}) {
+  const t = useT();
   const height = present(detail.height_cm) ? `${Number.parseFloat(String(detail.height_cm))} cm` : '';
   const measurements = detail.bust_cm && detail.waist_cm && detail.hip_cm ? `B${detail.bust_cm} W${detail.waist_cm} H${detail.hip_cm}` : '';
   const fields: [string, unknown][] = [
-    ['日文名', detail.canonical_name_ja],
-    ['出生日期', formatDate(detail.birth_date) || detail.birth_date],
-    ['出身地', detail.birth_place],
-    ['出道日期', formatDate(detail.debut_date) || detail.debut_date],
-    ['身高', height],
-    ['三围', measurements],
-    ['罩杯', detail.cup_size],
-    ['血型', detail.blood_type],
-    ['活动时间', detail.activity_start || detail.activity_end ? `${detail.activity_start || '?'} – ${detail.activity_end || '至今'}` : ''],
+    [t('performer.nameJa'), detail.canonical_name_ja],
+    [t('performer.birthDate'), formatDate(detail.birth_date) || detail.birth_date],
+    [t('performer.birthPlace'), detail.birth_place],
+    [t('performer.debutDate'), formatDate(detail.debut_date) || detail.debut_date],
+    [t('performer.height'), height],
+    [t('performer.measurements'), measurements],
+    [t('performer.cup'), detail.cup_size],
+    [t('performer.bloodType'), detail.blood_type],
+    [
+      t('performer.activity'),
+      detail.activity_start || detail.activity_end
+        ? t('performer.activityRange', {from: detail.activity_start || '?', to: detail.activity_end || t('performer.present')})
+        : '',
+    ],
   ];
   const rows = fields.filter(([, v]) => present(v));
-  if (rows.length === 0 && !detail.biography) return <p className="muted">暂无资料。</p>;
+  if (rows.length === 0 && !detail.biography) return <p className="muted">{t('performer.noInfo')}</p>;
   return (
     <div className="info-card">
       <dl className="meta-grid">

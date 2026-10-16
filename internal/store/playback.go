@@ -37,6 +37,10 @@ type PlaybackRelease struct {
 	Title           string `json:"title"`
 	RuntimeMinutes  int    `json:"-"`
 	DurationSeconds *int   `json:"duration_seconds"`
+	// Release-level region lists (PRD 15, migration 020), applied on top of
+	// every source's own lists.
+	RegionAllow []string `json:"-"`
+	RegionDeny  []string `json:"-"`
 }
 
 // PlaybackSource is one row of playback_sources.
@@ -68,8 +72,8 @@ type PlaybackSource struct {
 // unpublished slug returns pgx.ErrNoRows.
 func (s *Store) PlaybackForRelease(ctx context.Context, slug string) (PlaybackRelease, []PlaybackSource, error) {
 	var rel PlaybackRelease
-	err := s.QueryRow(ctx, `SELECT id,slug,canonical_title,COALESCE(runtime_minutes,0) FROM releases
-		WHERE slug=$1 AND status='published' AND merged_into_id IS NULL`, slug).Scan(&rel.ID, &rel.Slug, &rel.Title, &rel.RuntimeMinutes)
+	err := s.QueryRow(ctx, `SELECT id,slug,canonical_title,COALESCE(runtime_minutes,0),region_allow,region_deny FROM releases
+		WHERE slug=$1 AND status='published' AND merged_into_id IS NULL`, slug).Scan(&rel.ID, &rel.Slug, &rel.Title, &rel.RuntimeMinutes, &rel.RegionAllow, &rel.RegionDeny)
 	if err != nil {
 		return rel, nil, err
 	}
@@ -128,6 +132,9 @@ func PlanPlayback(rel PlaybackRelease, all []PlaybackSource, region string, qual
 		ApplyAltVersionRule(&srcs[i], ref)
 	}
 	srcs = FilterPlayable(srcs, region)
+	if !RegionAllowed(PlaybackSource{RegionAllow: rel.RegionAllow, RegionDeny: rel.RegionDeny}, region) {
+		srcs = nil // the release itself is not licensed for this region
+	}
 	OrderPlaybackSources(srcs, quality)
 	return PlaybackPlan{DurationSeconds: ref, Sources: srcs}
 }
