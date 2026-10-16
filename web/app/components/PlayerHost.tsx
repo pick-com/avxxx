@@ -94,6 +94,8 @@ const detached = (props: PlayerProps): PlayerProps => ({
   onToggleTheater: undefined,
   onEnded: undefined,
   onReplay: undefined,
+  onPreviousTrack: undefined,
+  onNextTrack: undefined,
   overlay: null,
   related: [],
   episodes: undefined,

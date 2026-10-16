@@ -37,6 +37,7 @@ import {useCanonicalSlug} from '../lib/useCanonicalSlug';
 import {useMediaQuery} from '../lib/useMediaQuery';
 import {isQueueList, readQueue, type Queue} from '../lib/queue';
 import {listSeriesEpisodes} from '../lib/series';
+import {adjacentTracks, artistLine, type TrackTarget} from '../lib/mediaSession';
 import {parseStartTime} from '../lib/interactions';
 import {getRecs, performerName, reasonText, recTitle, inRelatedTab, type RecItem, type RelatedTab} from '../lib/recs';
 import type {ShellHandle} from './shell';
@@ -261,6 +262,14 @@ export default function ReleasePage() {
 
   useCanonicalSlug('releases', slug, release?.slug);
 
+  // Media Session (OS media controls / lock screen): who, which label, and
+  // where previoustrack / nexttrack go (queue, then series, then 接下来播放).
+  const mediaArtist = artistLine(performers.map(p => p.canonical_name));
+  const mediaAlbum = release?.series?.display_name || release?.series?.name || release?.series_name || release?.maker_name || undefined;
+  const tracks = adjacentTracks({slug, queue, episodes: episodes?.items.map(e => e.slug), related});
+  const goTrack = (target: TrackTarget) =>
+    navigate(`/releases/${encodeURIComponent(target.slug)}${target.query}`, {state: {autoplay: true, reason: target.reason}});
+
   useEffect(() => {
     if (release) document.title = t('title.named', {name: release.canonical_title});
   }, [release]);
@@ -322,6 +331,11 @@ export default function ReleasePage() {
           related={endItems}
           episodes={episodes}
           poster={release?.cover?.url}
+          posterImage={release?.cover}
+          artist={mediaArtist}
+          album={mediaAlbum}
+          onPreviousTrack={tracks.previous ? () => goTrack(tracks.previous!) : undefined}
+          onNextTrack={tracks.next ? () => goTrack(tracks.next!) : undefined}
           overlay={
             ended && prefs.autoplay && next && release ? (
               <AutoplayNext
