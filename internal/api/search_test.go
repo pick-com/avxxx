@@ -18,11 +18,12 @@ type stubSearch struct {
 	gotLimit, gotDays, gotMin         int
 	gotID                             int64
 	result                            store.SearchResult
+	gotOpts                           store.SearchOptions
 	createErr                         error
 }
 
-func (s *stubSearch) Search(_ context.Context, q string, limit int) (store.SearchResult, error) {
-	s.gotQ, s.gotLimit = q, limit
+func (s *stubSearch) SearchWith(_ context.Context, q string, limit int, o store.SearchOptions) (store.SearchResult, error) {
+	s.gotQ, s.gotLimit, s.gotOpts = q, limit, o
 	return s.result, nil
 }
 func (s *stubSearch) Suggest(_ context.Context, q string, limit int) ([]map[string]any, error) {

@@ -3,6 +3,7 @@ package api
 import (
 	"avxxx/internal/store"
 	"net/url"
+	"regexp"
 	"strconv"
 	"strings"
 )
@@ -93,8 +94,37 @@ func parseReleaseFilter(q url.Values) (store.ReleaseFilter, error) {
 	if f.MaxRuntime > 0 && f.MinRuntime > f.MaxRuntime {
 		return f, badRequest("min_runtime exceeds max_runtime", nil)
 	}
+	switch f.Role = strings.TrimSpace(q.Get("role")); f.Role {
+	case "", store.CreditLead, store.CreditGuest:
+	default:
+		return f, badRequest("role must be lead or guest", nil)
+	}
+	if f.Role != "" && f.Performer == "" {
+		return f, badRequest("role needs performer", nil)
+	}
+	if f.MinHeight, err = intParam(q, "min_height", 4320); err != nil {
+		return f, err
+	}
+	if f.Subtitle = strings.TrimSpace(q.Get("subtitle")); f.Subtitle != "" && f.Subtitle != "any" && !mediaLang.MatchString(f.Subtitle) {
+		return f, badRequest("invalid subtitle", nil)
+	}
+	if f.AudioLang, err = mediaLangParam(q, "audio_lang"); err != nil {
+		return f, err
+	}
 	f.Cursor, err = cursorParam(q, f.Sort)
 	return f, err
+}
+
+// mediaLang is a playback-source language code as stored in
+// playback_sources.audio_langs / subtitle_langs (ja, zh-CN, en ...).
+var mediaLang = regexp.MustCompile(`^[a-z]{2,3}(-[A-Za-z0-9]{2,8})?$`)
+
+func mediaLangParam(q url.Values, name string) (string, error) {
+	v := strings.TrimSpace(q.Get(name))
+	if v != "" && !mediaLang.MatchString(v) {
+		return "", badRequest("invalid "+name, nil)
+	}
+	return v, nil
 }
 
 func parsePerformerFilter(q url.Values) (store.PerformerFilter, error) {
@@ -107,6 +137,17 @@ func parsePerformerFilter(q url.Values) (store.PerformerFilter, error) {
 	}
 	var err error
 	if f.Limit, err = limitParam(q); err != nil {
+		return f, err
+	}
+	// era: the first year of a decade (2010 = 2010s 活跃年代).
+	if f.Era, err = intParam(q, "era", 2100); err != nil {
+		return f, err
+	}
+	if f.Era != 0 && (f.Era < 1950 || f.Era%10 != 0) {
+		return f, badRequest("era must be a decade such as 2010", nil)
+	}
+	f.Tag = strings.TrimSpace(q.Get("tag"))
+	if f.AudioLang, err = mediaLangParam(q, "audio_lang"); err != nil {
 		return f, err
 	}
 	f.Cursor, err = cursorParam(q, f.Sort)

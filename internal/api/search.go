@@ -5,9 +5,10 @@ package api
 //
 // Public:
 //
-//	GET /api/catalog/search?q=&limit=&lang=   typed catalog search (catalog.go)
+//	GET /api/catalog/search?q=&type=&counts=1&limit=&lang=   typed catalog search (catalog.go)
 //	GET /api/search/hot?limit=                热搜词 / 大家都在搜 (24 h board)
 //	GET /api/search/suggest?q=&limit=&lang=   typed suggestions while typing
+//	GET|POST|DELETE /api/me/search-history    signed-in 最近搜索 (bearer token)
 //
 // Admin (AdminSearch, bearer ADMIN_TOKEN, actor from X-Admin-User):
 //
@@ -34,7 +35,7 @@ import (
 // searchStore is the subset of *store.Store the search routes use, so the
 // handlers can be tested without a database.
 type searchStore interface {
-	Search(ctx context.Context, q string, limit int) (store.SearchResult, error)
+	SearchWith(ctx context.Context, q string, limit int, o store.SearchOptions) (store.SearchResult, error)
 	Suggest(ctx context.Context, q string, limit int) ([]map[string]any, error)
 	HotSearches(ctx context.Context, period string, limit int) ([]store.HotSearch, time.Time, error)
 
@@ -74,6 +75,9 @@ func (srv *Server) searchRoutes() []route {
 		{"DELETE /api/admin/search/blocklist/{id}", srv.admin(srv.unblockTerm)},
 		{"POST /api/admin/search/terms/alias", srv.admin(srv.aliasFromTerm)},
 		{"POST /api/admin/search/terms/english-title", srv.admin(srv.englishTitleFromTerm)},
+		{"GET /api/me/search-history", srv.user(srv.searchHistory)},
+		{"POST /api/me/search-history", srv.user(srv.recordSearch)},
+		{"DELETE /api/me/search-history", srv.user(srv.clearSearchHistory)},
 	}
 }
 
@@ -94,6 +98,8 @@ func (srv *Server) withSearch(w http.ResponseWriter) bool {
 // it, "rescued": true when only the retry found results, "redirect"
 // ({target_url, reason}) when a search_redirects rule matches, and
 // "exact_match" ({type,id,slug}) for a single product-code hit.
+// ?type=performer|release returns only that kind (Search results 类型);
+// ?counts=1 adds "counts" ({performer, release}, each capped at 1000).
 func (srv *Server) catalogSearch(w http.ResponseWriter, r *http.Request) {
 	lang, err := requestLang(w, r)
 	if err != nil {
@@ -105,10 +111,15 @@ func (srv *Server) catalogSearch(w http.ResponseWriter, r *http.Request) {
 		reply(w, nil, err)
 		return
 	}
+	opts := store.SearchOptions{Type: strings.TrimSpace(r.URL.Query().Get("type")), Counts: r.URL.Query().Get("counts") == "1"}
+	if opts.Type != "" && opts.Type != store.SearchTypePerformer && opts.Type != store.SearchTypeRelease {
+		reply(w, nil, badRequest("type must be performer or release", nil))
+		return
+	}
 	if !srv.withSearch(w) {
 		return
 	}
-	res, err := srv.search.Search(r.Context(), r.URL.Query().Get("q"), limit)
+	res, err := srv.search.SearchWith(r.Context(), r.URL.Query().Get("q"), limit, opts)
 	if err != nil {
 		reply(w, nil, err)
 		return
@@ -127,6 +138,9 @@ func (srv *Server) catalogSearch(w http.ResponseWriter, r *http.Request) {
 	}
 	if res.ExactCode != nil {
 		out["exact_match"] = res.ExactCode
+	}
+	if res.Counts != nil {
+		out["counts"] = res.Counts
 	}
 	reply(w, withLang(out, l), err)
 }
@@ -200,6 +214,65 @@ func (srv *Server) searchSuggest(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("Cache-Control", "public, max-age=60")
 	reply(w, withLang(map[string]any{"q": search.NormalizeQuery(q.Get("q")), "items": items}, l), err)
+}
+
+// searchHistoryStore backs the signed-in recent searches.
+type searchHistoryStore interface {
+	SearchHistory(ctx context.Context, userID int64, limit int) ([]string, error)
+	RecordSearch(ctx context.Context, userID int64, q string) error
+	ClearSearchHistory(ctx context.Context, userID int64) (int64, error)
+}
+
+func (srv *Server) withSearchHistory(w http.ResponseWriter) bool {
+	if srv.searchHist == nil {
+		reply(w, nil, errUnavailable)
+		return false
+	}
+	return true
+}
+
+// searchHistory: GET /api/me/search-history — the user's recent searches,
+// newest first (MobileSearchTyping 最近搜索).
+func (srv *Server) searchHistory(w http.ResponseWriter, r *http.Request, uid int64) {
+	if !srv.withSearchHistory(w) {
+		return
+	}
+	v, err := srv.searchHist.SearchHistory(r.Context(), uid, store.SearchHistoryKeep)
+	reply(w, map[string]any{"items": v}, err)
+}
+
+// recordSearch: POST /api/me/search-history {q} stores a search (normalized;
+// the newest 20 are kept).
+func (srv *Server) recordSearch(w http.ResponseWriter, r *http.Request, uid int64) {
+	var in struct {
+		Q string `json:"q"`
+	}
+	if err := readJSON(r, &in, false); err != nil {
+		reply(w, nil, err)
+		return
+	}
+	if utf8.RuneCountInString(in.Q) > search.MaxQueryRunes {
+		reply(w, nil, badRequest("q too long", nil))
+		return
+	}
+	q := search.NormalizeQuery(in.Q)
+	if q == "" {
+		reply(w, nil, badRequest("q is required", nil))
+		return
+	}
+	if !srv.withSearchHistory(w) {
+		return
+	}
+	reply(w, map[string]any{"saved": true, "q": q}, srv.searchHist.RecordSearch(r.Context(), uid, q))
+}
+
+// clearSearchHistory: DELETE /api/me/search-history (最近搜索 · 清除).
+func (srv *Server) clearSearchHistory(w http.ResponseWriter, r *http.Request, uid int64) {
+	if !srv.withSearchHistory(w) {
+		return
+	}
+	n, err := srv.searchHist.ClearSearchHistory(r.Context(), uid)
+	reply(w, map[string]any{"deleted": n}, err)
 }
 
 // suggestRef is the translatable field of a suggestion.

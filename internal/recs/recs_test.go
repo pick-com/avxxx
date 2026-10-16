@@ -526,6 +526,7 @@ type fakeStore struct {
 	heat     map[string][]TrendRow
 	runs     []audit.Run
 	windows  [][3]time.Time
+	statsAt  time.Time
 }
 
 func (f *fakeStore) SimilarityWeights(context.Context) (Weights, error) { return f.weights, nil }
@@ -555,6 +556,10 @@ func (f *fakeStore) ReplaceTrending(_ context.Context, p string, rows []TrendRow
 func (f *fakeStore) ReplacePerformerHeat(_ context.Context, p string, rows []TrendRow, _ time.Time) error {
 	f.heat[p] = rows
 	return nil
+}
+func (f *fakeStore) RefreshPerformerStats(_ context.Context, at time.Time) (int64, error) {
+	f.statsAt = at
+	return 3, nil
 }
 func (f *fakeStore) RecordRun(_ context.Context, r audit.Run) error {
 	f.runs = append(f.runs, r)
@@ -605,6 +610,9 @@ func TestRunnerTrending(t *testing.T) {
 	}
 	if len(f.runs) != 1 || f.runs[0].Job != "recs.trending" {
 		t.Errorf("runs = %+v", f.runs)
+	}
+	if rep.PerformerStats != 3 || !f.statsAt.Equal(now) {
+		t.Errorf("performer stats = %d at %v", rep.PerformerStats, f.statsAt)
 	}
 }
 

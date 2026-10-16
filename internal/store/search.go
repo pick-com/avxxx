@@ -83,6 +83,27 @@ type SearchResult struct {
 	// ExactCode is the single release a product-code query identified
 	// (PRD 3.4 品番精确匹配: the client may jump straight to it).
 	ExactCode map[string]any
+	// Counts are the per-type match counts of the effective query
+	// ({"performer": n, "release": n}, each capped at SearchCountCap) when
+	// SearchOptions.Counts asked for them.
+	Counts map[string]int
+}
+
+// Search result types accepted by SearchOptions.Type.
+const (
+	SearchTypePerformer = "performer"
+	SearchTypeRelease   = "release"
+)
+
+// SearchCountCap caps each per-type count (the UI shows "1000+").
+const SearchCountCap = 1000
+
+// SearchOptions narrows the catalog search (Search results 类型 filter):
+// Type "" searches both kinds, "performer" / "release" only that kind (with
+// the full limit, not the performer card cap). Counts adds Counts.
+type SearchOptions struct {
+	Type   string
+	Counts bool
 }
 
 // searchRules loads the synonyms for keys and, when redirectTerm is not
@@ -128,6 +149,16 @@ const maxSearchPerformers = 6
 // runes when available. When nothing matches, the query is retried once
 // with modifier words stripped (search.StripModifiers).
 func (s *Store) Search(ctx context.Context, q string, limit int) (SearchResult, error) {
+	return s.SearchWith(ctx, q, limit, SearchOptions{})
+}
+
+// SearchWith is Search with a type filter and optional per-type counts.
+func (s *Store) SearchWith(ctx context.Context, q string, limit int, o SearchOptions) (SearchResult, error) {
+	switch o.Type {
+	case "", SearchTypePerformer, SearchTypeRelease:
+	default:
+		return SearchResult{}, invalidQuery("unknown type %q", o.Type)
+	}
 	limit = pageLimit(limit)
 	res := SearchResult{Query: search.NormalizeQuery(q), Items: []map[string]any{}}
 	if res.Query == "" {
@@ -139,7 +170,7 @@ func (s *Store) Search(ctx context.Context, q string, limit int) (SearchResult, 
 	}
 	res.Redirect = red
 	eff := search.ApplySynonyms(res.Query, syn)
-	items, exact, err := s.matchCatalog(ctx, eff, limit)
+	items, exact, err := s.matchCatalog(ctx, eff, limit, o.Type)
 	if err != nil {
 		return res, err
 	}
@@ -148,7 +179,7 @@ func (s *Store) Search(ctx context.Context, q string, limit int) (SearchResult, 
 			if stripped, err = s.expandSynonyms(ctx, stripped); err != nil {
 				return res, err
 			}
-			retry, retryExact, err := s.matchCatalog(ctx, stripped, limit)
+			retry, retryExact, err := s.matchCatalog(ctx, stripped, limit, o.Type)
 			if err != nil {
 				return res, err
 			}
@@ -162,7 +193,35 @@ func (s *Store) Search(ctx context.Context, q string, limit int) (SearchResult, 
 	if eff != res.Query {
 		res.EffectiveQuery = eff
 	}
+	if o.Counts {
+		if res.Counts, err = s.searchCounts(ctx, eff); err != nil {
+			return res, err
+		}
+	}
 	return res, nil
+}
+
+// searchCounts counts the distinct performers and releases q matches with
+// the same recall as matchCatalog (product codes included), each capped at
+// SearchCountCap so a broad query stays cheap.
+func (s *Store) searchCounts(ctx context.Context, q string) (map[string]int, error) {
+	trgm := s.SearchTrgm(ctx)
+	perf, _ := performerCandidates(q, trgm)
+	rel, _ := releaseCandidates(q, trgm)
+	args := []any{containsPattern(q), q, SearchCountCap}
+	if keys := search.CodeKeys(q); keys != nil {
+		rel += ` UNION ALL SELECT r.id,0 FROM release_identifiers ri JOIN releases r ON r.id=ri.release_id
+		  WHERE search_code_keys(ri.normalized_value) && $4::text[] AND r.status='published' AND r.merged_into_id IS NULL`
+		args = append(args, keys)
+	}
+	var np, nr int
+	err := s.QueryRow(ctx, `WITH pc AS (`+perf+`), rc AS (`+rel+`)
+		SELECT (SELECT count(*) FROM (SELECT DISTINCT id FROM pc WHERE $2::text IS NOT NULL LIMIT $3) a)::int,
+		       (SELECT count(*) FROM (SELECT DISTINCT id FROM rc LIMIT $3) b)::int`, args...).Scan(&np, &nr)
+	if err != nil {
+		return nil, err
+	}
+	return map[string]int{SearchTypePerformer: np, SearchTypeRelease: nr}, nil
 }
 
 // SearchHasResults reports whether q (synonyms applied) matches anything.
@@ -171,16 +230,21 @@ func (s *Store) SearchHasResults(ctx context.Context, q string) (bool, error) {
 	if err != nil || eff == "" {
 		return false, err
 	}
-	items, _, err := s.matchCatalog(ctx, eff, 1)
+	items, _, err := s.matchCatalog(ctx, eff, 1, "")
 	return len(items) > 0, err
 }
 
 // matchCatalog returns the ranked items for a normalized query and the
 // exact product-code release when exactly one matched.
-func (s *Store) matchCatalog(ctx context.Context, q string, limit int) ([]map[string]any, map[string]any, error) {
+func (s *Store) matchCatalog(ctx context.Context, q string, limit int, typ string) ([]map[string]any, map[string]any, error) {
 	out := []map[string]any{}
 	seen := map[int64]bool{}
 	var exact map[string]any
+	trgm := s.SearchTrgm(ctx)
+	if typ == SearchTypePerformer {
+		perf, err := s.matchPerformers(ctx, q, limit, trgm)
+		return perf, nil, err
+	}
 	if keys := search.CodeKeys(q); keys != nil {
 		codes, err := s.codeReleases(ctx, keys, limit)
 		if err != nil {
@@ -194,12 +258,13 @@ func (s *Store) matchCatalog(ctx context.Context, q string, limit int) ([]map[st
 			exact = map[string]any{"type": "release", "id": codes[0]["id"], "slug": codes[0]["slug"]}
 		}
 	}
-	trgm := s.SearchTrgm(ctx)
-	perf, err := s.matchPerformers(ctx, q, min(limit, maxSearchPerformers), trgm)
-	if err != nil {
-		return nil, nil, err
+	if typ == "" {
+		perf, err := s.matchPerformers(ctx, q, min(limit, maxSearchPerformers), trgm)
+		if err != nil {
+			return nil, nil, err
+		}
+		out = append(out, perf...)
 	}
-	out = append(out, perf...)
 	rel, err := s.matchReleases(ctx, q, limit, trgm)
 	if err != nil {
 		return nil, nil, err
@@ -255,7 +320,9 @@ func matchLabel(labels []string, how int) string {
 	return "fuzzy"
 }
 
-func (s *Store) matchPerformers(ctx context.Context, q string, limit int, trgm bool) ([]map[string]any, error) {
+// performerCandidates is the (id, how) candidate union for q ($1 contains
+// pattern, $2 q) and the similarity expression ranking it.
+func performerCandidates(q string, trgm bool) (string, string) {
 	active := "p.status='active' AND p.merged_into_id IS NULL"
 	parts := []string{
 		`SELECT p.id,0 how FROM performers p WHERE ` + active + ` AND (p.canonical_name ILIKE $1 OR p.canonical_name_ja ILIKE $1)`,
@@ -270,7 +337,12 @@ func (s *Store) matchPerformers(ctx context.Context, q string, limit int, trgm b
 			`SELECT p.id,3 FROM performer_aliases a JOIN performers p ON p.id=a.performer_id WHERE `+active+` AND $2 <% a.normalized_name`)
 		sim = "GREATEST(word_similarity($2,p.canonical_name),word_similarity($2,COALESCE(p.canonical_name_ja,'')))"
 	}
-	sql := `WITH cand AS (` + strings.Join(parts, " UNION ALL ") + `), best AS (SELECT id,min(how) how FROM cand GROUP BY id)
+	return strings.Join(parts, " UNION ALL "), sim
+}
+
+func (s *Store) matchPerformers(ctx context.Context, q string, limit int, trgm bool) ([]map[string]any, error) {
+	cand, sim := performerCandidates(q, trgm)
+	sql := `WITH cand AS (` + cand + `), best AS (SELECT id,min(how) how FROM cand GROUP BY id)
 	SELECT p.id,p.slug,p.canonical_name,p.canonical_name_ja,` + PublicBirthDate("p") + `,b.how
 	FROM best b JOIN performers p ON p.id=b.id
 	ORDER BY b.how,(lower(p.canonical_name)=$2 OR lower(COALESCE(p.canonical_name_ja,''))=$2) DESC,
@@ -297,7 +369,8 @@ func (s *Store) matchPerformers(ctx context.Context, q string, limit int, trgm b
 	return out, rows.Err()
 }
 
-func (s *Store) matchReleases(ctx context.Context, q string, limit int, trgm bool) ([]map[string]any, error) {
+// releaseCandidates is performerCandidates for published releases.
+func releaseCandidates(q string, trgm bool) (string, string) {
 	pub := "r.status='published' AND r.merged_into_id IS NULL"
 	parts := []string{
 		`SELECT r.id,0 how FROM releases r WHERE ` + pub + ` AND (r.canonical_title ILIKE $1 OR r.title_ja ILIKE $1)`,
@@ -312,7 +385,12 @@ func (s *Store) matchReleases(ctx context.Context, q string, limit int, trgm boo
 			  AND t.reviewed_value IS NOT NULL AND $2 <% t.reviewed_value AND `+pub)
 		sim = "GREATEST(word_similarity($2,r.canonical_title),word_similarity($2,COALESCE(r.title_ja,'')))"
 	}
-	sql := `WITH cand AS (` + strings.Join(parts, " UNION ALL ") + `), best AS (SELECT id,min(how) how FROM cand GROUP BY id)
+	return strings.Join(parts, " UNION ALL "), sim
+}
+
+func (s *Store) matchReleases(ctx context.Context, q string, limit int, trgm bool) ([]map[string]any, error) {
+	cand, sim := releaseCandidates(q, trgm)
+	sql := `WITH cand AS (` + cand + `), best AS (SELECT id,min(how) how FROM cand GROUP BY id)
 	SELECT r.id,r.slug,r.canonical_title,r.release_date,r.maker_name,r.runtime_minutes::int,b.how
 	FROM best b JOIN releases r ON r.id=b.id
 	ORDER BY b.how,(lower(r.canonical_title)=$2 OR lower(COALESCE(r.title_ja,''))=$2) DESC,

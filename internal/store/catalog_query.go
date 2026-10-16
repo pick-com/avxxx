@@ -183,9 +183,44 @@ type ReleaseFilter struct {
 	Year       int
 	MinRuntime int
 	MaxRuntime int
-	Sort       string
-	Cursor     *Cursor
-	Limit      int
+	// Role narrows Performer to lead (主演) or guest (客串) credits
+	// (LeadCreditSQL); it needs Performer.
+	Role string
+	// Playback-source facets (清晰度 / 字幕 / 语言): a release qualifies when
+	// one of its enabled playback sources has max_height >= MinHeight, a
+	// subtitle in Subtitle ("any" = any subtitle) or audio in AudioLang.
+	MinHeight int
+	Subtitle  string
+	AudioLang string
+	Sort      string
+	Cursor    *Cursor
+	Limit     int
+}
+
+// Release performer credit roles accepted by ReleaseFilter.Role.
+const (
+	CreditLead  = "lead"
+	CreditGuest = "guest"
+)
+
+// leadRoleNames mirrors leadRoles (notifications.go) for SQL.
+const leadRoleNames = `('lead','main','starring','primary','主演')`
+
+// LeadCreditSQL is true when the release_performers row aliased rp is a lead
+// credit (主演), with IsLeadCredit / LeadPerformers semantics: is_primary or
+// a lead role, or no credit on the release is marked as a lead at all
+// (unknown billing: everyone counts as a lead). Anything else is a guest
+// credit (客串).
+func LeadCreditSQL(rp string) string {
+	return "(" + rp + ".is_primary OR lower(btrim(COALESCE(" + rp + ".role,''))) IN " + leadRoleNames +
+		" OR NOT EXISTS (SELECT 1 FROM release_performers lc WHERE lc.release_id=" + rp + ".release_id AND (lc.is_primary OR lower(btrim(COALESCE(lc.role,''))) IN " + leadRoleNames + ")))"
+}
+
+// playbackFacetSQL is an EXISTS over a release's enabled playback sources;
+// the conditions match the partial indexes of migrations/039 so a rare
+// value is found from playback_sources rather than by walking releases.
+func playbackFacetSQL(cond string) string {
+	return "EXISTS (SELECT 1 FROM playback_sources pbs WHERE pbs.release_id=r.id AND pbs.status<>'disabled' AND " + cond + ")"
 }
 
 func init() {
@@ -238,7 +273,30 @@ func buildReleaseQuery(f ReleaseFilter) (string, []any, int, error) {
 		b.cond("r.maker_name=" + b.arg(f.Maker))
 	}
 	if f.Performer != "" {
-		b.cond("r.id IN (SELECT rp.release_id FROM release_performers rp JOIN performers p ON p.id=rp.performer_id WHERE p.slug=" + b.arg(f.Performer) + ")")
+		role := ""
+		switch f.Role {
+		case CreditLead:
+			role = " AND " + LeadCreditSQL("rp")
+		case CreditGuest:
+			role = " AND NOT " + LeadCreditSQL("rp")
+		case "":
+		default:
+			return "", nil, 0, invalidQuery("unknown role %q", f.Role)
+		}
+		b.cond("r.id IN (SELECT rp.release_id FROM release_performers rp JOIN performers p ON p.id=rp.performer_id WHERE p.slug=" + b.arg(f.Performer) + role + ")")
+	} else if f.Role != "" {
+		return "", nil, 0, invalidQuery("role needs performer")
+	}
+	if f.MinHeight > 0 {
+		b.cond(playbackFacetSQL("pbs.max_height>=" + b.arg(f.MinHeight)))
+	}
+	if f.Subtitle == "any" {
+		b.cond(playbackFacetSQL("cardinality(pbs.subtitle_langs)>0"))
+	} else if f.Subtitle != "" {
+		b.cond(playbackFacetSQL("pbs.subtitle_langs @> ARRAY[" + b.arg(f.Subtitle) + "::text]"))
+	}
+	if f.AudioLang != "" {
+		b.cond(playbackFacetSQL("pbs.audio_langs @> ARRAY[" + b.arg(f.AudioLang) + "::text]"))
 	}
 	if f.Year != 0 {
 		from := time.Date(f.Year, 1, 1, 0, 0, 0, 0, time.UTC)
@@ -301,24 +359,43 @@ var performerSorts = map[string]sortSpec{
 	"name":        {key: "p.canonical_name", kind: kindText},
 	"works":       {key: "st.works", kind: kindInt, keyDesc: true},
 	"newest_work": {key: "COALESCE(st.newest,DATE '0001-01-01')", kind: kindDate, keyDesc: true, idDesc: true},
+	// From performer_stats (hourly): 热度 (30-day heat), 粉丝, 新晋 (latest debut first).
+	"heat":      {key: "ps.heat_30d", kind: kindInt, keyDesc: true, idDesc: true},
+	"followers": {key: "ps.followers", kind: kindInt, keyDesc: true, idDesc: true},
+	"rising":    {key: "COALESCE(ps.first_work_date,DATE '0001-01-01')", kind: kindDate, keyDesc: true, idDesc: true},
 }
+
+// statsSorts read performer_stats and only list performers it has a row for.
+var statsSorts = map[string]bool{"heat": true, "followers": true, "rising": true}
 
 // ValidPerformerSort reports whether s is an accepted performer sort.
 func ValidPerformerSort(s string) bool { _, ok := performerSorts[s]; return ok }
 
 // PerformerFilter selects a page of active performers. Sort "" means name.
+// Era (a decade's first year: 活跃年代), Tag (擅长类型: one of the
+// performer's top tags) and AudioLang (作品语言) read performer_stats, like
+// the heat / followers / rising sorts.
 type PerformerFilter struct {
-	Q      string
-	Sort   string
-	Cursor *Cursor
-	Limit  int
+	Q         string
+	Era       int
+	Tag       string
+	AudioLang string
+	Sort      string
+	Cursor    *Cursor
+	Limit     int
 }
 
-// PerformerListItem is a performer plus published-work stats.
+// PerformerListItem is a performer plus published-work stats. Followers,
+// Heat (30-day heat x 1000), TotalPlays and FirstWorkDate come from
+// performer_stats (0 / null before its first run).
 type PerformerListItem struct {
 	model.Performer
 	WorksCount        int64      `json:"works_count"`
 	LatestReleaseDate *time.Time `json:"latest_release_date,omitempty"`
+	Followers         int64      `json:"followers"`
+	Heat              int64      `json:"heat"`
+	TotalPlays        int64      `json:"total_plays"`
+	FirstWorkDate     *time.Time `json:"first_work_date,omitempty"`
 }
 
 func buildPerformerQuery(f PerformerFilter) (string, []any, int, error) {
@@ -340,12 +417,26 @@ func buildPerformerQuery(f PerformerFilter) (string, []any, int, error) {
 		p := b.arg(f.Q)
 		b.cond(fmt.Sprintf("(p.canonical_name ILIKE '%%'||%[1]s||'%%' OR p.canonical_name_ja ILIKE '%%'||%[1]s||'%%' OR p.id IN (SELECT performer_id FROM performer_aliases WHERE normalized_name ILIKE '%%'||lower(%[1]s)||'%%'))", p))
 	}
+	if f.Era != 0 {
+		from := time.Date(f.Era, 1, 1, 0, 0, 0, 0, time.UTC)
+		b.cond("ps.first_work_date<" + b.arg(from.AddDate(10, 0, 0)) + " AND ps.latest_work_date>=" + b.arg(from))
+	}
+	if f.Tag != "" {
+		b.cond("ps.top_tags @> ARRAY[" + b.arg(f.Tag) + "::text]")
+	}
+	if f.AudioLang != "" {
+		b.cond("ps.audio_langs @> ARRAY[" + b.arg(f.AudioLang) + "::text]")
+	}
+	if statsSorts[f.Sort] || f.Era != 0 || f.Tag != "" || f.AudioLang != "" {
+		b.cond("ps.performer_id IS NOT NULL")
+	}
 	if err := b.after(s, "p.id", f.Cursor); err != nil {
 		return "", nil, 0, err
 	}
 	sql := `SELECT p.id,p.slug,p.canonical_name,COALESCE(p.canonical_name_ja,''),` + PublicBirthDate("p") + `,
 	COALESCE(p.height_cm,0),COALESCE(p.bust_cm,0),COALESCE(p.waist_cm,0),COALESCE(p.hip_cm,0),p.status,
-	st.works,st.newest,` + s.keyText + ` FROM performers p
+	st.works,st.newest,COALESCE(ps.followers,0),COALESCE(ps.heat_30d,0),COALESCE(ps.total_plays,0),ps.first_work_date,` + s.keyText + ` FROM performers p
+	LEFT JOIN performer_stats ps ON ps.performer_id=p.id
 	CROSS JOIN LATERAL (SELECT count(*) works,max(r.release_date) newest FROM release_performers rp
 	 JOIN releases r ON r.id=rp.release_id
 	 WHERE rp.performer_id=p.id AND r.status='published' AND r.merged_into_id IS NULL) st` +
@@ -372,7 +463,7 @@ func (s *Store) PerformerPage(ctx context.Context, f PerformerFilter) ([]Perform
 	for r.Next() {
 		var x PerformerListItem
 		var key string
-		if err = r.Scan(&x.ID, &x.Slug, &x.CanonicalName, &x.CanonicalNameJA, &x.BirthDate, &x.HeightCM, &x.BustCM, &x.WaistCM, &x.HipCM, &x.Status, &x.WorksCount, &x.LatestReleaseDate, &key); err != nil {
+		if err = r.Scan(&x.ID, &x.Slug, &x.CanonicalName, &x.CanonicalNameJA, &x.BirthDate, &x.HeightCM, &x.BustCM, &x.WaistCM, &x.HipCM, &x.Status, &x.WorksCount, &x.LatestReleaseDate, &x.Followers, &x.Heat, &x.TotalPlays, &x.FirstWorkDate, &key); err != nil {
 			return nil, "", err
 		}
 		out = append(out, x)
@@ -411,18 +502,23 @@ type ReleaseDetail struct {
 	Tags         []TagRef            `json:"tags"`
 	Identifiers  []ReleaseIdentifier `json:"identifiers"`
 	Series       *SeriesRef          `json:"series,omitempty"` // migrations/027_series.sql
+	// ScheduledAt is when an upcoming release goes live (absent: published,
+	// or the date is not fixed yet).
+	ScheduledAt *time.Time `json:"scheduled_at,omitempty"`
 }
 
-// ReleaseDetailBySlug returns a published release with its tags and
-// identifiers. A missing or unpublished release is pgx.ErrNoRows.
+// ReleaseDetailBySlug returns a published or upcoming release (即将上线,
+// reservable from its page) with its tags and identifiers. A missing,
+// draft or unpublished release is pgx.ErrNoRows.
 func (s *Store) ReleaseDetailBySlug(ctx context.Context, slug string) (ReleaseDetail, error) {
 	var x ReleaseDetail
 	var seriesID *int64
 	var seriesSlug, seriesName *string
-	err := s.QueryRow(ctx, `SELECT `+releaseColumns+`,COALESCE(r.director_name,''),COALESCE(r.synopsis,''),se.id,se.slug,se.name
+	err := s.QueryRow(ctx, `SELECT `+releaseColumns+`,COALESCE(r.director_name,''),COALESCE(r.synopsis,''),se.id,se.slug,se.name,
+		CASE WHEN r.status='upcoming' THEN r.scheduled_at END
 		FROM releases r LEFT JOIN series se ON se.id=r.series_id
-		WHERE r.slug=$1 AND r.merged_into_id IS NULL AND r.status='published'`, slug).
-		Scan(&x.ID, &x.Slug, &x.CanonicalTitle, &x.TitleJA, &x.ReleaseDate, &x.RuntimeMinutes, &x.MakerName, &x.LabelName, &x.SeriesName, &x.Status, &x.DirectorName, &x.Synopsis, &seriesID, &seriesSlug, &seriesName)
+		WHERE r.slug=$1 AND r.merged_into_id IS NULL AND r.status IN ('published','upcoming')`, slug).
+		Scan(&x.ID, &x.Slug, &x.CanonicalTitle, &x.TitleJA, &x.ReleaseDate, &x.RuntimeMinutes, &x.MakerName, &x.LabelName, &x.SeriesName, &x.Status, &x.DirectorName, &x.Synopsis, &seriesID, &seriesSlug, &seriesName, &x.ScheduledAt)
 	if err != nil {
 		return x, err
 	}
