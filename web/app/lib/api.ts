@@ -129,7 +129,7 @@ export function setContentLang(lang: string | null) {
   contentLang = lang;
 }
 
-const LOCALIZED_PATH = /^(releases|performers|catalog\/search|recs|trending)(\/|\?|$)/;
+const LOCALIZED_PATH = /^(releases|performers|catalog\/search|search\/suggest|recs|trending)(\/|\?|$)/;
 const UNLOCALIZED_PATH = /\/(play-config|playback|danmaku|rating|reviews)(\?|$)/;
 const isLocalizedPath = (path: string) => LOCALIZED_PATH.test(path) && !UNLOCALIZED_PATH.test(path);
 

@@ -545,6 +545,25 @@ p {
   white-space: nowrap;
 }
 
+.suggest-text {
+  flex: 1;
+}
+
+.suggest-sub {
+  flex-shrink: 0;
+  font-size: 12px;
+  color: var(--faint);
+}
+
+.suggest-group-start {
+  border-top: 1px solid var(--line);
+}
+
+.suggest-upcoming .suggest-kind {
+  color: var(--accent);
+  border-color: var(--accent);
+}
+
 /* SideNav (full / overlay) and BrowseRail (rail) */
 
 .sidenav {
@@ -3625,4 +3644,22 @@ a.chip:hover {
   .admin-nav {
     margin-left: 0;
   }
+}
+
+/* Search query understanding (PRD 4.5): rescued / synonym note, match hints */
+
+.search-note {
+  margin: -4px 0 16px;
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.search-note-rescued {
+  color: var(--text);
+}
+
+.match-hint {
+  display: inline-block;
+  font-size: 11px;
+  color: var(--faint);
 }
