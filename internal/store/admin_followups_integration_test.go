@@ -87,6 +87,60 @@ func TestAdminJobsIntegration(t *testing.T) {
 	}
 }
 
+// TestReleaseRightsProofsIntegration covers 版权凭证: add, list, soft
+// removal and the review_events rows, against an isolated database.
+func TestReleaseRightsProofsIntegration(t *testing.T) {
+	openIsolatedTestDB(t, "rightsproofs")
+	ctx := context.Background()
+	s, err := Open(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	var rel int64
+	if err := s.QueryRow(ctx, `INSERT INTO releases(slug,canonical_title,status) VALUES('rights-1','Rights',  'published') RETURNING id`).Scan(&rel); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.AddReleaseRightsProof(ctx, rel, RightsProofInput{}, "ed"); err == nil {
+		t.Error("empty proof accepted")
+	}
+	if _, err := s.AddReleaseRightsProof(ctx, rel, RightsProofInput{Kind: "bogus", Reference: "x"}, "ed"); err == nil {
+		t.Error("bad kind accepted")
+	}
+	if _, err := s.AddReleaseRightsProof(ctx, 99999999, RightsProofInput{Reference: "x"}, "ed"); !errors.Is(err, pgx.ErrNoRows) {
+		t.Errorf("unknown release: %v", err)
+	}
+	p, err := s.AddReleaseRightsProof(ctx, rel, RightsProofInput{Kind: "contract", Reference: " C-2026-01 ", URL: "https://docs.example/c", Note: "独家授权", ValidUntil: "2027-12-31"}, "ed")
+	if err != nil || p.Reference != "C-2026-01" || p.ValidUntil == nil || *p.ValidUntil != "2027-12-31" || p.CreatedBy != "ed" {
+		t.Fatalf("add %+v %v", p, err)
+	}
+	if _, err := s.AddReleaseRightsProof(ctx, rel, RightsProofInput{URL: "https://docs.example/inv"}, "ed"); err != nil {
+		t.Fatal(err)
+	}
+	list, err := s.ReleaseRightsProofs(ctx, rel, false)
+	if err != nil || len(list) != 2 {
+		t.Fatalf("list %+v %v", list, err)
+	}
+	if _, err := s.RemoveReleaseRightsProof(ctx, rel, p.ID, "expired", "ed2"); err != nil {
+		t.Fatal(err)
+	}
+	var ce *ConflictError
+	if _, err := s.RemoveReleaseRightsProof(ctx, rel, p.ID, "", "ed2"); !errors.As(err, &ce) {
+		t.Errorf("second removal: %v", err)
+	}
+	if list, _ := s.ReleaseRightsProofs(ctx, rel, false); len(list) != 1 {
+		t.Errorf("after removal %d", len(list))
+	}
+	if list, _ := s.ReleaseRightsProofs(ctx, rel, true); len(list) != 2 || list[1].RemovedBy == nil || *list[1].RemovedBy != "ed2" {
+		t.Errorf("with removed %+v", list)
+	}
+	var n int
+	if err := s.QueryRow(ctx, `SELECT count(*) FROM review_events WHERE entity_type='release' AND entity_id=$1 AND action IN ('add_rights_proof','remove_rights_proof')
+		AND NOT (after_value::text LIKE '%C-2026%' OR before_value::text LIKE '%C-2026%')`, rel).Scan(&n); err != nil || n != 3 {
+		t.Errorf("review events %d %v", n, err)
+	}
+}
+
 // TestServiceTokensIntegration covers migration 044 (re-runnable), service
 // token storage (hash only, one live token per name, expiry, revocation,
 // last use) and the op log accepting auth 'service'.

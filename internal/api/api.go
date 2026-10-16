@@ -118,6 +118,8 @@ type Server struct {
 	adminSecureCookie  bool
 	// svcTokens backs scoped service tokens for automation (service_tokens.go).
 	svcTokens serviceTokenStore
+	// rights backs 版权凭证 on the AdminVideo 发布 tab (admin_release_rights.go).
+	rights rightsStore
 	// jobsAdm backs the 夜间任务 page (admin_jobs.go).
 	jobsAdm      jobsAdmin
 	approvalOnce sync.Once
@@ -172,6 +174,7 @@ func Register(mux *http.ServeMux, s *store.Store, mediaHandler *media.Handler) {
 		srv.adminAccts = s
 		srv.svcTokens = s
 		srv.jobsAdm = s
+		srv.rights = s
 		srv.push = s
 		srv.accounts = s
 		srv.identity = s
@@ -260,6 +263,7 @@ func (srv *Server) routes() []route {
 	rs = append(rs, srv.interactionRoutes()...)
 	rs = append(rs, srv.serviceTokenRoutes()...)
 	rs = append(rs, srv.adminJobRoutes()...)
+	rs = append(rs, srv.releaseRightsRoutes()...)
 	return srv.followMerges(rs)
 }
 
