@@ -22,6 +22,7 @@ import {
   type Override,
 } from '../lib/adminApi';
 import {useAdminAction, useAdminLoad} from '../lib/adminContext';
+import {SplitPanel, UndoSplit} from '../components/AdminSplit';
 
 export const meta = () => [{title: 'REEL · 视频编辑'}];
 
@@ -523,10 +524,12 @@ const ACTION_LABELS: Record<string, string> = {
   set_performer: '演员署名',
   remove_performer: '移除演员',
   merge: '合并',
+  split: '拆分',
+  undo_split: '撤销拆分',
   resolve: '解决冲突',
 };
 
-function HistoryTab({r}: {r: AdminRelease}) {
+function HistoryTab({r, onChanged}: {r: AdminRelease; onChanged: () => void}) {
   const events = r.review_events ?? [];
   return (
     <section className="adm-card">
@@ -548,6 +551,7 @@ function HistoryTab({r}: {r: AdminRelease}) {
                 </span>
               )}
               {e.reason && <div className="muted">理由：{e.reason}</div>}
+              {e.action === 'split' && e.entity_type === 'release' && <UndoSplit eventId={e.id} onDone={onChanged} />}
               {(e.before !== null || e.after !== null) && (
                 <div className="adm-diff">
                   <pre aria-label="修改前">{e.before === null ? '—' : JSON.stringify(e.before, null, 2)}</pre>
@@ -572,6 +576,7 @@ export default function AdminVideo() {
   const missing = rel.failure && isMissingEndpoint(rel.failure) && !(rel.failure instanceof ApiError && rel.failure.detail === 'not found');
 
   const setTab = (k: TabKey) => setParams(k === 'basic' ? {} : {tab: k}, {replace: true});
+  const [splitting, setSplitting] = useState(false);
 
   if (!Number.isInteger(id) || id <= 0) return <AdminNotice error="无效的视频 ID" />;
 
@@ -591,7 +596,7 @@ export default function AdminVideo() {
       body = <AdminVideoCast releaseId={r.id} performers={r.performers ?? []} shootYear={r.shoot_year} releaseDate={r.release_date} onChanged={rel.reload} />;
     else if (tab === 'publish') body = <PublishTab r={r} onSaved={rel.reload} />;
     else if (tab === 'i18n') body = <I18nTab r={r} />;
-    else body = <HistoryTab r={r} />;
+    else body = <HistoryTab r={r} onChanged={rel.reload} />;
   }
 
   const openIssues = (r?.audit_issues ?? []).filter(i => i.status === 'open');
@@ -617,11 +622,26 @@ export default function AdminVideo() {
               前台预览
             </Link>
           )}
+          {r && (
+            <button type="button" className="btn btn-secondary btn-sm" aria-expanded={splitting} onClick={() => setSplitting(v => !v)}>
+              拆分
+            </button>
+          )}
           <button type="button" className="btn btn-secondary btn-sm" disabled={rel.busy} onClick={rel.reload}>
             刷新
           </button>
         </div>
       </header>
+      {r && splitting && (
+        <SplitPanel
+          entity="release"
+          id={r.id}
+          version={r.version}
+          mediaLinks={(r.media_sources ?? []).map(m => m.source)}
+          onDone={rel.reload}
+          onClose={() => setSplitting(false)}
+        />
+      )}
 
       {missing && <NotDeployed what="视频编辑接口（admin/releases/{id}）" />}
       {!missing && <AdminNotice error={rel.error === '内容不存在或已下架：not found' ? '没有这条视频' : rel.error} />}

@@ -36,6 +36,7 @@ import {
   type Weights,
 } from '../lib/adminApi';
 import {useAdmin, useAdminAction, useAdminLoad} from '../lib/adminContext';
+import {SplitPanel, UndoSplit} from '../components/AdminSplit';
 
 export const meta = () => [{title: 'REEL · 演员'}];
 
@@ -651,7 +652,9 @@ function SideFacts({p}: {p: AdminPerformer}) {
   );
 }
 
-function EventsCard({p}: {p: AdminPerformer}) {
+const EVENT_LABELS: Record<string, string> = {split: '拆分', undo_split: '撤销拆分', merge: '合并'};
+
+function EventsCard({p, onChanged}: {p: AdminPerformer; onChanged: () => void}) {
   const events = p.review_events ?? [];
   return (
     <section className="adm-card">
@@ -665,8 +668,9 @@ function EventsCard({p}: {p: AdminPerformer}) {
               <br />#{e.id}
             </span>
             <div>
-              <strong>{e.action}</strong> · {e.actor ?? '—'}
+              <strong>{EVENT_LABELS[e.action] ?? e.action}</strong> · {e.actor ?? '—'}
               {e.reason && <div className="muted">理由：{e.reason}</div>}
+              {e.action === 'split' && <UndoSplit eventId={e.id} onDone={onChanged} />}
               {(e.before !== null || e.after !== null) && (
                 <div className="adm-diff">
                   <pre aria-label="修改前">{e.before === null ? '—' : JSON.stringify(e.before, null, 2)}</pre>
@@ -684,6 +688,7 @@ function EventsCard({p}: {p: AdminPerformer}) {
 function PerformerDetail({id, onChanged}: {id: number; onChanged: () => void}) {
   const res = useAdminLoad(() => getAdminPerformer(id), [id]);
   const p = res.data && res.data.id === id ? res.data : null;
+  const [splitting, setSplitting] = useState(false);
   const reload = () => {
     res.reload();
     onChanged();
@@ -707,12 +712,16 @@ function PerformerDetail({id, onChanged}: {id: number; onChanged: () => void}) {
           <Link to={`/performers/${encodeURIComponent(p.slug)}`} target="_blank" className="btn btn-secondary btn-sm">
             前台预览
           </Link>
+          <button type="button" className="btn btn-secondary btn-sm" aria-expanded={splitting} onClick={() => setSplitting(v => !v)}>
+            拆分
+          </button>
           <button type="button" className="btn btn-secondary btn-sm" disabled={res.busy} onClick={res.reload}>
             刷新
           </button>
         </div>
       </header>
       <AdminNotice error={res.error} />
+      {splitting && <SplitPanel entity="performer" id={p.id} version={p.version} onDone={reload} onClose={() => setSplitting(false)} />}
       <SideFacts p={p} />
       <FieldsCard p={p} onSaved={reload} />
       <AliasesCard p={p} onSaved={reload} />
@@ -720,7 +729,7 @@ function PerformerDetail({id, onChanged}: {id: number; onChanged: () => void}) {
       {upcoming.length > 0 && <WorksTable works={upcoming} title="即将上线" />}
       <WorksTable works={works} title="作品" />
       <SimilarCard p={p} />
-      <EventsCard p={p} />
+      <EventsCard p={p} onChanged={reload} />
     </div>
   );
 }
