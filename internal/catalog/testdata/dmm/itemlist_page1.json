@@ -1,0 +1,87 @@
+{
+  "request": {
+    "parameters": {
+      "api_id": "{{API_ID}}",
+      "affiliate_id": "{{AFFILIATE_ID}}",
+      "site": "FANZA",
+      "service": "digital",
+      "floor": "videoa",
+      "hits": "2",
+      "sort": "date",
+      "output": "json"
+    }
+  },
+  "result": {
+    "status": 200,
+    "result_count": 2,
+    "total_count": 3,
+    "first_position": 1,
+    "items": [
+      {
+        "service_code": "digital",
+        "service_name": "動画",
+        "floor_code": "videoa",
+        "floor_name": "ビデオ",
+        "category_name": "ビデオ (動画)",
+        "content_id": "15dss00145",
+        "product_id": "15dss00145dl",
+        "title": "GET！！ 素人ナンパ Best100！！ 街角女子ベスト100人 8時間",
+        "volume": "350",
+        "review": {"count": 8, "average": "3.13"},
+        "URL": "http://video.dmm.co.jp/av/content/?id=15dss00145",
+        "affiliateURL": "https://al.fanza.co.jp/?lurl=https%3A%2F%2Fvideo.dmm.co.jp%2Fav%2Fcontent%2F%3Fid%3D15dss00145&af_id={{AFFILIATE_ID}}&ch=api",
+        "imageURL": {
+          "list": "http://pics.dmm.co.jp/digital/video/15dss00145/15dss00145pt.jpg",
+          "small": "http://pics.dmm.co.jp/digital/video/15dss00145/15dss00145ps.jpg",
+          "large": "http://pics.dmm.co.jp/digital/video/15dss00145/15dss00145pl.jpg"
+        },
+        "sampleImageURL": {
+          "sample_s": {"image": ["http://pics.dmm.co.jp/digital/video/15dss00145/15dss00145-1.jpg"]},
+          "sample_l": {"image": ["http://pics.dmm.co.jp/digital/video/15dss00145/15dss00145jp-1.jpg"]}
+        },
+        "sampleMovieURL": {
+          "size_476_306": "http://www.dmm.co.jp/litevideo/-/part/=/cid=15dss145/size=476_306/affi_id={{AFFILIATE_ID}}/",
+          "size_560_360": "http://www.dmm.co.jp/litevideo/-/part/=/cid=15dss145/size=560_360/affi_id={{AFFILIATE_ID}}/",
+          "size_644_414": "http://www.dmm.co.jp/litevideo/-/part/=/cid=15dss145/size=644_414/affi_id={{AFFILIATE_ID}}/",
+          "size_720_480": "http://www.dmm.co.jp/litevideo/-/part/=/cid=15dss145/size=720_480/affi_id={{AFFILIATE_ID}}/",
+          "pc_flag": 1,
+          "sp_flag": 1
+        },
+        "prices": {
+          "price": "300～",
+          "deliveries": {"delivery": [{"type": "stream", "price": "300"}]}
+        },
+        "date": "2012/8/3 10:00",
+        "iteminfo": {
+          "genre": [{"name": "ベスト・総集編", "id": 6003}],
+          "series": [{"name": "GETシリーズ", "id": 1006}],
+          "maker": [{"name": "桃太郎映像出版", "id": 40016}],
+          "actress": [{"name": "小澤マリア", "id": 15187}],
+          "label": [{"name": "LADY HUNTERS", "id": 76}]
+        }
+      },
+      {
+        "service_code": "digital",
+        "service_name": "動画",
+        "floor_code": "videoa",
+        "floor_name": "ビデオ",
+        "category_name": "ビデオ (動画)",
+        "content_id": "sone00156",
+        "product_id": "sone00156",
+        "title": "Fixture item B",
+        "volume": "150",
+        "URL": "https://video.dmm.co.jp/av/content/?id=sone00156",
+        "affiliateURL": "https://al.fanza.co.jp/?lurl=https%3A%2F%2Fvideo.dmm.co.jp%2Fav%2Fcontent%2F%3Fid%3Dsone00156&af_id={{AFFILIATE_ID}}&ch=api",
+        "prices": {"price": "2273", "list_price": "3498"},
+        "date": "2012-08-01 10:00:00",
+        "iteminfo": {
+          "maker": [{"id": 3152, "name": "エスワン ナンバーワンスタイル"}],
+          "actress": [{"id": 1074740, "name": "うんぱい", "ruby": "うんぱい"}],
+          "director": [{"id": 106690, "name": "前田文豪", "ruby": "まえだぶんごう"}],
+          "label": [{"id": 3474, "name": "S1 NO.1 STYLE"}]
+        },
+        "maker_product": "SONE-156"
+      }
+    ]
+  }
+}

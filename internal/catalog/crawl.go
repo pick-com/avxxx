@@ -90,6 +90,15 @@ func (c *Crawl) Run(ctx context.Context) (CrawlResult, error) {
 	page := c.StartURL
 	if cp.Cursor != "" && SameSite(c.StartURL, cp.Cursor) {
 		page = cp.Cursor
+	} else if s, ok := c.Adapter.(IncrementalStarter); ok && cp.Watermark != nil {
+		// A new pass after a completed one: let the adapter narrow it.
+		if u := s.IncrementalStart(c.StartURL, *cp.Watermark); u != "" && SameSite(c.StartURL, u) {
+			page = u
+		}
+	}
+	inline := false
+	if d, ok := c.Adapter.(InlineDiscoverer); ok {
+		inline = d.InlineRecords()
 	}
 	res := CrawlResult{Cursor: page}
 	seen := map[string]bool{}
@@ -121,6 +130,15 @@ func (c *Crawl) Run(ctx context.Context) (CrawlResult, error) {
 			return fail(key, "discover_failed", err)
 		}
 		for _, discovered := range records {
+			if inline {
+				// Structured APIs: the discovery payload is the record.
+				if _, err := c.Sink.SaveCatalogRecord(ctx, c.SourceID, parser, discovered); err != nil {
+					_ = c.Checkpoints.FailCheckpoint(ctx, CheckpointKey{SourceID: c.SourceID, TaskType: TaskDetail, Partition: discovered.SourceKey, ParserVersion: parser}, "record_save_failed")
+					return fail(key, "record_save_failed", err)
+				}
+				res.Records++
+				continue
+			}
 			detailKey := CheckpointKey{SourceID: c.SourceID, TaskType: TaskDetail, Partition: discovered.SourceKey, ParserVersion: parser}
 			doc, err := c.Fetcher.Fetch(ctx, discovered.URL)
 			if errors.Is(err, ErrBudgetExhausted) {

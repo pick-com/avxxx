@@ -1,0 +1,36 @@
+{
+  "request": {
+    "parameters": {
+      "api_id": "{{API_ID}}",
+      "affiliate_id": "{{AFFILIATE_ID}}",
+      "site": "FANZA",
+      "service": "digital",
+      "floor": "videoa",
+      "hits": "2",
+      "offset": "3",
+      "sort": "date",
+      "output": "json"
+    }
+  },
+  "result": {
+    "status": 200,
+    "result_count": 1,
+    "total_count": 3,
+    "first_position": 3,
+    "items": [
+      {
+        "service_code": "digital",
+        "floor_code": "videoa",
+        "content_id": "118abp00123",
+        "product_id": "118abp00123",
+        "title": "Fixture item C",
+        "volume": "120",
+        "URL": "https://video.dmm.co.jp/av/content/?id=118abp00123",
+        "date": "2012-07-20 10:00:00",
+        "iteminfo": {
+          "maker": [{"id": 40136, "name": "プレステージ"}]
+        }
+      }
+    ]
+  }
+}
