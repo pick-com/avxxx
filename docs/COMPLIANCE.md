@@ -83,10 +83,10 @@
 
 | 项目 | 实现 |
 | --- | --- |
-| 进站 | 首次访问任何页面都先显示 18+ 勾选确认页；`POST /api/age-gate {confirmed:true}` 写 Cookie，页面刷新后才渲染内容 |
+| 进站 | 首次访问任何页面都先显示 18+ 勾选确认页：「本站包含成人内容。请确认你已年满 18 周岁（或你所在地区的法定成年年龄）。」勾选后才能点「确认并进入」，旁边有「离开」（跳出本站）。`POST /api/age-gate {confirmed:true}` 写 ok Cookie，页面刷新后才渲染内容。确认页不问出生日期，也不会拒绝或锁定 |
 | 年龄计算 | 当前采用用户自我声明，不收集或计算出生年月；旧版 year/month 参数仍兼容 |
 | Cookie | `ag` = `v1.<ok\|denied>.<到期时间>.<HMAC-SHA256>`，密钥 `AGE_GATE_KEY`（API 与 web 共用；未设置时用开发密钥并打警告）；HttpOnly、SameSite=Lax、Path=/，https 下 Secure。ok 约 1 年；denied 24 小时，期间接口拒绝重新提交（403），不能改填 |
-| 未满 18 | 只显示说明页和法律 / 帮助链接；`/legal/*`、`/help`、`/copyright` 和后台不受拦截 |
+| 未满 18 | denied Cookie 只来自填写了出生年月的路径：注册或老账号确认时 Cookie 不是 ok 而填了未满 18 的出生年月，或旧版客户端仍提交 `{year, month}`。denied 期间只显示说明页和法律 / 帮助链接；`/legal/*`、`/help`、`/copyright` 和后台不受拦截 |
 | 不存数据 | 不收集访客出生年月；只有计数 `avxxx_age_gate_total{result=ok\|denied\|locked\|invalid}`。接口按地址限流（每 10 分钟 20 次） |
 | 服务端渲染 | 根路由读取 Cookie：未确认时页面主体换成确认页，播放器、片源请求、页面数据请求都不执行；页面 loader 只取 `<head>` 需要的字段（标题、描述、canonical、JSON-LD），列表、片源署名、公告等一律跳过 |
 | 搜索引擎 | 不区分爬虫和用户（不做 cloaking）：没有 Cookie 的爬虫和访客拿到同一份 HTML，`<head>` 完整，正文是确认页。站点地图照常列出内容页 |
@@ -96,7 +96,7 @@
 | 分级字段 | `releases.age_rating` 保留为元数据，不再用于前台隐藏 |
 
 已知限制：
-- 这是自我声明，不是身份验证；清除 Cookie（或换浏览器、设备）即可重新填写，24 小时锁定只对同一浏览器有效。
+- 这是自我声明，不是身份验证；确认页只要求勾选，不核对年龄。denied 的 24 小时锁定只对同一浏览器有效，清除 Cookie（或换浏览器、设备）即可重新确认。
 - 内容 API（`/api/releases` 等）不受拦截，爬虫和 API 客户端可以直接读取目录数据；拦截只作用于网页。
 - 拦截页的 `<head>` 里有作品标题、简介，og:image 为封面地址，用于搜索和分享预览。
 - 确认页需要 JavaScript 才能提交。

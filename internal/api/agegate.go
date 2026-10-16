@@ -3,9 +3,10 @@ package api
 // Site-entry 18+ gate (DESIGN_ALIGNMENT #8, PRD 15; docs/COMPLIANCE.md).
 //
 // The site is adults-only. On a first visit the web app shows an
-// interstitial asking for birth year and month; POST /api/age-gate answers
-// ok or denied and sets a signed cookie the SSR server checks before it
-// renders any page (web/app/lib/ageGate.server.ts verifies the same HMAC):
+// interstitial with an 18+ checkbox; POST /api/age-gate {confirmed:true}
+// answers ok (legacy clients may still send {year, month}, answered ok or
+// denied) and sets a signed cookie the SSR server checks before it renders
+// any page (web/app/lib/ageGate.server.ts verifies the same HMAC):
 //
 //	ag=v1.<ok|denied>.<expiry unix>.<base64url HMAC-SHA256(AGE_GATE_KEY, "v1.<verdict>.<expiry>")>
 //

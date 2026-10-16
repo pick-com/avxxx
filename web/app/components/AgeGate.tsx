@@ -9,10 +9,13 @@ import {Icon} from './Icon';
 //
 // The site is adults-only. root.tsx renders <SiteAgeGate> instead of the app
 // until the visitor's signed gate cookie says ok, and <AgeRestricted> while it
-// says denied (24 hours, no new answer possible). The answer is checked and
-// the cookie set by POST /api/age-gate (internal/api/agegate.go); the page
-// then reloads so the server renders it with its data. Registration and the
-// one-time prompt for older accounts reuse <BirthMonthPicker>.
+// says denied. The gate itself is a checkbox self-declaration (no birth date):
+// POST /api/age-gate {confirmed:true} sets the ok cookie
+// (internal/api/agegate.go) and the page reloads so the server renders it
+// with its data. A denied cookie (24 hours, no new answer possible) only comes
+// from an under-18 birth date on the account paths: registration and the
+// one-time prompt for older accounts, which reuse <BirthMonthPicker> while the
+// gate cookie is not ok, or a legacy {year, month} gate answer.
 
 export function BirthMonthPicker({year, month, onYear, onMonth, idPrefix}: {
   year: string;
@@ -78,6 +81,9 @@ function GateFrame({children, labelledBy}: {children: ReactNode; labelledBy: str
   );
 }
 
+// Where "Leave" goes: off the site, to a general-purpose page.
+const LEAVE_URL = 'https://www.google.com/';
+
 /** The interstitial shown before any page until the visitor confirms 18+. */
 export function SiteAgeGate() {
   const t = useT();
@@ -88,7 +94,7 @@ export function SiteAgeGate() {
   const submit = async (event: FormEvent) => {
     event.preventDefault();
     if (!confirmed) {
-      setError(t('login.pickBirth'));
+      setError(t('age.adultRequired'));
       return;
     }
     setBusy(true);
@@ -109,7 +115,9 @@ export function SiteAgeGate() {
       <h1 id="age-gate-title">{t('age.gateTitle')}</h1>
       <p>{t('age.gateBody')}</p>
       <form className="age-gate-form" onSubmit={submit}>
-        <label className="checkbox-row"><input type="checkbox" checked={confirmed} onChange={e => setConfirmed(e.target.checked)} /> {t('age.adultConfirm')}</label>
+        <label className="checkbox-row">
+          <input type="checkbox" checked={confirmed} onChange={e => setConfirmed(e.target.checked)} /> {t('age.gateConfirm')}
+        </label>
         <p className="muted">
           <Icon name="lock" size={14} /> {t('age.gatePrivacy')}
         </p>
@@ -121,8 +129,10 @@ export function SiteAgeGate() {
         <button type="submit" className="btn btn-primary btn-block btn-lg" disabled={busy || !confirmed}>
           {busy ? t('login.wait') : t('age.gateEnter')}
         </button>
+        <a className="btn btn-secondary btn-block" href={LEAVE_URL} rel="noreferrer">
+          {t('age.gateLeave')}
+        </a>
       </form>
-      <p className="muted">{t('age.gateNotice')}</p>
       <GateLinks />
     </GateFrame>
   );
