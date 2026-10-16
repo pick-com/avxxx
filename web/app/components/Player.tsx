@@ -11,15 +11,22 @@ import {entriesFromConfig, entriesFromStreams, isHlsEntry, type PlayEntry} from 
 import {useAsync} from '../lib/useAsync';
 import {useMediaQuery} from '../lib/useMediaQuery';
 import {useDanmakuPrefs} from '../lib/danmakuPrefs';
+import {useOnline} from '../lib/useOnline';
+import {applyVolume, writeVolume} from '../lib/volumePrefs';
 import {DanmakuBar, DanmakuLayer, DanmakuListSheet, DanmakuSettings, useDanmakuFeed, type DanmakuLayerHandle} from './Danmaku';
 import {Icon} from './Icon';
 import {PeakCurve} from './PeakCurve';
+import {PlayerControls, useVideoClock, type Chapter} from './PlayerControls';
 import {PlayerMenu} from './PlayerMenu';
 import {PlayerSettingsSheet, type Choice, type SettingsTab} from './PlayerSettingsSheet';
+import {BufferingSpinner, CenterPlay, EndScreen, ResumeToast, useBuffering, type EndItem} from './PlayerStates';
 import {PlayerTouchLayer} from './PlayerTouchLayer';
 
 const SAVE_INTERVAL_MS = 15_000;
 const FLASH_MS = 700;
+const FLASH_LONG_MS = 4000;
+const HIDE_CONTROLS_MS = 3000;
+const FRAME_S = 1 / 30;
 const RATES = [0.5, 0.75, 1, 1.25, 1.5, 2];
 const AUTO = -1;
 const CAPTIONS_OFF = -1;
@@ -48,13 +55,27 @@ type LockableOrientation = ScreenOrientation & {lock?: (orientation: string) => 
  * browser without native HLS; Safari plays HLS natively. Quality levels and
  * audio tracks come from hls.js, so they are listed only on that path.
  *
- * Desktop keeps the browser's native controls; the bar under the video adds
- * 清晰度 / 倍速 / 字幕 / 画中画 / 影院 / 全屏. On touch devices in fullscreen the
- * native controls give way to PlayerTouchLayer (gestures, lock).
+ * <video> sources use our own controls (PlayerControls: scrim, progress
+ * slider with buffered ranges / chapters / hover frame preview, volume, time,
+ * 清晰度 / 倍速 menus, settings, 字幕 / 画中画 / 影院 / 全屏). They hide after
+ * 3 s of inactivity while playing (cursor too) and stay while paused or
+ * keyboard-focused. On touch devices in fullscreen PlayerTouchLayer takes
+ * over (gestures, lock); iPhone fullscreen is the native player. Embeds keep
+ * the small bar under the frame (settings / fullscreen).
  *
- * Not built yet: sprite previews and chapters (tech plan 2.4 / 3.2), caption
- * tracks (play-config subtitles are still empty), region / quality hints to
- * play-config.
+ * States over the video (PlayerStates): buffering spinner after 300 ms,
+ * 「从 mm:ss 继续播放」 toast with 从头播放, end screen (replay + related
+ * grid) under the page's autoplay countdown, and an error card with 重试 /
+ * 换片源. Offline: a native source that errors while offline reloads at the
+ * same position on reconnect instead of failing over.
+ *
+ * Hover previews come from a hidden CORS video (lib/useFramePreview.ts) on
+ * progressive sources with a fine pointer; otherwise time + chapter only.
+ * Not built yet: sprite sheets (tech plan 2.4), caption tracks (play-config
+ * subtitles are still empty), region / quality hints to play-config.
+ *
+ * `mini`: rendered by PlayerHost in the mobile mini bar; only the <video>
+ * stays (no chrome, no keyboard).
  *
  * Progress: only shared-progress video sources save watch progress; an
  * alternate version would otherwise overwrite the main version's position
@@ -68,7 +89,9 @@ type LockableOrientation = ScreenOrientation & {lock?: (orientation: string) => 
  * hls.js ABR is capped at 720p, 480p with data_saver; remember_rate restores
  * the last rate used for this release. autoplay is handled by the page.
  */
-export function Player({slug, releaseId, title, resumeAt, onBack, theater = false, onToggleTheater, onEnded, autoStart = false, overlay, entryReason}: {
+export type PlayerProps = Parameters<typeof Player>[0];
+
+export function Player({slug, releaseId, title, resumeAt, onBack, theater = false, onToggleTheater, onEnded, autoStart = false, overlay, entryReason, related = [], onReplay, mini = false}: {
   slug: string;
   /** releases.id for analytics (play_request / progress); no tracking without it. */
   releaseId?: number;
@@ -85,6 +108,12 @@ export function Player({slug, releaseId, title, resumeAt, onBack, theater = fals
   overlay?: ReactNode;
   /** Recommendation reason code of the card that opened this page (play_request `reason`). */
   entryReason?: string;
+  /** Related works for the end screen (first six). */
+  related?: EndItem[];
+  /** The viewer replays from the end screen (the page cancels its countdown). */
+  onReplay?: () => void;
+  /** Mobile mini player: only the video, no chrome or keyboard. */
+  mini?: boolean;
 }) {
   const t = useT();
   const {status} = useAuth();
@@ -149,8 +178,13 @@ export function Player({slug, releaseId, title, resumeAt, onBack, theater = fals
   fullscreenRef.current = fullscreen;
   pipRef.current = pip;
   levelRef.current = level;
-  const [flash, setFlash] = useState('');
+  const [flash, setFlash] = useState<{text: string; long: boolean; key: number} | null>(null);
   const flashTimer = useRef<number | undefined>(undefined);
+  const [pulse, setPulse] = useState<{kind: 'play' | 'pause'; key: number} | null>(null);
+  const [resumeToast, setResumeToast] = useState<number | null>(null);
+  // The next loadedmetadata restores the resume point (not a source switch): say so.
+  const resumeToastArmed = useRef(false);
+  const closeResumeToast = useCallback(() => setResumeToast(null), []);
 
   const dmPrefs = useDanmakuPrefs();
   const [dmListOpen, setDmListOpen] = useState(false);
@@ -184,6 +218,41 @@ export function Player({slug, releaseId, title, resumeAt, onBack, theater = fals
   const coarse = useMediaQuery('(pointer: coarse)');
   const reducedMotion = useMediaQuery('(prefers-reduced-motion: reduce)');
   const touchMode = fullscreen && coarse;
+  const finePointer = useMediaQuery('(hover: hover) and (pointer: fine)');
+  const online = useOnline();
+  const clock = useVideoClock(stream ? videoEl : null);
+  const buffering = useBuffering(stream ? videoEl : null);
+  // play-config chapters belong to the main timeline only.
+  const chapters = useMemo<Chapter[]>(() => {
+    if (!stream || stream.alt) return [];
+    return (config.data?.chapters ?? [])
+      .map(c => ({
+        start: typeof c?.start_ms === 'number' ? c.start_ms / 1000 : Number(c?.start_seconds ?? NaN),
+        title: typeof c?.title === 'string' ? c.title.trim() : '',
+      }))
+      .filter(c => Number.isFinite(c.start) && c.start >= 0 && c.title)
+      .sort((a, b) => a.start - b.start);
+  }, [config.data, stream]);
+
+  // Controls auto-hide (3 s without activity while playing). `hold`: pointer
+  // over the bar or dragging the slider; `focused`: keyboard focus inside.
+  const [chromeOn, setChromeOn] = useState(true);
+  const hold = useRef(false);
+  const focused = useRef(false);
+  const hideTimer = useRef<number | undefined>(undefined);
+  const poke = useCallback(() => {
+    setChromeOn(true);
+    window.clearTimeout(hideTimer.current);
+    hideTimer.current = window.setTimeout(() => {
+      const v = videoRef.current;
+      if (v && !v.paused && !hold.current && !focused.current) setChromeOn(false);
+    }, HIDE_CONTROLS_MS);
+  }, []);
+  useEffect(() => () => window.clearTimeout(hideTimer.current), []);
+  useEffect(() => {
+    if (!clock.paused) poke();
+  }, [clock.paused, poke]);
+  const chromeVisible = chromeOn || clock.paused || clock.ended || settings.open;
 
   // play_end when the release changes or the player goes away.
   useEffect(
@@ -211,16 +280,17 @@ export function Player({slug, releaseId, title, resumeAt, onBack, theater = fals
 
   const chooseRate = useCallback(
     (next: number) => {
+      rateRef.current = next;
       setRate(next);
       if (prefsRef.current.rememberRate) rememberRate(slug, next);
     },
     [slug],
   );
 
-  const showFlash = useCallback((text: string) => {
+  const showFlash = useCallback((text: string, long = false) => {
     window.clearTimeout(flashTimer.current);
-    setFlash(text);
-    flashTimer.current = window.setTimeout(() => setFlash(''), FLASH_MS);
+    setFlash({text, long, key: Date.now()});
+    flashTimer.current = window.setTimeout(() => setFlash(null), long ? FLASH_LONG_MS : FLASH_MS);
   }, []);
   useEffect(() => () => window.clearTimeout(flashTimer.current), []);
 
@@ -289,6 +359,7 @@ export function Player({slug, releaseId, title, resumeAt, onBack, theater = fals
       if (i < 0) i = configEntries.findIndex(e => e.render !== 'external');
       if (i < 0) i = 0;
       pendingSeek.current = configEntries[i]?.alt ? 0 : resumeFrom;
+      resumeToastArmed.current = pendingSeek.current > 0;
       beginTracking(configEntries[i]);
       setEntries(configEntries);
       setCurrent(i);
@@ -301,6 +372,7 @@ export function Player({slug, releaseId, title, resumeAt, onBack, theater = fals
       const result = await resolvePlayback(info.data.resolve_path);
       if (result.length === 0) throw new Error(t('player.noStream'));
       pendingSeek.current = resumeFrom;
+      resumeToastArmed.current = resumeFrom > 0;
       setEntries(entriesFromStreams(result));
       setCurrent(0);
       setPhase('ready');
@@ -343,11 +415,58 @@ export function Player({slug, releaseId, title, resumeAt, onBack, theater = fals
       beginTracking(to);
     }
     pendingSeek.current = to.alt ? 0 : sharedPos.current;
+    resumeToastArmed.current = false;
+    setResumeToast(null);
     if (videoRef.current && pendingSeek.current > 0) videoRef.current.dataset.seekMethod = 'skip';
     setCurrent(index);
   };
 
+  // 片源 picks from the row, the settings sheet and the error card's 换片源.
+  const pickSource = (index: number) => {
+    if (phase === 'ready') {
+      switchTo(index);
+      return;
+    }
+    if (mode === 'config') {
+      void start(index);
+      return;
+    }
+    if (!entries[index]) return;
+    setFailure('');
+    setNotice('');
+    pendingSeek.current = sharedPos.current;
+    setCurrent(index);
+    setPhase('ready');
+  };
+
+  // States 05: a native source that fails while offline waits for the network
+  // and reloads at the same position instead of failing over.
+  const offlineRetry = useRef<(() => void) | null>(null);
+  useEffect(
+    () => () => {
+      if (offlineRetry.current) window.removeEventListener('online', offlineRetry.current);
+      offlineRetry.current = null;
+    },
+    [stream],
+  );
+
   const onVideoError = () => {
+    const failed = videoRef.current;
+    if (typeof navigator !== 'undefined' && !navigator.onLine && failed && stream && !isHlsEntry(stream)) {
+      if (offlineRetry.current) return;
+      const at = failed.currentTime || sharedPos.current;
+      const retry = () => {
+        offlineRetry.current = null;
+        const v = videoRef.current;
+        if (!v) return;
+        pendingSeek.current = at;
+        v.load();
+        void v.play().catch(() => undefined);
+      };
+      offlineRetry.current = retry;
+      window.addEventListener('online', retry, {once: true});
+      return;
+    }
     // States 04: on failure move to the next playable source and say so.
     // External links need the user, so the automatic chain skips them.
     const from = entries[current];
@@ -376,6 +495,7 @@ export function Player({slug, releaseId, title, resumeAt, onBack, theater = fals
     setPlayingLevel(-1);
     setAudioTracks([]);
     setAudioTrack(0);
+    applyVolume(video);
     if (!isHlsEntry(stream) || video.canPlayType('application/vnd.apple.mpegurl') !== '') {
       video.src = stream.url;
       return;
@@ -475,6 +595,14 @@ export function Player({slug, releaseId, title, resumeAt, onBack, theater = fals
     };
   }, [stream]);
 
+  // Volume / mute are remembered in this browser, whatever changed them.
+  useEffect(() => {
+    if (!videoEl) return;
+    const onVolume = () => writeVolume({volume: videoEl.volume, muted: videoEl.muted});
+    videoEl.addEventListener('volumechange', onVolume);
+    return () => videoEl.removeEventListener('volumechange', onVolume);
+  }, [videoEl]);
+
   // Playback rate survives line switches.
   useEffect(() => {
     if (videoRef.current) videoRef.current.playbackRate = rate;
@@ -495,17 +623,26 @@ export function Player({slug, releaseId, title, resumeAt, onBack, theater = fals
     setPipSupported(typeof document !== 'undefined' && 'pictureInPictureEnabled' in document && document.pictureInPictureEnabled);
   }, []);
 
+  const onReplayRef = useRef(onReplay);
+  onReplayRef.current = onReplay;
+  const theaterRef = useRef({theater, onToggleTheater});
+  theaterRef.current = {theater, onToggleTheater};
+
   const togglePlay = useCallback(() => {
     const video = videoRef.current;
     if (!video) return;
     if (video.paused) {
+      if (video.ended) {
+        video.dataset.seekMethod = 'skip';
+        video.currentTime = 0;
+        onReplayRef.current?.();
+      }
       void video.play().catch(() => undefined);
-      showFlash(t('player.play'));
+      setPulse({kind: 'play', key: Date.now()});
     } else {
       video.pause();
-      showFlash(t('player.pause'));
     }
-  }, [showFlash]);
+  }, []);
 
   const seekBy = useCallback(
     (delta: number) => {
@@ -606,14 +743,32 @@ export function Player({slug, releaseId, title, resumeAt, onBack, theater = fals
     if (hls) hls.audioTrack = id;
   };
 
+  const stepRate = useCallback(
+    (dir: 1 | -1) => {
+      const i = RATES.indexOf(rateRef.current);
+      const next = RATES[Math.min(RATES.length - 1, Math.max(0, (i < 0 ? RATES.indexOf(1) : i) + dir))];
+      chooseRate(next);
+      showFlash(t('pc.rateTo', {rate: `${next}×`}));
+    },
+    [chooseRate, showFlash, t],
+  );
+
+  const seekToFraction = useCallback((fraction: number) => {
+    const video = videoRef.current;
+    if (!video || !Number.isFinite(video.duration)) return;
+    video.dataset.seekMethod = 'keyboard';
+    video.currentTime = Math.min(video.duration, Math.max(0, fraction * video.duration));
+  }, []);
+
   // Keyboard (PRD 5.1): only when the player or the page body has focus, never
-  // while typing, and not inside menus or dialogs.
+  // while typing, and not inside menus or dialogs. Never in the mini player.
   useEffect(() => {
-    if (phase !== 'ready') return;
+    if (phase !== 'ready' || mini) return;
     const onKey = (event: KeyboardEvent) => {
       if (event.defaultPrevented || event.ctrlKey || event.metaKey || event.altKey) return;
       const shell = shellRef.current;
-      if (!shell || !videoRef.current) return;
+      const video = videoRef.current;
+      if (!shell || !video) return;
       const target = event.target instanceof HTMLElement ? event.target : null;
       if (target && (target.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(target.tagName))) return;
       if (target?.closest('[role="menu"], [role="dialog"], [role="tablist"], [role="radiogroup"]')) return;
@@ -621,10 +776,14 @@ export function Player({slug, releaseId, title, resumeAt, onBack, theater = fals
       const onBody = target === null || target === document.body || target === document.documentElement || target.id === 'main';
       if (!inPlayer && !onBody) return;
       const key = event.key.length === 1 ? event.key.toLowerCase() : event.key;
-      // A focused control in the player keeps Space for itself.
-      if (key === ' ' && inPlayer && target !== videoRef.current && target?.closest('button, a')) return;
+      // A focused control in the player keeps Space / Enter for itself.
+      if (key === ' ' && inPlayer && target !== video && target?.closest('button, a')) return;
+      // The progress slider handles its own arrows / Home / End / Page keys.
+      if (target?.getAttribute('role') === 'slider' && /^(Arrow|Home|End|Page)/.test(key)) return;
+      const {theater: inTheater, onToggleTheater: toggleTheater} = theaterRef.current;
       switch (key) {
         case ' ':
+        case 'k':
           togglePlay();
           break;
         case 'ArrowLeft':
@@ -648,14 +807,68 @@ export function Player({slug, releaseId, title, resumeAt, onBack, theater = fals
         case 'c':
           toggleCaptions();
           break;
+        case '0':
+        case '1':
+        case '2':
+        case '3':
+        case '4':
+        case '5':
+        case '6':
+        case '7':
+        case '8':
+        case '9':
+          seekToFraction(Number(key) / 10);
+          showFlash(t('pc.jumpTo', {n: Number(key) * 10}));
+          break;
+        case ',':
+        case '.':
+          if (!video.paused) return;
+          video.dataset.seekMethod = 'keyboard';
+          video.currentTime = Math.max(0, video.currentTime + (key === '.' ? FRAME_S : -FRAME_S));
+          showFlash(key === '.' ? t('pc.frameForward') : t('pc.frameBack'));
+          break;
+        case '<':
+          stepRate(-1);
+          break;
+        case '>':
+          stepRate(1);
+          break;
+        case 'Home':
+          // On the page body Home / End keep scrolling the page.
+          if (!inPlayer) return;
+          seekToFraction(0);
+          showFlash(t('pc.toStart'));
+          break;
+        case 'End':
+          if (!inPlayer) return;
+          seekToFraction(1);
+          showFlash(t('pc.toEnd'));
+          break;
+        case 'Escape':
+          if (!inTheater || !toggleTheater || document.fullscreenElement) return;
+          toggleTheater();
+          break;
+        case '?':
+          showFlash(t('pc.keysHint'), true);
+          break;
         default:
           return;
       }
       event.preventDefault();
+      poke();
     };
     document.addEventListener('keydown', onKey);
     return () => document.removeEventListener('keydown', onKey);
-  }, [phase, seekBy, toggleCaptions, toggleFullscreen, toggleMute, togglePlay]);
+  }, [phase, mini, poke, seekBy, seekToFraction, showFlash, stepRate, t, toggleCaptions, toggleFullscreen, toggleMute, togglePlay]);
+
+  const replay = useCallback(() => {
+    const video = videoRef.current;
+    if (!video) return;
+    video.dataset.seekMethod = 'skip';
+    video.currentTime = 0;
+    void video.play().catch(() => undefined);
+    onReplayRef.current?.();
+  }, []);
 
   const resumeLabel = resumeFrom ? t('player.resumeFrom', {time: formatClock(resumeFrom)}) : '';
 
@@ -671,26 +884,69 @@ export function Player({slug, releaseId, title, resumeAt, onBack, theater = fals
   const rateOptions: Choice<number>[] = RATES.map(r => ({value: r, label: r === 1 ? t('player.rateNormal') : `${r}×`}));
   const captionOptions: Choice<number>[] = textTracks.length ? [{value: CAPTIONS_OFF, label: t('player.off')}, ...textTracks.map((name, i) => ({value: i, label: name}))] : [];
   const audioOptions: Choice<number>[] = audioTracks.map(t => ({value: t.id, label: t.name}));
-  const sourceOptions: Choice<number>[] = entries.map((e, i) => ({
+  const toChoice = (e: PlayEntry, i: number): Choice<number> => ({
     value: i,
     label: e.version ? `${e.name} · ${e.version}` : e.name,
     hint: [e.hint, e.render === 'external' ? t('player.openInNewTab') : ''].filter(Boolean).join(' · '),
-  }));
+  });
+  const sourceOptions: Choice<number>[] = entries.map(toChoice);
+  // Before the first start (or once every source failed in config mode) the
+  // sheet still lists play-config's sources.
+  const configSourceOptions: Choice<number>[] = configEntries.map(toChoice);
 
   const openSettings = (tab: SettingsTab) => setSettings({open: true, tab});
   const loadingSources = mode === 'pending' || (mode === 'legacy' && info.loading);
 
+  const canSwitchSource = sourceOptions.length > 1 || (mode === 'config' && configEntries.length > 1);
+  const showControls = !!stream && !touchMode && !mini;
+  const idle = showControls && !chromeVisible;
+  const peakNode =
+    stream && !touchMode && !mini && dmPrefs.showPeaks && shownCurve ? (
+      <PeakCurve
+        key={shownCurve.kind}
+        curve={shownCurve.curve}
+        kind={shownCurve.kind}
+        video={videoEl}
+        // PRD 5.5.1: no top-3 markers on a first watch with 屏蔽剧透 on.
+        showMarkers={!(dmPrefs.blockSpoiler && !resumeFrom)}
+        playId={trackerRef.current?.playId}
+      />
+    ) : null;
+
   return (
-    <div className="player-wrap">
+    <div className="player-wrap" data-mini={mini ? 'true' : undefined}>
       <div
         ref={shellRef}
         className="player-shell"
-        data-bar={phase === 'ready' ? 'true' : 'false'}
+        data-bar={phase === 'ready' && !stream ? 'true' : 'false'}
         data-fullscreen={fullscreen ? 'true' : 'false'}
         data-touch={touchMode ? 'true' : 'false'}
+        onPointerMove={event => {
+          // Touch screens toggle the controls by tapping instead.
+          if (event.pointerType === 'mouse' && !coarse) poke();
+        }}
+        onFocus={event => {
+          if (event.target instanceof HTMLElement && event.target.matches(':focus-visible')) {
+            focused.current = true;
+            poke();
+          }
+        }}
+        onBlur={event => {
+          if (!event.currentTarget.contains(event.relatedTarget as Node | null)) {
+            focused.current = false;
+            poke();
+          }
+        }}
       >
-        <div className="player">
-          {onBack && !fullscreen && (
+        <div
+          className="player"
+          data-idle={idle ? 'true' : 'false'}
+          onPointerLeave={event => {
+            // Leaving the video hides the controls at once while playing.
+            if (event.pointerType === 'mouse' && !coarse && !focused.current && videoRef.current && !videoRef.current.paused) setChromeOn(false);
+          }}
+        >
+          {onBack && !fullscreen && !mini && (
             <button type="button" className="player-back show-mobile" aria-label={t('player.back')} onClick={onBack}>
               <Icon name="back" size={22} />
             </button>
@@ -704,19 +960,34 @@ export function Player({slug, releaseId, title, resumeAt, onBack, theater = fals
                 setVideoEl(el);
               }}
               className="player-video"
-              controls={!touchMode}
+              // Our controls everywhere; iPhone fullscreen uses the native player.
+              controls={false}
               autoPlay
               playsInline
               aria-label={title}
+              onClick={() => {
+                if (mini) return;
+                if (coarse) {
+                  // Touch: a tap shows / hides the controls; the buttons do the rest.
+                  if (chromeVisible && videoRef.current && !videoRef.current.paused) setChromeOn(false);
+                  else poke();
+                  return;
+                }
+                togglePlay();
+                poke();
+              }}
               onLoadedMetadata={event => {
                 const video = event.currentTarget;
                 video.playbackRate = rate;
                 setTextTracks(Array.from(video.textTracks).map((tr, i) => tr.label || tr.language || t('player.captionTrack', {n: i + 1})));
                 const target = pendingSeek.current;
                 pendingSeek.current = 0;
+                const armed = resumeToastArmed.current;
+                resumeToastArmed.current = false;
                 if (target > 0 && (!Number.isFinite(video.duration) || target < video.duration - 10)) {
                   video.dataset.seekMethod = 'skip';
                   video.currentTime = target;
+                  if (armed) setResumeToast(target);
                 }
               }}
               onTimeUpdate={event => {
@@ -732,7 +1003,7 @@ export function Player({slug, releaseId, title, resumeAt, onBack, theater = fals
               onError={onVideoError}
               onDoubleClick={event => {
                 // Desktop double click: our shell fullscreen, so the bar stays.
-                if (coarse) return;
+                if (coarse || mini) return;
                 event.preventDefault();
                 void toggleFullscreen();
               }}
@@ -759,6 +1030,7 @@ export function Player({slug, releaseId, title, resumeAt, onBack, theater = fals
             </div>
           ) : mode === 'legacy' && info.error ? (
             <div className="player-state">
+              <Icon name="alert" size={28} />
               <strong>{t('player.unavailable')}</strong>
               <span>{info.error instanceof ApiError && info.error.status === 404 ? t('player.noSource') : info.error.message}</span>
               <button type="button" className="btn btn-on-dark" onClick={info.reload}>
@@ -766,15 +1038,24 @@ export function Player({slug, releaseId, title, resumeAt, onBack, theater = fals
               </button>
             </div>
           ) : phase === 'failed' ? (
-            <div className="player-state">
+            <div className="player-state" role="alert">
+              <Icon name="alert" size={28} />
               <strong>{t('player.unavailable')}</strong>
               <span>{failure}</span>
-              <button type="button" className="btn btn-on-dark" onClick={() => void start()}>
-                {t('player.retry')}
-              </button>
+              <div className="player-state-actions">
+                <button type="button" className="btn btn-primary" onClick={() => void start()}>
+                  {t('player.retry')}
+                </button>
+                {canSwitchSource && (
+                  <button type="button" className="btn btn-on-dark" onClick={() => openSettings('source')}>
+                    {t('pc.switchSource')}
+                  </button>
+                )}
+              </div>
             </div>
           ) : loadingSources || phase === 'resolving' ? (
             <div className="player-state" aria-live="polite">
+              <span className="pc-spinner" aria-hidden="true" />
               {(config.slow || info.slow || phase === 'resolving') && <span>{phase === 'resolving' ? t('player.resolving') : t('player.finding')}</span>}
             </div>
           ) : (
@@ -799,15 +1080,79 @@ export function Player({slug, releaseId, title, resumeAt, onBack, theater = fals
             />
           )}
 
-          {stream && <DanmakuLayer ref={dmLayer} video={videoEl} feed={dmFeed} prefs={dmPrefs} reducedMotion={reducedMotion} />}
+          {stream && !mini && <DanmakuLayer ref={dmLayer} video={videoEl} feed={dmFeed} prefs={dmPrefs} reducedMotion={reducedMotion} />}
 
-          {overlay}
+          {showControls && buffering && !clock.paused && <BufferingSpinner offline={!online} />}
+          {showControls && !online && !buffering && !clock.paused && (
+            <div className="pc-offline" role="status">
+              <Icon name="offline" size={16} />
+              {t('pc.offlineBuffered')}
+            </div>
+          )}
+          {showControls && !clock.ended && <CenterPlay paused={clock.paused && !buffering} pulse={reducedMotion ? null : pulse} onToggle={togglePlay} />}
+          {showControls && clock.ended && <EndScreen items={related} onReplay={replay} countdown={!!overlay} />}
+
+          {!mini && overlay}
+
+          {showControls && resumeToast !== null && !clock.ended && (
+            <ResumeToast
+              at={resumeToast}
+              onClose={closeResumeToast}
+              onStartOver={() => {
+                const video = videoRef.current;
+                if (video) {
+                  video.currentTime = 0;
+                  void video.play().catch(() => undefined);
+                }
+                setResumeToast(null);
+              }}
+            />
+          )}
+
+          {showControls && (
+            <PlayerControls
+              video={videoEl}
+              clock={clock}
+              visible={chromeVisible}
+              chapters={chapters}
+              previewSrc={stream && !isHlsEntry(stream) ? stream.url : undefined}
+              previewEnabled={finePointer}
+              peak={peakNode}
+              menus={
+                <>
+                  {qualityOptions.length > 0 && (
+                    <PlayerMenu label={t('player.quality')} buttonText={qualityText} options={qualityOptions} value={level} onChange={chooseLevel} />
+                  )}
+                  <PlayerMenu label={t('player.rate')} buttonText={rate === 1 ? t('player.rate') : `${rate}×`} options={rateOptions} value={rate} onChange={chooseRate} />
+                </>
+              }
+              captions={{available: textTracks.length > 0, on: caption !== CAPTIONS_OFF, toggle: toggleCaptions}}
+              pip={pipSupported ? {active: pip, toggle: () => void togglePip()} : undefined}
+              theater={onToggleTheater ? {active: theater, toggle: onToggleTheater} : undefined}
+              fullscreen={{active: fullscreen, toggle: () => void toggleFullscreen()}}
+              onTogglePlay={() => {
+                togglePlay();
+                poke();
+              }}
+              onOpenSettings={() => openSettings(stream ? 'quality' : 'source')}
+              onHoldChange={on => {
+                hold.current = on;
+                if (on) setChromeOn(true);
+                else poke();
+              }}
+              showVolumeSlider={!coarse}
+            />
+          )}
 
           <div className="player-flash" role="status" aria-live="polite">
-            {flash && <span>{flash}</span>}
+            {flash && !mini && (
+              <span key={flash.key} data-long={flash.long ? 'true' : undefined}>
+                {flash.text}
+              </span>
+            )}
           </div>
 
-          {notice && (
+          {notice && !mini && (
             <div className="player-notice" role="status">
               {notice}
               <button type="button" className="icon-btn icon-btn-sm" aria-label={t('player.closeNotice')} onClick={() => setNotice('')}>
@@ -817,52 +1162,14 @@ export function Player({slug, releaseId, title, resumeAt, onBack, theater = fals
           )}
         </div>
 
-        {stream && !touchMode && dmPrefs.showPeaks && shownCurve && (
-          <PeakCurve
-            key={shownCurve.kind}
-            curve={shownCurve.curve}
-            kind={shownCurve.kind}
-            video={videoEl}
-            // PRD 5.5.1: no top-3 markers on a first watch with 屏蔽剧透 on.
-            showMarkers={!(dmPrefs.blockSpoiler && !resumeFrom)}
-            playId={trackerRef.current?.playId}
-          />
-        )}
-
-        {phase === 'ready' && !touchMode && (
+        {/* Embeds bring their own controls: a small bar for settings / fullscreen. */}
+        {phase === 'ready' && !stream && !touchMode && !mini && (
           <div className="player-bar" role="toolbar" aria-label={t('player.toolbar')}>
-            {/* Desktop: inline menus (video sources only; embeds bring their own controls). */}
-            {stream && (
-              <div className="pbar-group hide-mobile">
-                {qualityOptions.length > 0 && (
-                  <PlayerMenu label={t('player.quality')} buttonText={qualityText} options={qualityOptions} value={level} onChange={chooseLevel} />
-                )}
-                <PlayerMenu label={t('player.rate')} buttonText={rate === 1 ? t('player.rate') : `${rate}×`} options={rateOptions} value={rate} onChange={chooseRate} />
-                <button
-                  type="button"
-                  className="pbar-btn pbar-text"
-                  aria-pressed={caption !== CAPTIONS_OFF}
-                  aria-disabled={textTracks.length === 0}
-                  title={textTracks.length === 0 ? t('player.noCaptionsShort') : t('player.captionsKey')}
-                  onClick={toggleCaptions}
-                >
-                  <Icon name="cc" size={18} />
-                  <span className="sr-only">{t('player.captions')}</span>
-                </button>
-              </div>
-            )}
-            {/* Mobile: one button opens MobileSources. */}
-            <button type="button" className="pbar-btn pbar-text show-mobile" onClick={() => openSettings(stream ? 'quality' : 'source')}>
+            <button type="button" className="pbar-btn pbar-text" onClick={() => openSettings('source')}>
               <Icon name="settings" size={18} />
               {t('player.settings')}
-              {rate !== 1 ? ` · ${rate}×` : ''}
             </button>
             <span className="section-spacer" />
-            {pipSupported && stream && (
-              <button type="button" className="pbar-btn" aria-label={pip ? t('player.exitPip') : t('player.pip')} aria-pressed={pip} title={t('player.pip')} onClick={togglePip}>
-                <Icon name="pip" size={20} />
-              </button>
-            )}
             {onToggleTheater && !fullscreen && (
               <button
                 type="button"
@@ -881,7 +1188,7 @@ export function Player({slug, releaseId, title, resumeAt, onBack, theater = fals
           </div>
         )}
 
-        {stream && !touchMode && (
+        {stream && !touchMode && !mini && (
           <DanmakuBar
             slug={slug}
             releaseId={releaseId}
@@ -894,32 +1201,39 @@ export function Player({slug, releaseId, title, resumeAt, onBack, theater = fals
           />
         )}
 
-        <DanmakuListSheet open={dmListOpen} onClose={() => setDmListOpen(false)} feed={dmFeed} video={videoEl} container={fullscreen ? shellRef.current : null} />
+        {!mini && (
+          <>
+            <DanmakuListSheet open={dmListOpen} onClose={() => setDmListOpen(false)} feed={dmFeed} video={videoEl} container={fullscreen ? shellRef.current : null} />
 
-        <PlayerSettingsSheet
-          open={settings.open}
-          initialTab={settings.tab}
-          onClose={() => setSettings(s => ({...s, open: false}))}
-          container={fullscreen ? shellRef.current : null}
-          source={{options: sourceOptions, value: current, onChange: i => switchTo(i), versioned: mode === 'config'}}
-          quality={{options: qualityOptions, value: level, onChange: chooseLevel}}
-          rate={{options: rateOptions, value: rate, onChange: chooseRate}}
-          captions={{options: captionOptions, value: caption, onChange: chooseCaption}}
-          audio={{options: audioOptions, value: audioTrack, onChange: chooseAudio}}
-          danmaku={stream ? <DanmakuSettings /> : undefined}
-        />
+            <PlayerSettingsSheet
+              open={settings.open}
+              initialTab={settings.tab}
+              onClose={() => setSettings(s => ({...s, open: false}))}
+              container={fullscreen ? shellRef.current : null}
+              source={{
+                options: sourceOptions.length > 0 ? sourceOptions : configSourceOptions,
+                value: current,
+                onChange: i => {
+                  const wasReady = phase === 'ready';
+                  pickSource(i);
+                  if (!wasReady) setSettings(s => ({...s, open: false}));
+                },
+                versioned: mode === 'config',
+              }}
+              quality={{options: qualityOptions, value: level, onChange: chooseLevel}}
+              rate={{options: rateOptions, value: rate, onChange: chooseRate}}
+              captions={{options: captionOptions, value: caption, onChange: chooseCaption}}
+              audio={{options: audioOptions, value: audioTrack, onChange: chooseAudio}}
+              danmaku={stream ? <DanmakuSettings /> : undefined}
+            />
+          </>
+        )}
       </div>
 
       {/* Video 片源 row (PRD 5.2): desktop only; phones switch in the settings sheet. */}
-      {mode === 'config' && !fullscreen && (
-        <SourcesRow
-          entries={configEntries}
-          current={phase === 'ready' ? current : -1}
-          onPick={i => (phase === 'ready' ? switchTo(i) : void start(i))}
-        />
-      )}
+      {mode === 'config' && !fullscreen && !mini && <SourcesRow entries={configEntries} current={phase === 'ready' ? current : -1} onPick={pickSource} />}
 
-      {mode === 'legacy' && entries.length > 1 && !fullscreen && (
+      {mode === 'legacy' && entries.length > 1 && !fullscreen && !mini && (
         <div className="stream-row" role="group" aria-label={t('player.lines')}>
           <span className="stream-label">{t('player.line')}</span>
           {entries.map((s, i) => (
@@ -928,7 +1242,7 @@ export function Player({slug, releaseId, title, resumeAt, onBack, theater = fals
               type="button"
               className={i === current ? 'chip chip-on' : 'chip'}
               aria-pressed={i === current}
-              onClick={() => switchTo(i)}
+              onClick={() => pickSource(i)}
             >
               {s.hint || s.name}
             </button>

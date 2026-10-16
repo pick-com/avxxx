@@ -4,6 +4,8 @@ import {Avatar, ReleaseRow, SectionHeader} from '../components/Cards';
 import {Icon} from '../components/Icon';
 import {PerformerHoverCard, PerformerSheet} from '../components/PerformerPeek';
 import {Player} from '../components/Player';
+import {HostedPlayer} from '../components/PlayerHost';
+import type {EndItem} from '../components/PlayerStates';
 import {Community} from '../components/Ratings';
 import {LaterButton, ReserveButton} from '../components/SocialButtons';
 import {BlockSkeleton, CardGridSkeleton, EmptyState, ErrorBanner} from '../components/States';
@@ -72,6 +74,7 @@ export default function ReleasePage() {
   const entryReason = typeof linkState?.reason === 'string' ? linkState.reason : undefined;
   const [ended, setEnded] = useState(false);
   const [related, setRelated] = useState<NextUp | null>(null);
+  const [endItems, setEndItems] = useState<EndItem[]>([]);
   const queueNext = useAsync(signal => getRelease(nextSlug ?? '', signal), [nextSlug], !!nextSlug && ended);
   const next = nextSlug
     ? queueNext.data
@@ -85,6 +88,7 @@ export default function ReleasePage() {
     setSheetPerformer(null);
     setEnded(false);
     setRelated(null);
+    setEndItems([]);
   }, [slug]);
 
   const release = detail.data?.[0];
@@ -123,7 +127,9 @@ export default function ReleasePage() {
   return (
     <div className="video-page" data-theater={theater && !mobile ? 'true' : 'false'}>
       <div className="video-main">
-        <Player
+        {/* PlayerHost keeps this instance playing in the mobile mini bar after leaving. */}
+        <HostedPlayer
+          component={Player}
           slug={slug}
           releaseId={release?.id}
           title={release?.canonical_title ?? ''}
@@ -134,6 +140,8 @@ export default function ReleasePage() {
           autoStart={autoStart}
           entryReason={entryReason}
           onEnded={() => setEnded(true)}
+          onReplay={() => setEnded(false)}
+          related={endItems}
           overlay={
             ended && prefs.autoplay && next && release ? (
               <AutoplayNext
@@ -207,7 +215,7 @@ export default function ReleasePage() {
 
       <aside className="video-aside" aria-label={t('release.upNext')}>
         {queue && queueIndex >= 0 && <QueuePanel slugs={queue.slugs} index={queueIndex} />}
-        {release && <UpNext slug={slug} performer={performers[0]} onFirst={setRelated} />}
+        {release && <UpNext slug={slug} performer={performers[0]} onFirst={setRelated} onList={setEndItems} />}
       </aside>
     </div>
   );
@@ -306,12 +314,28 @@ function CastMember({performer, releaseDate, onOpen}: {performer: Performer; rel
 type NextUp = {id: number; slug: string; title: string; reason?: string};
 
 /** 接下来播放: the related recs, else the same-performer list. */
-function UpNext({slug, performer, onFirst}: {slug: string; performer?: Performer; onFirst: (next: NextUp | null) => void}) {
+function UpNext({slug, performer, onFirst, onList}: {
+  slug: string;
+  performer?: Performer;
+  onFirst: (next: NextUp | null) => void;
+  /** The first six, for the player's end screen. */
+  onList: (items: EndItem[]) => void;
+}) {
   const recs = useAsync(signal => getRecs('related', {release: slug, limit: 20}, signal), [slug]);
   const items = (recs.data?.items ?? []).filter(it => it.slug !== slug);
   if (recs.loading) return null;
-  if (recs.error || items.length === 0) return performer ? <SamePerformer performer={performer} currentSlug={slug} onFirst={onFirst} /> : null;
-  return <RelatedList items={items} onFirst={onFirst} />;
+  if (recs.error || items.length === 0) return performer ? <SamePerformer performer={performer} currentSlug={slug} onFirst={onFirst} onList={onList} /> : null;
+  return <RelatedList items={items} onFirst={onFirst} onList={onList} />;
+}
+
+/** Reports the end-screen list whenever its slugs change. */
+function useEndList(list: EndItem[], onList?: (items: EndItem[]) => void) {
+  const key = list.map(i => i.slug).join(',');
+  const latest = useRef(list);
+  latest.current = list;
+  useEffect(() => {
+    onList?.(latest.current);
+  }, [key, onList]);
 }
 
 const RELATED_TABS: {key: RelatedTab; label: MessageKey}[] = [
@@ -320,8 +344,17 @@ const RELATED_TABS: {key: RelatedTab; label: MessageKey}[] = [
   {key: 'series', label: 'related.series'},
 ];
 
-function RelatedList({items, onFirst}: {items: RecItem[]; onFirst: (next: NextUp | null) => void}) {
+function RelatedList({items, onFirst, onList}: {items: RecItem[]; onFirst: (next: NextUp | null) => void; onList?: (items: EndItem[]) => void}) {
   const t = useT();
+  useEndList(
+    items.slice(0, 6).map(it => ({
+      slug: it.slug,
+      title: recTitle(it),
+      reasonCode: it.reason.code,
+      badge: it.runtime_minutes ? t('card.minutes', {n: it.runtime_minutes}) : undefined,
+    })),
+    onList,
+  );
   const [tab, setTab] = useState<RelatedTab>('all');
   const tabs = RELATED_TABS.filter(x => items.some(it => inRelatedTab(it, x.key)));
   const active = tabs.some(x => x.key === tab) ? tab : 'all';
@@ -367,15 +400,20 @@ function RelatedList({items, onFirst}: {items: RecItem[]; onFirst: (next: NextUp
   );
 }
 
-function SamePerformer({performer, currentSlug, onFirst}: {
+function SamePerformer({performer, currentSlug, onFirst, onList}: {
   performer: Performer;
   currentSlug: string;
   /** The autoplay candidate (first work in the list). */
   onFirst?: (next: NextUp | null) => void;
+  onList?: (items: EndItem[]) => void;
 }) {
   const t = useT();
   const works = useAsync(signal => getPerformerReleases(performer.slug, 12, signal), [performer.slug]);
   const list = (works.data ?? []).filter(r => r.slug !== currentSlug).slice(0, 10);
+  useEndList(
+    list.slice(0, 6).map(r => ({slug: r.slug, title: r.canonical_title, badge: r.runtime_minutes ? t('card.minutes', {n: r.runtime_minutes}) : undefined})),
+    onList,
+  );
   const first = list[0];
   useEffect(() => {
     onFirst?.(first ? {id: first.id, slug: first.slug, title: first.canonical_title} : null);

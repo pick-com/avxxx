@@ -449,6 +449,8 @@ export type PlayConfig = {
   replay_curve?: number[] | null;
   /** Curve to show with danmaku on: 70 % danmaku + 30 % replay, or whichever exists. */
   peak_curve?: number[] | null;
+  /** Chapters of the main timeline (tech plan 3.3: start_ms, title); empty until release_assets land. */
+  chapters?: {start_ms?: number; start_seconds?: number; title?: string}[] | null;
 };
 
 /**

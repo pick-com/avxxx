@@ -3,6 +3,7 @@ import {Outlet, useLocation, useMatches, useNavigate} from 'react-router';
 import {BottomTabs} from '../components/BottomTabs';
 import {Footer} from '../components/Footer';
 import {NetworkBanner} from '../components/NetworkBanner';
+import {PlayerHostLayer, PlayerHostProvider, useMiniActive, usePlayerHostStore} from '../components/PlayerHost';
 import {SideNav, type NavVariant} from '../components/SideNav';
 import {TopBar} from '../components/TopBar';
 import {useT} from '../lib/i18n';
@@ -22,7 +23,17 @@ type NavMode = 'auto' | 'open' | 'collapsed';
  * or opens the full nav as an overlay at narrower widths and on the video page.
  */
 export default function Shell() {
+  const host = usePlayerHostStore();
+  return (
+    <PlayerHostProvider value={host}>
+      <ShellFrame />
+    </PlayerHostProvider>
+  );
+}
+
+function ShellFrame() {
   const t = useT();
+  const mini = useMiniActive();
   const matches = useMatches();
   const immersive = matches.some(m => (m.handle as ShellHandle | undefined)?.immersive);
   const location = useLocation();
@@ -66,7 +77,7 @@ export default function Shell() {
   };
 
   return (
-    <div className="shell" data-immersive={immersive ? 'true' : 'false'}>
+    <div className="shell" data-immersive={immersive ? 'true' : 'false'} data-mini={mini && !immersive ? 'true' : 'false'}>
       <a href="#main" className="skip-link">
         {t('shell.skipToMain')}
       </a>
@@ -80,6 +91,8 @@ export default function Shell() {
           {!immersive && <Footer />}
         </main>
       </div>
+      {/* One player instance: the release page's slot, the mini bar or PiP. */}
+      <PlayerHostLayer />
       <BottomTabs />
     </div>
   );

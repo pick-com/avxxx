@@ -2961,7 +2961,7 @@ a.chip {
     gap: 20px;
   }
 
-  .video-main > :not(.player-wrap):not(.info-card),
+  .video-main > :not(.player-wrap):not(.player-slot):not(.info-card),
   .video-aside {
     padding: 0 var(--gutter);
   }
