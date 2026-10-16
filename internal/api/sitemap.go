@@ -36,7 +36,7 @@ import (
 )
 
 // SEOCheckJob is the nightly_runs.job of a recorded SEO check.
-const SEOCheckJob = "seo.check"
+const SEOCheckJob = audit.SEOCheckJob
 
 type sitemapStore interface {
 	SitemapReleases(ctx context.Context, cursor string, limit int) ([]store.SitemapEntry, string, error)

@@ -20,7 +20,6 @@ var stubNotes = map[Rule]string{
 	RuleWatermark:   "needs frame sampling of self-hosted media; no media pipeline output is stored yet",
 	RuleSubtitles:   "needs subtitle tracks per release; no subtitle table exists yet",
 	RuleScreenshots: "needs screenshot/chapter assets per release; media_assets has no screenshot asset type populated yet",
-	RuleSEO:         "needs sitemap / search-console coverage data; not collected yet",
 	RuleStats: "no cached per-performer works_count / latest_release_date columns exist: performer lists compute them " +
 		"at query time (store.PerformerPage); rebuild lands with performer_stats (tech plan 3.13)",
 }
@@ -36,6 +35,21 @@ type Runner struct {
 	BatchSize int              // releases per PublishedReleases page
 	TrimLimit int              // max R-TITLE candidates per run
 	JobID     int64            // jobs.id, recorded on nightly_runs rows
+	// Rules limits a run to these rules (still in AllRules order); empty
+	// runs them all. audit -once -rules R-SEO runs one rule by hand.
+	Rules []Rule
+}
+
+func (r *Runner) selected(rule Rule) bool {
+	if len(r.Rules) == 0 {
+		return true
+	}
+	for _, x := range r.Rules {
+		if x == rule {
+			return true
+		}
+	}
+	return false
 }
 
 // Report summarizes one full run, one entry per rule in AllRules order.
@@ -72,13 +86,16 @@ type ruleOutcome struct {
 	detail                 map[string]any
 }
 
-// Run executes every rule in AllRules order and records one nightly_runs row
-// per rule. A failing rule does not stop the others; their errors are joined
+// Run executes every rule in AllRules order (or the selected Rules) and
+// records one nightly_runs row per rule. A failing rule does not stop the others; their errors are joined
 // and returned so the job is marked failed and retried.
 func (r *Runner) Run(ctx context.Context) (Report, error) {
 	rep := Report{StartedAt: r.now()}
 	var errs []error
 	for _, rule := range AllRules {
+		if !r.selected(rule) {
+			continue
+		}
 		if err := ctx.Err(); err != nil {
 			errs = append(errs, err)
 			break
@@ -122,6 +139,8 @@ func (r *Runner) runRule(ctx context.Context, rule Rule, start time.Time) (ruleO
 		return r.ruleSource(ctx, start)
 	case RulePerformerName:
 		return r.rulePerformerName(ctx, start)
+	case RuleSEO:
+		return r.ruleSEO(ctx, start)
 	}
 	if note, ok := stubNotes[rule]; ok {
 		return ruleOutcome{notApplicable: true, detail: map[string]any{"note": note}}, nil

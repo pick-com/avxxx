@@ -32,7 +32,7 @@ const (
 	RuleWatermark    Rule = "R-WATERMARK"  // B: watermark (stub)
 	RuleSubtitles    Rule = "R-SUBTITLE"   // D: subtitles (stub)
 	RuleScreenshots  Rule = "R-SCREENSHOT" // F: screenshots (stub)
-	RuleSEO          Rule = "R-SEO"        // H: 收录检查 / SEO coverage (stub)
+	RuleSEO          Rule = "R-SEO"        // H: 收录检查 / SEO coverage (seo.go)
 )
 
 // AllRules is the run order. R-AGE always runs first.
@@ -183,4 +183,15 @@ type Store interface {
 	// PerformerNames returns unmerged, not hidden performers with id >
 	// afterID in id order, at most limit of them (R-PERFORMER-NAME).
 	PerformerNames(ctx context.Context, afterID int64, limit int) ([]PerformerNameFacts, error)
+	// SEOEntities returns the sitemap-listed releases or performers
+	// (entityType) with id > afterID in id order, at most limit (R-SEO).
+	SEOEntities(ctx context.Context, entityType string, afterID int64, limit int) ([]SEOFacts, error)
+	// SEODuplicateTitles returns the groups of sitemap-listed releases that
+	// share a normalized canonical title (Lang "") or reviewed title
+	// translation (Lang set).
+	SEODuplicateTitles(ctx context.Context) ([]TitleGroup, error)
+	// SEOSite returns catalog-wide counts for the R-SEO run detail.
+	SEOSite(ctx context.Context) (SEOSiteFacts, error)
+	// LatestRun returns the newest nightly_runs row of job, or ok=false.
+	LatestRun(ctx context.Context, job string) (Run, bool, error)
 }
