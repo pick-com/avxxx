@@ -84,6 +84,10 @@ type Server struct {
 	// the admin media routes (images.go). Without S3_* only the admin
 	// routes exist and responses carry no image fields.
 	img imageServing
+	// home backs the home slots, 高分短片, announcements and the AdminOps
+	// routes (home.go); homeCache holds their short-lived public responses.
+	home      homeStore
+	homeCache *respCache
 	// adminToken is ADMIN_TOKEN, read once at construction. Empty disables
 	// every admin route (they all return 401).
 	adminToken string
@@ -141,6 +145,8 @@ func Register(mux *http.ServeMux, s *store.Store, mediaHandler *media.Handler) {
 		srv.reports = s
 		srv.splitter = s
 		srv.setupImages(s)
+		srv.home = s
+		srv.homeCache = newRespCache()
 	}
 	srv.linkOnDemand = medialink.OnDemandFromEnv(os.Getenv("MEDIA_LINK_ON_DEMAND"))
 	for _, rt := range srv.routes() {
@@ -178,6 +184,8 @@ func (srv *Server) routes() []route {
 	rs = append(rs, srv.sitemapRoutes()...)
 	rs = append(rs, srv.attributionRoutes()...)
 	rs = append(rs, srv.imageRoutes()...)
+	rs = append(rs, srv.homeRoutes()...)
+	rs = append(rs, srv.adminOpsRoutes()...)
 	return srv.followMerges(rs)
 }
 

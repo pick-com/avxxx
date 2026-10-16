@@ -201,6 +201,22 @@ var expectedRoutes = []string{
 	"POST /api/admin/media/{id}/suppress",
 	"POST /api/admin/media/{id}/restore",
 	"PUT /api/admin/sources/{id}/images",
+	// Home curation, 高分短片 and announcements (home.go).
+	"GET /api/home/slots",
+	"GET /api/home/top-rated-short",
+	"GET /api/announcements",
+	"GET /api/me/announcement-dismissals",
+	"PUT /api/me/announcement-dismissals/{id}",
+	"GET /api/admin/home-slots",
+	"POST /api/admin/home-slots",
+	"PUT /api/admin/home-slots/{id}",
+	"DELETE /api/admin/home-slots/{id}",
+	"POST /api/admin/home-slots/reorder",
+	"GET /api/admin/home-slots/preview",
+	"GET /api/admin/announcements",
+	"POST /api/admin/announcements",
+	"PUT /api/admin/announcements/{id}",
+	"DELETE /api/admin/announcements/{id}",
 }
 
 var (
