@@ -15,33 +15,58 @@ import (
 type Handler struct {
 	service *Service
 	cache   *ResultCache
-	// resolveTTL caches successful resolve results per (source, id); 0
-	// disables it. Stream URLs carry expiring tokens, so keep it short.
-	resolveTTL time.Duration
+	// resolves caches successful resolve results per (source, id)
+	// (resolve_cache.go); MEDIA_RESOLVE_TTL 0 disables it.
+	resolves *resolveCache
 }
 
 // DefaultResolveTTL is MEDIA_RESOLVE_TTL's default.
 const DefaultResolveTTL = 5 * time.Minute
 
 // NewHandler builds the HTTP handler. MEDIA_RESOLVE_TTL (a Go duration,
-// default 5m, 0 disables) sets how long a successful resolve is reused.
+// default 5m, 0 disables) is the sliding reuse window of a successful
+// resolve; MEDIA_RESOLVE_MAX_AGE (default 30m) caps a result's total age
+// when its streams' expiry is unknown.
 func NewHandler(service *Service) *Handler {
-	return &Handler{service: service, cache: NewResultCache(), resolveTTL: ResolveTTLFromEnv(os.Getenv("MEDIA_RESOLVE_TTL"))}
+	ttl := ResolveTTLFromEnv(os.Getenv("MEDIA_RESOLVE_TTL"))
+	maxAge := ResolveMaxAgeFromEnv(os.Getenv("MEDIA_RESOLVE_MAX_AGE"))
+	return &Handler{service: service, cache: NewResultCache(), resolves: newResolveCache(ttl, maxAge)}
+}
+
+// UseResolveStore shares resolve results through st (Postgres
+// media_resolve_cache) behind the in-process cache. Call before serving.
+func (h *Handler) UseResolveStore(st ResolveStore) {
+	if h != nil && h.resolves != nil {
+		h.resolves.store = st
+	}
 }
 
 // ResolveTTLFromEnv parses MEDIA_RESOLVE_TTL: empty or invalid gives
 // DefaultResolveTTL, zero or negative disables the cache.
 func ResolveTTLFromEnv(v string) time.Duration {
+	return max(durationFromEnv("MEDIA_RESOLVE_TTL", v, DefaultResolveTTL), 0)
+}
+
+// ResolveMaxAgeFromEnv parses MEDIA_RESOLVE_MAX_AGE: empty, invalid, zero
+// or negative gives DefaultResolveMaxAge.
+func ResolveMaxAgeFromEnv(v string) time.Duration {
+	if d := durationFromEnv("MEDIA_RESOLVE_MAX_AGE", v, DefaultResolveMaxAge); d > 0 {
+		return d
+	}
+	return DefaultResolveMaxAge
+}
+
+func durationFromEnv(name, v string, def time.Duration) time.Duration {
 	v = strings.TrimSpace(v)
 	if v == "" {
-		return DefaultResolveTTL
+		return def
 	}
 	d, err := time.ParseDuration(v)
 	if err != nil {
-		log.Printf("invalid MEDIA_RESOLVE_TTL %q, using %s", v, DefaultResolveTTL)
-		return DefaultResolveTTL
+		log.Printf("invalid %s %q, using %s", name, v, def)
+		return def
 	}
-	return max(d, 0)
+	return d
 }
 
 // Service is the media service behind the handler (nil-safe).
@@ -82,8 +107,11 @@ func (h *Handler) Detail(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, v)
 }
 
+// Resolve serves POST /api/resolve/{source}/{id...}. ?refresh=1 asks for a
+// fresh provider read because a cached stream URL failed to play.
 func (h *Handler) Resolve(w http.ResponseWriter, r *http.Request) {
-	v, err := h.resolve(r.Context(), r.PathValue("source"), r.PathValue("id"))
+	refresh := r.URL.Query().Get("refresh") == "1"
+	v, err := h.resolve(r.Context(), r.PathValue("source"), r.PathValue("id"), refresh)
 	if err != nil {
 		writeMediaError(w, err)
 		return
@@ -92,39 +120,27 @@ func (h *Handler) Resolve(w http.ResponseWriter, r *http.Request) {
 }
 
 // resolve returns a cached result for (source, id) while it is fresh, so
-// repeated plays don't refetch the provider page. Errors are never cached,
-// and a result never outlives its streams' earliest expires_at.
-func (h *Handler) resolve(ctx context.Context, source, id string) (*ResolveResult, error) {
+// repeated plays don't refetch the provider page (resolve_cache.go). Errors
+// are never cached. refresh evicts the entry and re-resolves, at most once
+// per DefaultResolveRefreshInterval per (source, id); a refused refresh is
+// an ordinary lookup.
+func (h *Handler) resolve(ctx context.Context, source, id string, refresh bool) (*ResolveResult, error) {
+	c := h.resolves
+	if !c.enabled() {
+		return h.service.Resolve(ctx, source, id)
+	}
 	key := "resolve:" + strings.ToLower(source) + "\x00" + id
-	if h.resolveTTL > 0 {
-		if v, ok := h.cache.Get(key); ok {
-			return v.(*ResolveResult), nil
-		}
+	if refresh && c.allowRefresh(key) {
+		c.evict(ctx, key)
+	} else if v, ok := c.get(ctx, key); ok {
+		return v, nil
 	}
 	v, err := h.service.Resolve(ctx, source, id)
 	if err != nil {
 		return nil, err
 	}
-	if ttl := resolveCacheTTL(v, h.resolveTTL, h.cache.now()); ttl > 0 {
-		h.cache.Set(key, v, ttl)
-	}
+	c.put(ctx, key, v)
 	return v, nil
-}
-
-// resolveCacheTTL caps ttl so a cached result expires at least 30 s before
-// the earliest stream expiry.
-func resolveCacheTTL(v *ResolveResult, ttl time.Duration, now time.Time) time.Duration {
-	if v == nil || ttl <= 0 {
-		return 0
-	}
-	for _, list := range [][]Stream{v.Streams, v.Subtitles} {
-		for _, st := range list {
-			if st.ExpiresAt != nil {
-				ttl = min(ttl, st.ExpiresAt.Sub(now)-30*time.Second)
-			}
-		}
-	}
-	return max(ttl, 0)
 }
 
 const timeMinute = 60 * 1e9

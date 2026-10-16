@@ -2,6 +2,7 @@ package media
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
@@ -34,18 +35,31 @@ func (a *countingAdapter) Resolve(_ context.Context, id string) (*ResolveResult,
 func newTestHandler(a Adapter, ttl time.Duration, clock func() time.Time) *Handler {
 	reg := NewRegistry()
 	reg.Register(a)
-	h := &Handler{service: NewService(reg), cache: NewResultCache(), resolveTTL: ttl}
+	h := &Handler{service: NewService(reg), cache: NewResultCache(), resolves: newResolveCache(ttl, DefaultResolveMaxAge)}
 	h.cache.clock = clock
+	h.resolves.clock = clock
 	return h
 }
 
 func resolveOnce(t *testing.T, h *Handler, id string) int {
 	t.Helper()
+	code, _ := resolveURL(t, h, "/api/resolve/fake/"+id)
+	return code
+}
+
+// resolveURL posts to path and returns the status and the first stream URL.
+func resolveURL(t *testing.T, h *Handler, path string) (int, string) {
+	t.Helper()
 	mux := http.NewServeMux()
 	mux.HandleFunc("POST /api/resolve/{source}/{id...}", h.Resolve)
 	rec := httptest.NewRecorder()
-	mux.ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/api/resolve/fake/"+id, nil))
-	return rec.Code
+	mux.ServeHTTP(rec, httptest.NewRequest(http.MethodPost, path, nil))
+	var v ResolveResult
+	_ = json.Unmarshal(rec.Body.Bytes(), &v)
+	if len(v.Streams) == 0 {
+		return rec.Code, ""
+	}
+	return rec.Code, v.Streams[0].URL
 }
 
 func TestResolveCacheTTL(t *testing.T) {
@@ -116,12 +130,17 @@ func TestResolveCacheTTLHelpers(t *testing.T) {
 	now := time.Date(2026, 10, 16, 12, 0, 0, 0, time.UTC)
 	exp := now.Add(2 * time.Minute)
 	v := &ResolveResult{Streams: []Stream{{URL: "https://x/1", ExpiresAt: &exp}}}
-	if got := resolveCacheTTL(v, 5*time.Minute, now); got != 90*time.Second {
-		t.Errorf("capped ttl = %s, want 1m30s", got)
+	if got := slideExpiry(now, 5*time.Minute, resolveHardCap(v, now, DefaultResolveMaxAge)); got.Sub(now) != 90*time.Second {
+		t.Errorf("capped ttl = %s, want 1m30s", got.Sub(now))
 	}
 	for in, want := range map[string]time.Duration{"": DefaultResolveTTL, "bogus": DefaultResolveTTL, "30s": 30 * time.Second, "0": 0, "-1m": 0} {
 		if got := ResolveTTLFromEnv(in); got != want {
 			t.Errorf("ResolveTTLFromEnv(%q) = %s, want %s", in, got, want)
+		}
+	}
+	for in, want := range map[string]time.Duration{"": DefaultResolveMaxAge, "bogus": DefaultResolveMaxAge, "1h": time.Hour, "0": DefaultResolveMaxAge, "-1m": DefaultResolveMaxAge} {
+		if got := ResolveMaxAgeFromEnv(in); got != want {
+			t.Errorf("ResolveMaxAgeFromEnv(%q) = %s, want %s", in, got, want)
 		}
 	}
 }
