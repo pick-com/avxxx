@@ -1,5 +1,7 @@
 # 生产运维与验收
 
+> 首次部署、密钥清单、发布 / 回滚、反向代理与 TLS、备份 / 恢复 / 恢复演练和来源许可首跑清单见 **`docs/DEPLOYMENT.md`**（唯一的部署手册）。本文负责运行期：日志、指标、告警、值班处置、SEO 检查和发布验收清单。
+
 ## 部署验收
 
 部署完成后，在部署主机执行：
@@ -22,7 +24,7 @@ DATABASE_URL='postgres://user:password@host:5432/avxxx?sslmode=require' \
   ./scripts/restore-db.sh /var/backups/avxxx/avxxx-20261015T010000Z.dump
 ```
 
-建议每天执行一次全量备份，至少保留 7 个日备份和 4 个周备份；备份文件应存放在独立磁盘或对象存储，不能只放在 PostgreSQL 主机。恢复操作会覆盖同名表，必须在维护窗口执行，并在恢复后重新运行 smoke test。
+生产恢复步骤、异地拷贝和恢复演练（`make restore-drill`）见 `docs/DEPLOYMENT.md` §6–§7。建议每天执行一次全量备份，至少保留 7 个日备份和 4 个周备份；备份文件应存放在独立磁盘或对象存储，不能只放在 PostgreSQL 主机。恢复操作会覆盖同名表，必须在维护窗口执行，并在恢复后重新运行 smoke test。
 
 `scripts/backup-db.sh` 的其他选项：
 
@@ -301,7 +303,8 @@ docker compose run --rm --no-deps -e WEB_URL=http://web:3000 -e API_URL=http://a
 ```bash
 go test ./...
 go vet ./...
-make test-integration   # 需要 docker；启动一次性 postgres:17 容器（随机端口，--rm），结束后自动清理
+make test-integration   # 需要 docker；启动一次性 postgres:17 容器（随机端口，--rm），结束后自动清理；含 internal/acceptance 全量验收
+make restore-drill      # 需要 docker；最新备份（或种子库）恢复到一次性容器 + API + smoke + 行数比较
 go build ./cmd/...
 (cd web && npm run build)
 docker compose config
