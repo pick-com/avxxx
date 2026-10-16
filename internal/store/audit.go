@@ -27,6 +27,10 @@ type performerJSON struct {
 	BirthDate string `json:"birth_date"`
 }
 
+// releaseFactsSelect deliberately reads the REAL p.birth_date, never
+// PublicBirthDate: a birthday hidden at the performer's request (PRD 15,
+// migration 022) must still be checked by R-AGE, or a privacy request would
+// switch off the under-18 safety rule.
 const releaseFactsSelect = `SELECT r.id,r.canonical_title,r.status,r.release_date,COALESCE(r.shoot_year,0),COALESCE(r.runtime_minutes,0),
 	(SELECT count(*) FROM watch_history w WHERE w.release_id=r.id),
 	COALESCE((SELECT json_agg(json_build_object('id',p.id,'name',p.canonical_name,'birth_date',p.birth_date) ORDER BY rp.billing_order NULLS LAST,p.id)
