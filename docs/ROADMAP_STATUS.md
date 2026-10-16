@@ -58,7 +58,7 @@
 - [x] Jav.Guru
 - [ ] XSList（VPN/授权条件确认后启用）
 - [ ] JAVLibrary（VPN/授权条件确认后启用）
-- [ ] DMM/FANZA 官方目录或 Affiliate API（`dmm` adapter 已实现：ItemList digital/videoa + ActressSearch，来源默认停用；待配置 `DMM_API_ID`/`DMM_AFFILIATE_ID` 后先跑 `go run ./cmd/scraper -dry-run -adapter dmm` 用真实响应核对字段，再启用）
+- [ ] DMM/FANZA 官方目录或 Affiliate API — **已实现，待凭据实测**：`dmm` adapter（ItemList digital/videoa + ActressSearch `sort=-id`）已接入 baseline/增量/verify 阶段（增量用增量 checkpoint 水位推导 `gte_date` 并按头部记录停止，baseline 独立游标），走 robots/许可门禁；官方目录（优先级 10）按字段策略胜出作品身份字段。来源以 `official_api` 默认停用、`terms_reviewed_at` 为空：配置 `DMM_API_ID`/`DMM_AFFILIATE_ID`/`CATALOG_CONTACT` 后先跑 `go run ./cmd/scraper -dry-run -adapter dmm` 用真实响应核对字段（含 `sort=date`/`sort=-id` 排序方向），再记录条款审核并启用
 - [ ] 厂商目录 adapter
 - [ ] JavDB、IAFD、ThePornDB、javinfo 交叉验证 adapter
 
@@ -128,7 +128,7 @@ JAV Database adapter 已接入 scraper，可完成发现、详情抓取、解析
 
 1. 管理员为现有目录来源完成条款审核（`PUT /api/admin/sources/{id}/license`）并配置 `CATALOG_CONTACT`，否则目录来源只能运行 verify 任务。
 2. 为 JAV Database、XCITY、Jav.Guru 各保存 20 个演员、100 个作品页面作为 recorded fixture；`make fixturecheck` 达标后在 CI 中加 `-strict`。
-3. 实现 DMM/FANZA 官方目录或厂商 adapter（官方来源字段优先级最高）。
+3. 用真实凭据实测 DMM adapter（dry-run → 条款审核 → 启用），再实现厂商目录 adapter（官方来源字段优先级最高）。
 4. 前端接入 checkpoint、来源证据和更新时间展示；补系列查询 API。
 5. 目录 source record 与 Javtiful media record 自动关联。
 6. 完成监控、告警和生产验收。
