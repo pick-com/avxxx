@@ -343,22 +343,35 @@ func (s *Store) recomputeRelease(ctx context.Context, releaseID int64) (int, err
 	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
 		return 0, err
 	}
+	points, durations, err := s.releaseCurveInputs(ctx, releaseID)
+	if err != nil {
+		return 0, err
+	}
+	return s.saveReleaseCurves(ctx, releaseID, dirtySince, points, durations)
+}
+
+// releaseCurveInputs loads what a release's danmaku curves are computed
+// from: the valid danmaku per version key (visible, from users never muted,
+// in id order) and each version's duration in ms. Versions that have a curve
+// row but no valid danmaku any more map to nil points, so recomputing resets
+// them. Shared by the curve job and the R-STATS audit rule.
+func (s *Store) releaseCurveInputs(ctx context.Context, releaseID int64) (map[string][]community.CurvePoint, map[string]int, error) {
 	// Durations: main timeline from the reference duration, alt versions from
 	// their own source.
 	var runtime int
 	if err := s.QueryRow(ctx, `SELECT COALESCE(runtime_minutes,0) FROM releases WHERE id=$1`, releaseID).Scan(&runtime); err != nil {
-		return 0, err
+		return nil, nil, err
 	}
 	rows, err := s.Query(ctx, `SELECT id,version_kind,duration_seconds,priority,status FROM playback_sources WHERE release_id=$1`, releaseID)
 	if err != nil {
-		return 0, err
+		return nil, nil, err
 	}
 	srcs, err := pgx.CollectRows(rows, func(r pgx.CollectableRow) (PlaybackSource, error) {
 		var x PlaybackSource
 		return x, r.Scan(&x.ID, &x.VersionKind, &x.DurationSeconds, &x.Priority, &x.Status)
 	})
 	if err != nil {
-		return 0, err
+		return nil, nil, err
 	}
 	durations := map[string]int{}
 	if ref := ReferenceDuration(srcs, runtime); ref != nil {
@@ -375,7 +388,7 @@ func (s *Store) recomputeRelease(ctx context.Context, releaseID int64) (int, err
 		WHERE release_id=$1 AND status='visible' AND NOT EXISTS (SELECT 1 FROM user_mutes m WHERE m.user_id=d.user_id)
 		ORDER BY id`, releaseID)
 	if err != nil {
-		return 0, err
+		return nil, nil, err
 	}
 	points := map[string][]community.CurvePoint{}
 	for rows.Next() {
@@ -383,24 +396,31 @@ func (s *Store) recomputeRelease(ctx context.Context, releaseID int64) (int, err
 		var p community.CurvePoint
 		if err := rows.Scan(&k, &p.TMs, &p.UserID, &p.Body); err != nil {
 			rows.Close()
-			return 0, err
+			return nil, nil, err
 		}
 		points[k] = append(points[k], p)
 	}
 	rows.Close()
 	if err := rows.Err(); err != nil {
-		return 0, err
+		return nil, nil, err
 	}
 	// Versions that had a curve but lost every valid danmaku are reset too.
 	var existing []string
 	if err := s.QueryRow(ctx, `SELECT COALESCE(array_agg(version_key),'{}') FROM danmaku_curves WHERE release_id=$1`, releaseID).Scan(&existing); err != nil {
-		return 0, err
+		return nil, nil, err
 	}
 	for _, k := range existing {
 		if _, ok := points[k]; !ok {
 			points[k] = nil
 		}
 	}
+	return points, durations, nil
+}
+
+// saveReleaseCurves upserts the curves computed from points and clears the
+// release's queue mark if it is still dirtySince.
+func (s *Store) saveReleaseCurves(ctx context.Context, releaseID int64, dirtySince *time.Time,
+	points map[string][]community.CurvePoint, durations map[string]int) (int, error) {
 
 	tx, err := s.Begin(ctx)
 	if err != nil {

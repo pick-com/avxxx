@@ -37,6 +37,8 @@ type fakeStore struct {
 	seoDupes  []TitleGroup
 	seoSite   SEOSiteFacts
 	latestRun map[string]Run // LatestRun by job
+
+	fakeStats // R-STATS (stats_test.go)
 }
 
 func newFake(rels ...ReleaseFacts) *fakeStore {
@@ -293,7 +295,7 @@ func TestRunnerHoldsMinorsAndOpensIssues(t *testing.T) {
 	}
 	want := map[string]string{
 		"audit.R-AGE": ResultIssues, "audit.R-META": ResultIssues, "audit.R-TITLE": ResultIssues,
-		"audit.R-STATS": ResultNotApplicable, "audit.R-SOURCE": ResultNotApplicable, "audit.R-SEO": ResultOK,
+		"audit.R-STATS": ResultOK, "audit.R-SOURCE": ResultNotApplicable, "audit.R-SEO": ResultOK,
 	}
 	for i, run := range f.runs {
 		if run.Job != "audit."+string(AllRules[i]) || run.JobID != 9 {

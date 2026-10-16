@@ -20,8 +20,6 @@ var stubNotes = map[Rule]string{
 	RuleWatermark:   "needs frame sampling of self-hosted media; no media pipeline output is stored yet",
 	RuleSubtitles:   "needs subtitle tracks per release; no subtitle table exists yet",
 	RuleScreenshots: "needs screenshot/chapter assets per release; media_assets has no screenshot asset type populated yet",
-	RuleStats: "no cached per-performer works_count / latest_release_date columns exist: performer lists compute them " +
-		"at query time (store.PerformerPage); rebuild lands with performer_stats (tech plan 3.13)",
 }
 
 // StubNote returns the reason a stub rule is not applicable, or "".
@@ -35,6 +33,9 @@ type Runner struct {
 	BatchSize int              // releases per PublishedReleases page
 	TrimLimit int              // max R-TITLE candidates per run
 	JobID     int64            // jobs.id, recorded on nightly_runs rows
+	// EventRetention is how long raw events are kept (default
+	// DefaultEventRetention); R-STATS only rebuilds aggregates inside it.
+	EventRetention time.Duration
 	// Rules limits a run to these rules (still in AllRules order); empty
 	// runs them all. audit -once -rules R-SEO runs one rule by hand.
 	Rules []Rule
@@ -141,6 +142,8 @@ func (r *Runner) runRule(ctx context.Context, rule Rule, start time.Time) (ruleO
 		return r.rulePerformerName(ctx, start)
 	case RuleSEO:
 		return r.ruleSEO(ctx, start)
+	case RuleStats:
+		return r.ruleStats(ctx, start)
 	}
 	if note, ok := stubNotes[rule]; ok {
 		return ruleOutcome{notApplicable: true, detail: map[string]any{"note": note}}, nil
