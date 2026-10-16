@@ -114,6 +114,7 @@ var expectedRoutes = []string{
 	"POST /api/admin/moderation/words",
 	"DELETE /api/admin/moderation/words/{word}",
 	"DELETE /api/admin/moderation/mutes/{user_id}",
+	"GET /api/admin/releases/{id}/curves",
 }
 
 var (
