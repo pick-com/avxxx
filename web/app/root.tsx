@@ -25,7 +25,7 @@ import {siteOrigin, serverUiDict} from './lib/api.server';
 import {AuthProvider} from './lib/auth';
 import {I18nProvider, LangBoundary, loadUiDict, primeLang, t, type Messages} from './lib/i18n';
 import {ConsentProvider} from './lib/consent';
-import {DEFAULT_LANG, isPrefixable, localizePath, parseLangParam, readLangCookie} from './lib/langs';
+import {DEFAULT_LANG, isAdminPath, isPrefixable, localizePath, parseLangParam, readLangCookie} from './lib/langs';
 import {Link, useLocation} from './lib/nav';
 import type {SeoHandle} from './lib/seo';
 import {SettingsProvider} from './lib/settings';
@@ -200,7 +200,8 @@ export default function App() {
                 <LangBoundary>
                   <Outlet />
                 </LangBoundary>
-                <CookieBanner />
+                {/* The back office is staff tooling: no public consent banner there. */}
+                {!isAdminPath(location.pathname) && <CookieBanner />}
               </ConsentProvider>
             </SocialProvider>
           </I18nProvider>

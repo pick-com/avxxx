@@ -115,3 +115,6 @@ export function writeLangCookie(lang: LangCode) {
     /* cookies disabled */
   }
 }
+
+/** The back office (/admin, /admin/…; also under a language prefix): staff pages without the public site chrome. */
+export const isAdminPath = (pathname: string): boolean => /^\/admin(\/|$)/.test(stripLang(pathname) || '/');
