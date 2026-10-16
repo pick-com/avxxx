@@ -81,21 +81,20 @@ function GateFrame({children, labelledBy}: {children: ReactNode; labelledBy: str
 /** The interstitial shown before any page until the visitor confirms 18+. */
 export function SiteAgeGate() {
   const t = useT();
-  const [year, setYear] = useState('');
-  const [month, setMonth] = useState('');
+  const [confirmed, setConfirmed] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
 
   const submit = async (event: FormEvent) => {
     event.preventDefault();
-    if (!year || !month) {
+    if (!confirmed) {
       setError(t('login.pickBirth'));
       return;
     }
     setBusy(true);
     setError('');
     try {
-      await answerAgeGate(Number(year), Number(month));
+      await answerAgeGate(true);
       // ok: the server renders the page; denied: the restricted page.
       window.location.reload();
     } catch (cause) {
@@ -110,7 +109,7 @@ export function SiteAgeGate() {
       <h1 id="age-gate-title">{t('age.gateTitle')}</h1>
       <p>{t('age.gateBody')}</p>
       <form className="age-gate-form" onSubmit={submit}>
-        <BirthMonthPicker year={year} month={month} onYear={setYear} onMonth={setMonth} idPrefix="gate-birth" />
+        <label className="checkbox-row"><input type="checkbox" checked={confirmed} onChange={e => setConfirmed(e.target.checked)} /> {t('age.adultConfirm')}</label>
         <p className="muted">
           <Icon name="lock" size={14} /> {t('age.gatePrivacy')}
         </p>
@@ -119,7 +118,7 @@ export function SiteAgeGate() {
             {error}
           </p>
         )}
-        <button type="submit" className="btn btn-primary btn-block btn-lg" disabled={busy || !year || !month}>
+        <button type="submit" className="btn btn-primary btn-block btn-lg" disabled={busy || !confirmed}>
           {busy ? t('login.wait') : t('age.gateEnter')}
         </button>
       </form>

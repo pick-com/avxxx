@@ -83,11 +83,11 @@
 
 | 项目 | 实现 |
 | --- | --- |
-| 进站 | 首次访问任何页面都先显示确认页（出生年、月）；`POST /api/age-gate {year, month}` 判定后写 Cookie，页面刷新后才渲染内容 |
-| 年龄计算 | 只有年和月：出生当月按「生日还没过」算（保守）；拒绝未来日期、超过 120 年和非法月份 |
+| 进站 | 首次访问任何页面都先显示 18+ 勾选确认页；`POST /api/age-gate {confirmed:true}` 写 Cookie，页面刷新后才渲染内容 |
+| 年龄计算 | 当前采用用户自我声明，不收集或计算出生年月；旧版 year/month 参数仍兼容 |
 | Cookie | `ag` = `v1.<ok\|denied>.<到期时间>.<HMAC-SHA256>`，密钥 `AGE_GATE_KEY`（API 与 web 共用；未设置时用开发密钥并打警告）；HttpOnly、SameSite=Lax、Path=/，https 下 Secure。ok 约 1 年；denied 24 小时，期间接口拒绝重新提交（403），不能改填 |
 | 未满 18 | 只显示说明页和法律 / 帮助链接；`/legal/*`、`/help`、`/copyright` 和后台不受拦截 |
-| 不存数据 | 访客的出生年月不入库、不写日志；只有计数 `avxxx_age_gate_total{result=ok\|denied\|locked\|invalid}`。接口按地址限流（每 10 分钟 20 次） |
+| 不存数据 | 不收集访客出生年月；只有计数 `avxxx_age_gate_total{result=ok\|denied\|locked\|invalid}`。接口按地址限流（每 10 分钟 20 次） |
 | 服务端渲染 | 根路由读取 Cookie：未确认时页面主体换成确认页，播放器、片源请求、页面数据请求都不执行；页面 loader 只取 `<head>` 需要的字段（标题、描述、canonical、JSON-LD），列表、片源署名、公告等一律跳过 |
 | 搜索引擎 | 不区分爬虫和用户（不做 cloaking）：没有 Cookie 的爬虫和访客拿到同一份 HTML，`<head>` 完整，正文是确认页。站点地图照常列出内容页 |
 | 注册 | 必须勾选「已年满 18 周岁」；确认 Cookie 不是 ok 时还要填出生年月（未满 18 返回 403 并写入 denied Cookie）。`users.adult_confirmed_at` 记录确认时间，`adult_birth_ym`（YYYY-MM）只在当时填写了出生年月才保存，不存日 |

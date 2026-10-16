@@ -205,7 +205,7 @@ func TestAccountAndHealthStatusCodes(t *testing.T) {
 		{"register short password", stubAccounts{}, "POST", "/api/auth/register", "", `{"email":"a@b.c","password":"short"}`, 400, "email and password (min 8 characters) are required"},
 		{"register short email", stubAccounts{}, "POST", "/api/auth/register", "", `{"email":" a ","password":"longenough"}`, 400, "email and password (min 8 characters) are required"},
 		{"register without 18+", stubAccounts{}, "POST", "/api/auth/register", "", `{"email":"a@b.c","password":"longenough"}`, 400, "adult confirmation required"},
-		{"register without birth date", stubAccounts{}, "POST", "/api/auth/register", "", `{"email":"a@b.c","password":"longenough","adult_confirmed":true}`, 400, "birth year and month are required"},
+		{"register without birth date", stubAccounts{}, "POST", "/api/auth/register", "", `{"email":"a@b.c","password":"longenough","adult_confirmed":true}`, 200, ""},
 		{"register under 18", stubAccounts{}, "POST", "/api/auth/register", "", `{"email":"a@b.c","password":"longenough","adult_confirmed":true,"birth_year":2020,"birth_month":1}`, 403, "age restricted"},
 		{"register taken", stubAccounts{registerErr: dup}, "POST", "/api/auth/register", "", `{"email":"a@b.c","password":"longenough","adult_confirmed":true,"birth_year":1990,"birth_month":1}`, 409, "email already registered"},
 		{"register ok", stubAccounts{}, "POST", "/api/auth/register", "", `{"email":"a@b.c","password":"longenough","adult_confirmed":true,"birth_year":1990,"birth_month":1}`, 200, ""},
