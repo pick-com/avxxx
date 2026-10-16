@@ -1,0 +1,13 @@
+{{define "subject"}}{{if eq .Count 1}}你预约的《{{(index .Items 0).Title}}》明天上线{{else}}你预约的 {{.Count}} 部作品明天上线{{end}}{{end}}
+{{define "push_title"}}{{if eq .Count 1}}预约作品明天上线{{else}}{{.Count}} 部预约作品明天上线{{end}}{{end}}
+{{define "push_body"}}{{range $i, $it := .Items}}{{if $i}}、{{end}}{{$it.Title}}{{end}}{{if .More}} 等{{end}}{{end}}
+{{define "text"}}{{if .Name}}{{.Name}}，你好：{{else}}你好：{{end}}
+
+{{if eq .Count 1}}你预约的作品明天上线：{{else}}你预约的 {{.Count}} 部作品明天上线：{{end}}
+
+{{range .Items}}- {{.Title}}{{if .Performers}}（{{.Performers}}）{{end}}
+  {{.URL}}
+{{end}}{{if .More}}……还有 {{.More}} 部，查看全部：{{.ListURL}}
+{{end}}
+不想再收到此类邮件？在通知设置中关闭：{{.SettingsURL}}
+{{end}}

@@ -1,0 +1,13 @@
+{{define "subject"}}{{if eq .Count 1}}Tomorrow: {{(index .Items 0).Title}}{{else}}{{.Count}} releases you reserved go live tomorrow{{end}}{{end}}
+{{define "push_title"}}{{if eq .Count 1}}Reserved release goes live tomorrow{{else}}{{.Count}} reserved releases go live tomorrow{{end}}{{end}}
+{{define "push_body"}}{{range $i, $it := .Items}}{{if $i}}, {{end}}{{$it.Title}}{{end}}{{if .More}} and more{{end}}{{end}}
+{{define "text"}}Hi{{if .Name}} {{.Name}}{{end}},
+
+{{if eq .Count 1}}A release you reserved goes live tomorrow:{{else}}{{.Count}} releases you reserved go live tomorrow:{{end}}
+
+{{range .Items}}- {{.Title}}{{if .Performers}} ({{.Performers}}){{end}}
+  {{.URL}}
+{{end}}{{if .More}}...and {{.More}} more: {{.ListURL}}
+{{end}}
+Don't want these emails? Turn them off in your notification settings: {{.SettingsURL}}
+{{end}}
