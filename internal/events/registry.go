@@ -36,6 +36,9 @@ var (
 	manualAuto = []string{"manual", "auto"}
 	quartiles  = []int64{25, 50, 75, 100}
 	adFields   = []Field{req("placement", String), req("ad_id", String)}
+	// bucketsField is the optional PRD 14.3 replay table in the r1
+	// run-length format (buckets.go); a malformed table quarantines the event.
+	bucketsField = Field{Name: "buckets", Type: String, MaxLen: BucketsMaxLen, Format: checkBuckets}
 )
 
 // v1 is the initial version of every event's props (schema_ver 1).
@@ -54,7 +57,7 @@ var v1 = []Schema{
 		nonNeg("position_ms"),
 		{Name: "rate", Type: Number, Required: true, Min: f64(0)},
 		req("quality", String), req("fullscreen", Bool), req("pip", Bool), req("foreground", Bool),
-		{Name: "buckets", Type: String, MaxLen: 1024}, // 14.3 replay-table delta, long videos every 5 min
+		bucketsField, // 14.3 replay-table delta, long videos every 5 min
 	}},
 	{Event: "rebuffer", PlayScoped: true, Props: []Field{
 		id("source_id"), nonNeg("duration_ms"), nonNeg("position_ms"),
@@ -79,7 +82,7 @@ var v1 = []Schema{
 	{Event: "play_end", PlayScoped: true, Props: []Field{
 		enum("reason", "completed", "closed", "autoplay_next", "error"),
 		nonNeg("watched_seconds"),
-		{Name: "buckets", Type: String, MaxLen: 1024}, // 14.3 200-bucket replay table, compressed
+		bucketsField, // 14.3 200-bucket replay table (remainder since the last heartbeat)
 		opt("error_code", String),
 	}},
 	{Event: "peak_click", PlayScoped: true, Props: []Field{
