@@ -1,5 +1,6 @@
 import {useState} from 'react';
 import {useSearchParams} from 'react-router';
+import {HotSearches} from '../components/HotSearches';
 import {EmptyState} from '../components/States';
 import {parsePeriod, PeriodTabs, TrendingBoard} from '../components/Trending';
 import {t, useT} from '../lib/i18n';
@@ -24,7 +25,10 @@ export default function TrendingPage() {
         <span className="section-sub hide-mobile">{t('trending.updated')}</span>
       </div>
       {missing ? (
-        <EmptyState icon="trending" title={t('trending.empty')} body={t('trending.emptyBody')} actions={[{to: '/discover?tab=new', label: t('nav.new')}]} />
+        <>
+          <EmptyState icon="trending" title={t('trending.empty')} body={t('trending.emptyBody')} actions={[{to: '/discover?tab=new', label: t('nav.new')}]} />
+          <HotSearches variant="list" />
+        </>
       ) : (
         <TrendingBoard period={period} onMissing={() => setMissing(true)} />
       )}

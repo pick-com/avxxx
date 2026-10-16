@@ -7,13 +7,15 @@ import {usePaged} from '../lib/usePaged';
 import {Avatar, CardReason, SectionHeader, Thumb} from './Cards';
 import {LoadMore} from './Paging';
 import {CardGridSkeleton, EmptyState, ErrorBanner} from './States';
+import {HotSearches} from './HotSearches';
 
 // 热门 · NavTrending (PRD 4.2): 今日 / 本周 / 本月 / 年度 boards from
 // GET /api/trending?period= (precomputed hourly by the recs trending job),
 // with ▲ ▼ 新上榜 movement against the previous run. The first page also
 // carries the top performer heat rows (演员热度榜, right column).
 //
-// TODO(tech plan 3.13 search_queries): 热搜词 — no public endpoint yet.
+// 热搜词 (right column, under 演员热度榜): GET /api/search/hot, hidden when
+// the route is not deployed or the board is empty.
 // TODO(tech plan 3.4): genre chips (全部 / 剧情 / 悬疑 …) — the board has no
 // per-genre variant.
 
@@ -98,23 +100,26 @@ export function TrendingBoard({period, onMissing, showHeat = true}: {period: Per
           </>
         )}
       </section>
-      {showHeat && heat.length > 0 && (
+      {showHeat && (
         <aside className="trending-aside">
-          <div className="side-card">
-            <SectionHeader title={t('trending.actors')} action={<Link to="/discover?tab=actors" className="section-link">{t('trending.actorsAll')}</Link>} />
-            <ol className="heat-list">
-              {heat.map(h => (
-                <li key={h.performer.id}>
-                  <Link to={`/performers/${encodeURIComponent(h.performer.slug)}`} className="heat-row" state={{slot: `trending:${period}:heat:r${h.rank}`}}>
-                    <span className={h.rank <= 3 ? 'rank-num rank-top' : 'rank-num'}>{h.rank}</span>
-                    <Avatar seed={h.performer.slug} name={performerName(h.performer)} size={40} />
-                    <span className="heat-name">{performerName(h.performer)}</span>
-                    <MovementBadge movement={h.movement} delta={h.delta} />
-                  </Link>
-                </li>
-              ))}
-            </ol>
-          </div>
+          {heat.length > 0 && (
+            <div className="side-card">
+              <SectionHeader title={t('trending.actors')} action={<Link to="/discover?tab=actors" className="section-link">{t('trending.actorsAll')}</Link>} />
+              <ol className="heat-list">
+                {heat.map(h => (
+                  <li key={h.performer.id}>
+                    <Link to={`/performers/${encodeURIComponent(h.performer.slug)}`} className="heat-row" state={{slot: `trending:${period}:heat:r${h.rank}`}}>
+                      <span className={h.rank <= 3 ? 'rank-num rank-top' : 'rank-num'}>{h.rank}</span>
+                      <Avatar seed={h.performer.slug} name={performerName(h.performer)} size={40} />
+                      <span className="heat-name">{performerName(h.performer)}</span>
+                      <MovementBadge movement={h.movement} delta={h.delta} />
+                    </Link>
+                  </li>
+                ))}
+              </ol>
+            </div>
+          )}
+          <HotSearches variant="side" />
         </aside>
       )}
     </div>

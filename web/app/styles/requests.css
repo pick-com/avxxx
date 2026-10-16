@@ -1,0 +1,180 @@
+/* 演员信息更正与隐藏 form (legal/performer-info) and the copyright page's 其他情况 box. */
+
+.perf-req {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 20px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--surface);
+  scroll-margin-top: calc(var(--topbar-h) + 16px);
+}
+
+.perf-req-form {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.perf-req .form-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.perf-req .form-field legend {
+  padding: 0;
+  margin-bottom: 6px;
+}
+
+.perf-req .input {
+  width: 100%;
+  min-height: 44px;
+  padding: 10px 14px;
+  border-radius: 10px;
+  border: 1px solid var(--line2);
+  background: var(--bg);
+  color: var(--text);
+  font: inherit;
+  font-size: 16px;
+  box-sizing: border-box;
+}
+
+.perf-req textarea.input {
+  resize: vertical;
+  line-height: 1.6;
+}
+
+.perf-req .input:focus {
+  border-color: var(--accent);
+  outline: none;
+}
+
+.req-mark {
+  color: var(--badge);
+}
+
+.perf-req-row {
+  display: grid;
+  gap: 16px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.perf-req-kinds {
+  display: grid;
+  gap: 8px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.perf-req-kind {
+  min-height: 44px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  border: 1px solid var(--line2);
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  cursor: pointer;
+  color: var(--text);
+}
+
+.perf-req-kind.is-on {
+  border-color: var(--accent);
+}
+
+.perf-req-kind input {
+  margin-top: 3px;
+  accent-color: var(--accent);
+}
+
+.perf-req-kind > span {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-size: 14px;
+}
+
+.perf-req-kind .muted {
+  font-size: 12px;
+}
+
+.perf-req-picked {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  color: var(--text);
+  font-size: 15px;
+}
+
+.perf-req-matches {
+  margin-top: 4px;
+}
+
+.perf-req-link {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.icon-text-btn {
+  min-width: 44px;
+  min-height: 44px;
+  border: 0;
+  border-radius: 10px;
+  background: var(--surface2);
+  color: var(--text);
+  font-size: 18px;
+}
+
+.perf-req-submit {
+  align-self: flex-start;
+  min-height: 44px;
+}
+
+.perf-req .small {
+  font-size: 12px;
+}
+
+.legal-other {
+  padding: 16px 20px;
+  border-radius: 12px;
+  border: 1px solid var(--line);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.legal-other h2 {
+  margin: 0 0 4px;
+  font-size: 17px;
+}
+
+.legal-other a {
+  min-height: 44px;
+  display: inline-flex;
+  align-items: center;
+  color: var(--accent);
+}
+
+@media (max-width: 640px) {
+  .perf-req {
+    padding: 16px;
+  }
+
+  .perf-req-row,
+  .perf-req-kinds {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .perf-req-submit {
+    align-self: stretch;
+  }
+}
