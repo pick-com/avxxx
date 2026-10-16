@@ -1,0 +1,258 @@
+/* 我的片库: NavHistory, NavLater, NavFavorites, the release page 收藏 picker
+   and the public playlist page. Tokens only (dark and light themes). */
+
+.lib-page {
+  gap: 20px;
+}
+
+.lib-switch {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 14px;
+  color: var(--muted);
+}
+
+.lib-filter {
+  align-self: flex-start;
+}
+
+.lib-link-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Picker (release page) and move menu (watch later) */
+
+.pl-picker,
+.pl-move {
+  position: relative;
+  display: inline-flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+}
+
+.pl-popover {
+  width: min(320px, calc(100vw - 32px));
+  max-height: min(420px, 70vh);
+  overflow-y: auto;
+}
+
+.pl-picker .pl-popover {
+  left: 0;
+  right: auto;
+}
+
+.pl-sheet {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 0 8px 12px;
+}
+
+.pl-sheet-title {
+  padding: 0 16px 12px;
+}
+
+.pl-picker-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.pl-picker-note {
+  margin: 0;
+  padding: 6px 10px;
+  font-size: 13px;
+}
+
+.pl-check {
+  width: 20px;
+  height: 20px;
+  flex-shrink: 0;
+  border-radius: 5px;
+  border: 2px solid var(--line2);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.pl-check.is-on {
+  border-color: var(--accent);
+  background: var(--accent);
+  color: var(--on-accent);
+}
+
+.pl-create {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  padding: 4px 2px;
+}
+
+.pl-input,
+.pl-textarea {
+  flex: 1;
+  min-width: 0;
+  min-height: 44px;
+  padding: 0 12px;
+  border-radius: 10px;
+  border: 1px solid var(--line2);
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+  font-size: 15px;
+}
+
+.pl-textarea {
+  padding: 10px 12px;
+  resize: vertical;
+}
+
+.pl-input:focus,
+.pl-textarea:focus {
+  border-color: var(--accent);
+  outline: none;
+}
+
+/* Favorites page */
+
+.pl-grid {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  gap: 12px;
+}
+
+.pl-card {
+  width: 100%;
+  padding: 8px;
+  border: 1px solid transparent;
+  border-radius: 12px;
+  background: transparent;
+  color: var(--text);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  text-align: left;
+}
+
+.pl-card:hover {
+  background: var(--surface);
+}
+
+.pl-card.is-on {
+  border-color: var(--accent);
+  background: var(--surface);
+}
+
+.pl-mosaic {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 2px;
+  aspect-ratio: 16 / 9;
+  border-radius: var(--radius);
+  overflow: hidden;
+  background: var(--surface2);
+}
+
+.pl-mosaic .thumb {
+  border-radius: 0;
+  aspect-ratio: auto;
+  height: 100%;
+}
+
+.pl-mosaic-empty {
+  background: var(--surface2);
+}
+
+.pl-card-meta {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.pl-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding-top: 8px;
+  border-top: 1px solid var(--line);
+}
+
+.pl-panel-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.pl-desc {
+  margin: 6px 0 0;
+  white-space: pre-wrap;
+}
+
+.pl-edit {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.pl-vis {
+  align-self: flex-start;
+}
+
+.pl-vis .segmented-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.pl-vis-hint {
+  margin: -6px 0 0;
+  font-size: 13px;
+}
+
+.pl-share {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.pl-share .pl-input {
+  min-width: 220px;
+  font-family: var(--font-mono);
+  font-size: 13px;
+}
+
+/* Public playlist page */
+
+.pl-public-head {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.pl-public-head p {
+  margin: 0;
+}
+
+@media (max-width: 767px) {
+  .pl-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+  }
+
+  .lib-switch {
+    font-size: 13px;
+  }
+}

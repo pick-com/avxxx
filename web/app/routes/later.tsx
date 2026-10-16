@@ -1,24 +1,29 @@
-import {useEffect, useRef, useState, type KeyboardEvent, type PointerEvent as ReactPointerEvent} from 'react';
+import {useEffect, useId, useRef, useState, type KeyboardEvent, type PointerEvent as ReactPointerEvent} from 'react';
 import {Link, useNavigate} from '../lib/nav';
 import {Thumb} from '../components/Cards';
 import {Icon} from '../components/Icon';
+import {useDismiss} from '../components/SocialButtons';
 import {CardGridSkeleton, EmptyState, ErrorBanner} from '../components/States';
-import {getWatchLater, isMissingEndpoint, removeWatchLater, reorderWatchLater, type WatchLaterItem} from '../lib/api';
+import {Switch} from '../components/Switch';
+import {getPlaylists, getWatchLater, isMissingEndpoint, moveLaterToPlaylist, removeWatchLater, reorderWatchLater, type Playlist, type WatchLaterItem} from '../lib/api';
 import {useAuth} from '../lib/auth';
 import {formatDate} from '../lib/format';
 import {t, useT} from '../lib/i18n';
+import {playlistName, visibilityIcon} from '../lib/playlists';
 import {startQueue} from '../lib/queue';
+import {useSettings} from '../lib/settings';
 import {useSocial} from '../lib/social';
 import {useAsync} from '../lib/useAsync';
+import '../styles/library.css';
 
 export const meta = () => [{title: t('title.later')}];
 
 // NavLater: GET /api/me/watch-later in position order; drag the handle (mouse
 // or touch) or focus it and press ↑ / ↓ to reorder, saved with POST
 // /api/me/watch-later/reorder (the full order). 全部播放 / 随机播放 start a
-// session queue the video page follows (lib/queue).
-// TODO(PRD 7): 看完自动移出 and 移除已看完 need a server-side rule; 移到收藏夹
-// waits for multiple favorite folders.
+// session queue the video page follows (lib/queue). 看完自动移出 is
+// user_settings.later_auto_remove (the server drops an entry when watch
+// progress reaches 90 %); 移到收藏夹 is POST /api/me/watch-later/{slug}/move.
 
 function totalLabel(items: WatchLaterItem[]): string {
   const minutes = items.reduce((sum, i) => sum + (i.runtime_minutes > 0 ? i.runtime_minutes : 0), 0);
@@ -43,6 +48,8 @@ export default function LaterPage() {
   const t = useT();
   const {status} = useAuth();
   const {refreshLater} = useSocial();
+  const {settings, save: saveSetting, pending, fieldErrors} = useSettings();
+  const [playlists, setPlaylists] = useState<Playlist[] | null>(null);
   const navigate = useNavigate();
   const data = useAsync(signal => getWatchLater(signal), [status], status === 'user');
   const [items, setItems] = useState<WatchLaterItem[]>([]);
@@ -158,6 +165,29 @@ export default function LaterPage() {
     }
   };
 
+  const loadPlaylists = () => {
+    if (playlists !== null) return;
+    getPlaylists().then(setPlaylists, () => setPlaylists([]));
+  };
+
+  const moveTo = async (item: WatchLaterItem, p: Playlist) => {
+    setError('');
+    const before = items;
+    setItems(before.filter(i => i.slug !== item.slug));
+    committed.current = committed.current.filter(s => s !== item.slug);
+    try {
+      await moveLaterToPlaylist(item.slug, p.id);
+      setAnnounce(t('later.movedTo', {title: item.title, name: playlistName(p)}));
+      refreshLater();
+    } catch (cause) {
+      setItems(before);
+      committed.current = before.map(i => i.slug);
+      setError(cause instanceof Error ? cause.message : t('later.moveFailed'));
+    }
+  };
+
+  const autoRemove = settings?.later_auto_remove;
+
   const play = (order: WatchLaterItem[]) => {
     if (order.length === 0) return;
     startQueue('later', order.map(i => i.slug));
@@ -170,6 +200,19 @@ export default function LaterPage() {
         <div>
           <h1 className="page-title">{t('nav.later')}</h1>
           {items.length > 0 && <p className="muted">{t('later.private', {total: totalLabel(items)})}</p>}
+          {autoRemove !== undefined && (
+            <span className="lib-switch">
+              <span className="lib-switch-label" aria-hidden="true">
+                {t('later.autoRemove')}
+              </span>
+              <Switch
+                checked={autoRemove}
+                onChange={on => saveSetting('later_auto_remove', {later_auto_remove: on}, s => ({...s, later_auto_remove: on}))}
+                label={t('later.autoRemove')}
+                busy={pending.has('later_auto_remove')}
+              />
+            </span>
+          )}
         </div>
         {items.length > 0 && (
           <div className="action-row">
@@ -184,6 +227,7 @@ export default function LaterPage() {
           </div>
         )}
       </div>
+      {fieldErrors.later_auto_remove && <ErrorBanner error={fieldErrors.later_auto_remove} />}
       {error && <ErrorBanner error={error} />}
       <span className="sr-only" role="status" aria-live="polite">
         {announce}
@@ -229,6 +273,7 @@ export default function LaterPage() {
                     <span className="card-meta">{t('later.addedAt', {date: formatDate(item.added_at)})}</span>
                   </span>
                 </Link>
+                <MoveMenu item={item} playlists={playlists} onOpen={loadPlaylists} onPick={p => moveTo(item, p)} />
                 <button type="button" className="icon-btn" aria-label={t('social.laterRemoveLabel', {title: item.title})} title={t('later.remove')} onClick={() => remove(item)}>
                   <Icon name="close" size={18} />
                 </button>
@@ -236,6 +281,59 @@ export default function LaterPage() {
             ))}
           </ol>
         </>
+      )}
+    </div>
+  );
+}
+
+/** 移到收藏夹: a popover of the user's playlists; picking one moves the item. */
+function MoveMenu({item, playlists, onOpen, onPick}: {item: WatchLaterItem; playlists: Playlist[] | null; onOpen: () => void; onPick: (p: Playlist) => void}) {
+  const t = useT();
+  const [open, setOpen] = useState(false);
+  const rootRef = useRef<HTMLDivElement>(null);
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  const menuId = useId();
+  useDismiss(open, () => setOpen(false), rootRef, triggerRef);
+  return (
+    <div className="pl-move" ref={rootRef}>
+      <button
+        ref={triggerRef}
+        type="button"
+        className="icon-btn"
+        aria-haspopup="true"
+        aria-expanded={open}
+        aria-controls={open ? menuId : undefined}
+        aria-label={t('later.moveLabel', {title: item.title})}
+        title={t('later.move')}
+        onClick={() => {
+          onOpen();
+          setOpen(o => !o);
+        }}
+      >
+        <Icon name="favorites" size={18} />
+      </button>
+      {open && (
+        <div className="popover pl-popover" id={menuId} role="group" aria-label={t('later.move')}>
+          <span className="popover-title">{t('later.move')}</span>
+          {playlists === null ? (
+            <p className="muted pl-picker-note">{t('common.loadingMore')}</p>
+          ) : (
+            playlists.map(p => (
+              <button
+                key={p.id}
+                type="button"
+                className="menu-choice"
+                onClick={() => {
+                  setOpen(false);
+                  onPick(p);
+                }}
+              >
+                <Icon name={visibilityIcon[p.visibility]} size={16} />
+                <span className="menu-choice-text">{playlistName(p)}</span>
+              </button>
+            ))
+          )}
+        </div>
       )}
     </div>
   );

@@ -84,6 +84,9 @@ type UserSettings struct {
 	Timezone      string      `json:"timezone"`
 	NotifyPrefs   NotifyPrefs `json:"notify_prefs"`
 	QuietHours    *QuietHours `json:"quiet_hours"`
+
+	// LaterAutoRemove drops a watch-later entry at 90 % progress (migration 036).
+	LaterAutoRemove bool `json:"later_auto_remove"`
 }
 
 // defaultNotifyPrefs: in-app for everything; push on by default only for the
@@ -101,7 +104,7 @@ func defaultNotifyPrefs() NotifyPrefs {
 func DefaultSettings() UserSettings {
 	return UserSettings{
 		UILang: "zh-CN", ContentLang: "zh-CN", SubtitleLangs: []string{},
-		QualityPref: "auto", Autoplay: true, RememberRate: true,
+		QualityPref: "auto", Autoplay: true, RememberRate: true, LaterAutoRemove: true,
 		Theme: "system", Timezone: "UTC",
 		NotifyPrefs: defaultNotifyPrefs(),
 		QuietHours:  &QuietHours{Start: "22:00", End: "08:00"},
@@ -201,6 +204,8 @@ func ApplySettingsPatch(cur UserSettings, body []byte) (UserSettings, error) {
 			out.RememberRate, err = decodeBool(key, raw)
 		case "history_paused":
 			out.HistoryPaused, err = decodeBool(key, raw)
+		case "later_auto_remove":
+			out.LaterAutoRemove, err = decodeBool(key, raw)
 		case "subtitle_langs":
 			var langs []string
 			if json.Unmarshal(raw, &langs) != nil || langs == nil {
@@ -289,7 +294,7 @@ func ApplySettingsPatch(cur UserSettings, body []byte) (UserSettings, error) {
 	return out, nil
 }
 
-const settingsColumns = `ui_lang,content_lang,subtitle_langs,quality_pref,data_saver,autoplay,remember_rate,history_paused,theme,timezone,notify_prefs,quiet_hours`
+const settingsColumns = `ui_lang,content_lang,subtitle_langs,quality_pref,data_saver,autoplay,remember_rate,history_paused,theme,timezone,notify_prefs,quiet_hours,later_auto_remove`
 
 type rowScanner interface{ Scan(dest ...any) error }
 
@@ -297,7 +302,7 @@ func scanSettings(row rowScanner) (UserSettings, error) {
 	var u UserSettings
 	var prefs, quiet []byte
 	err := row.Scan(&u.UILang, &u.ContentLang, &u.SubtitleLangs, &u.QualityPref, &u.DataSaver, &u.Autoplay,
-		&u.RememberRate, &u.HistoryPaused, &u.Theme, &u.Timezone, &prefs, &quiet)
+		&u.RememberRate, &u.HistoryPaused, &u.Theme, &u.Timezone, &prefs, &quiet, &u.LaterAutoRemove)
 	if err != nil {
 		return u, err
 	}
@@ -350,14 +355,14 @@ func (s *Store) PatchSettings(ctx context.Context, userID int64, body []byte) (U
 		quiet, _ = json.Marshal(next.QuietHours)
 	}
 	_, err = tx.Exec(ctx, `INSERT INTO user_settings(user_id,`+settingsColumns+`,updated_at)
-		VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,now())
+		VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,now())
 		ON CONFLICT(user_id) DO UPDATE SET ui_lang=EXCLUDED.ui_lang,content_lang=EXCLUDED.content_lang,
 		subtitle_langs=EXCLUDED.subtitle_langs,quality_pref=EXCLUDED.quality_pref,data_saver=EXCLUDED.data_saver,
 		autoplay=EXCLUDED.autoplay,remember_rate=EXCLUDED.remember_rate,history_paused=EXCLUDED.history_paused,
 		theme=EXCLUDED.theme,timezone=EXCLUDED.timezone,notify_prefs=EXCLUDED.notify_prefs,
-		quiet_hours=EXCLUDED.quiet_hours,updated_at=now()`,
+		quiet_hours=EXCLUDED.quiet_hours,later_auto_remove=EXCLUDED.later_auto_remove,updated_at=now()`,
 		userID, next.UILang, next.ContentLang, next.SubtitleLangs, next.QualityPref, next.DataSaver, next.Autoplay,
-		next.RememberRate, next.HistoryPaused, next.Theme, next.Timezone, prefs, quiet)
+		next.RememberRate, next.HistoryPaused, next.Theme, next.Timezone, prefs, quiet, next.LaterAutoRemove)
 	if err != nil {
 		return UserSettings{}, err
 	}
@@ -452,8 +457,23 @@ const feedKey = `COALESCE(r.release_date, (r.scheduled_at AT TIME ZONE 'UTC')::d
 // newest first, keyset-paginated. The first page (no cursor) marks every follow
 // as seen, which clears the sidebar new-work dot.
 func (s *Store) FollowingFeed(ctx context.Context, userID int64, c *Cursor, limit int) ([]map[string]any, string, error) {
+	return s.FollowingFeedFor(ctx, userID, "", c, limit)
+}
+
+// FollowingFeedFor is FollowingFeed narrowed to one followed performer
+// (MobileFollowing 按演员筛选) when performerSlug is set; its first page marks
+// only that follow as seen. A performer the user does not follow yields an
+// empty feed; an unknown slug is pgx.ErrNoRows.
+func (s *Store) FollowingFeedFor(ctx context.Context, userID int64, performerSlug string, c *Cursor, limit int) ([]map[string]any, string, error) {
 	limit = pageLimit(limit)
-	args := []any{userID, limit + 1}
+	var pid int64
+	if performerSlug != "" {
+		var err error
+		if pid, err = s.publicPerformerID(ctx, performerSlug); err != nil {
+			return nil, "", err
+		}
+	}
+	args := []any{userID, limit + 1, pid}
 	after := ""
 	if c != nil {
 		if c.Sort != FeedSort {
@@ -464,7 +484,7 @@ func (s *Store) FollowingFeed(ctx context.Context, userID int64, c *Cursor, limi
 			return nil, "", invalidQuery("malformed cursor")
 		}
 		args = append(args, d, c.ID)
-		after = ` AND (` + feedKey + `, r.id) < ($3::date, $4::bigint)`
+		after = ` AND (` + feedKey + `, r.id) < ($4::date, $5::bigint)`
 	}
 	rows, err := s.Query(ctx, `SELECT r.id,r.slug,r.canonical_title,COALESCE(r.title_ja,''),r.release_date,r.scheduled_at,r.status,
 		to_char(`+feedKey+`,'YYYY-MM-DD'),
@@ -474,7 +494,7 @@ func (s *Store) FollowingFeed(ctx context.Context, userID int64, c *Cursor, limi
 		FROM releases r
 		WHERE r.status IN ('published','upcoming') AND r.merged_into_id IS NULL
 		  AND EXISTS(SELECT 1 FROM release_performers rp JOIN follows f ON f.performer_id=rp.performer_id
-		             WHERE f.user_id=$1 AND rp.release_id=r.id)`+after+`
+		             WHERE f.user_id=$1 AND rp.release_id=r.id AND ($3::bigint=0 OR rp.performer_id=$3))`+after+`
 		ORDER BY `+feedKey+` DESC, r.id DESC LIMIT $2`, args...)
 	if err != nil {
 		return nil, "", err
@@ -506,7 +526,7 @@ func (s *Store) FollowingFeed(ctx context.Context, userID int64, c *Cursor, limi
 		next = EncodeCursor(Cursor{Sort: FeedSort, Key: keys[limit-1], ID: ids[limit-1]})
 	}
 	if c == nil {
-		if _, err := s.Exec(ctx, `UPDATE follows SET last_seen_at=now() WHERE user_id=$1`, userID); err != nil {
+		if _, err := s.Exec(ctx, `UPDATE follows SET last_seen_at=now() WHERE user_id=$1 AND ($2::bigint=0 OR performer_id=$2)`, userID, pid); err != nil {
 			return nil, "", err
 		}
 	}

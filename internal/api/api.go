@@ -30,6 +30,8 @@ type Server struct {
 	// redirects; nil disables redirects (tests without a database).
 	identity identityStore
 	social   socialStore // follows, reservations, watch-later, settings, notifications
+	// playlists backs 收藏夹 and the watch-later auto-remove rule (playlists.go).
+	playlists libraryStore
 	// audit backs the admin audit and dashboard routes (admin_audit.go).
 	audit auditAdmin
 	// i18n backs content translations, glossary and UI strings (i18n.go,
@@ -120,6 +122,7 @@ func Register(mux *http.ServeMux, s *store.Store, mediaHandler *media.Handler) {
 		srv.accounts = s
 		srv.identity = s
 		srv.social = s
+		srv.playlists = s
 		srv.audit = s
 		srv.i18n = s
 		srv.community = s
@@ -184,6 +187,7 @@ func (srv *Server) routes() []route {
 	rs = append(rs, srv.sitemapRoutes()...)
 	rs = append(rs, srv.attributionRoutes()...)
 	rs = append(rs, srv.imageRoutes()...)
+	rs = append(rs, srv.playlistRoutes()...)
 	rs = append(rs, srv.homeRoutes()...)
 	rs = append(rs, srv.adminOpsRoutes()...)
 	return srv.followMerges(rs)

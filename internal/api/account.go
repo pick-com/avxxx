@@ -101,6 +101,15 @@ func (srv *Server) saveWatch(w http.ResponseWriter, r *http.Request) {
 		Duration int    `json:"duration_seconds"`
 	}
 	_ = json.NewDecoder(r.Body).Decode(&in)
+	// 看完自动移出 (NavLater): applies whether or not history is paused.
+	laterRemoved := false
+	if srv.playlists != nil {
+		var err error
+		if laterRemoved, err = srv.playlists.LaterAutoRemove(r.Context(), id, in.Slug, in.Progress, in.Duration); err != nil {
+			reply(w, nil, err)
+			return
+		}
+	}
 	// Paused history (user_settings.history_paused): accept but do not record.
 	if srv.social != nil {
 		paused, err := srv.social.HistoryPaused(r.Context(), id)
@@ -109,12 +118,12 @@ func (srv *Server) saveWatch(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		if paused {
-			reply(w, map[string]bool{"saved": false, "paused": true}, nil)
+			reply(w, map[string]bool{"saved": false, "paused": true, "later_removed": laterRemoved}, nil)
 			return
 		}
 	}
 	e = srv.accounts.SaveWatch(r.Context(), id, in.Slug, in.Progress, in.Duration)
-	reply(w, map[string]bool{"saved": e == nil}, e)
+	reply(w, map[string]bool{"saved": e == nil, "later_removed": laterRemoved}, e)
 }
 
 func (srv *Server) favorites(w http.ResponseWriter, r *http.Request) {

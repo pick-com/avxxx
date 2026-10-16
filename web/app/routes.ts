@@ -28,6 +28,7 @@ export default [
     route(L('me'), 'routes/me.tsx'),
     route(L('history'), 'routes/history.tsx'),
     route(L('favorites'), 'routes/favorites.tsx'),
+    route(L('playlists/:token'), 'routes/playlist.tsx'),
     route(L('later'), 'routes/later.tsx'),
     route(L('reservations'), 'routes/reservations.tsx'),
     route(L('notifications'), 'routes/notifications.tsx'),

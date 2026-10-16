@@ -21,6 +21,9 @@ func TestApplySettingsPatch(t *testing.T) {
 		{"bools", `{"data_saver":true,"autoplay":false,"remember_rate":false,"history_paused":true}`, func(u UserSettings) bool {
 			return u.DataSaver && !u.Autoplay && !u.RememberRate && u.HistoryPaused
 		}},
+		{"later auto remove default on, can be turned off", `{"later_auto_remove":false}`, func(u UserSettings) bool {
+			return def.LaterAutoRemove && !u.LaterAutoRemove
+		}},
 		{"subtitle langs dedupe", `{"subtitle_langs":["en","ja","en"]}`, func(u UserSettings) bool {
 			return slices.Equal(u.SubtitleLangs, []string{"en", "ja"})
 		}},
