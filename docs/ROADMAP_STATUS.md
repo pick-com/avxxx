@@ -106,7 +106,7 @@
 - [x] 值班通知：Alertmanager（page / warning / info 路由与抑制规则；webhook、邮件、Slack、Telegram 接收器由环境变量配置，未配置时空接收器并告警日志；`amtool check-config` 与路由测试进 CI）。生产主机的实际通道待配置
 - [x] 主机与备份监控：node_exporter（磁盘 < 15% warning / < 5% page、内存、负载），`backup-db.sh` 写 textfile 指标，备份超过 26 小时或 < 1 MiB 告警；Ansible 可选每日备份 cron（`backup_cron_enabled`）
 - [x] robots、terms、授权和配额门禁
-- [ ] 数据保留和图片使用策略
+- [x] 数据保留和图片使用策略（[DATA_RETENTION_AND_IMAGES.md](DATA_RETENTION_AND_IMAGES.md)：只有 `official_api`/`licensed`/`internal` 且管理员复核 `images_allowed` 的来源可存图；`internal/objstore` S3 兼容存储 + compose `storage` profile MinIO；`media_fetch`/`media_purge` 任务；公开接口 `cover`/`portrait` 字段和 `/api/images/`；屏蔽/下架 24 h 内清理；DMM 图片转存待法务确认）
 - [ ] 部署、备份和恢复文档
 - [ ] 全量验收：重复抓取不重复实体、阻断不清空数据、公开 API 不泄露 raw_data（最后一项已有集成测试 `TestPublicAPINoRawDataIntegration` 遍历全部公开 GET 路由）
 

@@ -1,20 +1,65 @@
 import type {ReactNode} from 'react';
+import type {ApiImage} from '../lib/api';
 import {Link} from '../lib/nav';
 import {swatch} from '../lib/format';
 import {Icon} from './Icon';
 import {LaterButton} from './SocialButtons';
 
-// The API has no cover or portrait images yet (tech plan 2.4: covers via
-// media_assets / object storage). Artwork slots render a neutral placeholder
-// tinted from the slug so cards keep their real size (CLS, PRD 13).
-// TODO(tech plan 2.4 / 3.1 object storage): render covers and portraits.
+// Covers and portraits come from object storage (internal/images) as
+// `cover` / `portrait` on catalog responses, only for image-permitted
+// sources. Without one, artwork slots render a neutral placeholder tinted
+// from the slug. Either way the slot keeps its real size (CLS, PRD 13): the
+// thumb has a fixed aspect ratio and images carry width/height.
 
-export function Thumb({seed, badge, progress, className = ''}: {seed: string; badge?: string; progress?: number; className?: string}) {
+/** Absolute URL of a catalog image (og:image / JSON-LD need one). */
+export const absoluteImageUrl = (origin: string, url: string) =>
+  /^https?:[/][/]/.test(url) ? url : `${origin}${url.startsWith('/') ? '' : '/'}${url}`;
+
+/** A stored catalog image: srcset/sizes, intrinsic size, lazy by default. */
+export function CatalogImage({image, alt = '', sizes, className, eager = false, width, height}: {
+  image: ApiImage;
+  alt?: string;
+  sizes?: string;
+  className?: string;
+  eager?: boolean;
+  /** Rendered box (defaults to the image's intrinsic size). */
+  width?: number;
+  height?: number;
+}) {
+  const srcSet = image.srcset?.length ? image.srcset.map(v => `${v.url} ${v.width}w`).join(', ') : undefined;
+  return (
+    <img
+      className={className}
+      src={image.url}
+      srcSet={srcSet}
+      sizes={srcSet ? sizes : undefined}
+      width={width ?? image.width}
+      height={height ?? image.height}
+      alt={alt}
+      loading={eager ? 'eager' : 'lazy'}
+      decoding="async"
+    />
+  );
+}
+
+export function Thumb({seed, badge, progress, className = '', image, sizes = '(max-width: 640px) 50vw, 320px'}: {
+  seed: string;
+  badge?: string;
+  progress?: number;
+  className?: string;
+  /** The release cover; the tinted placeholder when absent. */
+  image?: ApiImage | null;
+  sizes?: string;
+}) {
   return (
     <span className={`thumb ph-${swatch(seed)} ${className}`}>
-      <span className="thumb-icon">
-        <Icon name="film" size={22} />
-      </span>
+      {image ? (
+        <CatalogImage image={image} className="thumb-img" sizes={sizes} />
+      ) : (
+        <span className="thumb-icon">
+          <Icon name="film" size={22} />
+        </span>
+      )}
       {badge && <span className="thumb-badge">{badge}</span>}
       {progress !== undefined && (
         <span className="thumb-progress" aria-hidden="true">
@@ -34,8 +79,10 @@ export function CardReason({text}: {text?: string}) {
   return text ? <span className="card-reason">{text}</span> : null;
 }
 
-export function ReleaseCard({slug, title, meta, sub, badge, progress, later = true, slot, reason, reasonCode, onOpen}: {
+export function ReleaseCard({slug, title, meta, sub, badge, progress, later = true, slot, reason, reasonCode, onOpen, cover}: {
   slug: string;
+  /** Stored cover (Release.cover). */
+  cover?: ApiImage | null;
   title: string;
   meta?: ReactNode;
   sub?: ReactNode;
@@ -53,7 +100,7 @@ export function ReleaseCard({slug, title, meta, sub, badge, progress, later = tr
   return (
     <div className="release-card-wrap">
       <Link to={`/releases/${encodeURIComponent(slug)}`} className="release-card" state={linkState(slot, reasonCode)} onClick={onOpen}>
-        <Thumb seed={slug} badge={badge} progress={progress} />
+        <Thumb seed={slug} badge={badge} progress={progress} image={cover} />
         <span className="card-title">{title}</span>
         {meta && <span className="card-meta">{meta}</span>}
         {sub && <span className="card-meta">{sub}</span>}
@@ -65,8 +112,9 @@ export function ReleaseCard({slug, title, meta, sub, badge, progress, later = tr
 }
 
 /** Horizontal row card (Video aside, MobileSearch results, history). */
-export function ReleaseRow({slug, title, meta, sub, badge, progress, children, query = '', slot, reason, reasonCode}: {
+export function ReleaseRow({slug, title, meta, sub, badge, progress, children, query = '', slot, reason, reasonCode, cover}: {
   slug: string;
+  cover?: ApiImage | null;
   /** Appended to the link, e.g. "?list=later". */
   query?: string;
   title: string;
@@ -82,7 +130,7 @@ export function ReleaseRow({slug, title, meta, sub, badge, progress, children, q
   return (
     <div className="release-row">
       <Link to={`/releases/${encodeURIComponent(slug)}${query}`} className="release-row-link" state={linkState(slot, reasonCode)}>
-        <Thumb seed={slug} badge={badge} progress={progress} className="thumb-row" />
+        <Thumb seed={slug} badge={badge} progress={progress} className="thumb-row" image={cover} sizes="168px" />
         <span className="release-row-text">
           <span className="card-title">{title}</span>
           {meta && <span className="card-meta">{meta}</span>}
@@ -95,7 +143,10 @@ export function ReleaseRow({slug, title, meta, sub, badge, progress, children, q
   );
 }
 
-export function Avatar({seed, name, size = 88}: {seed: string; name: string; size?: number}) {
+export function Avatar({seed, name, size = 88, image}: {seed: string; name: string; size?: number; image?: ApiImage | null}) {
+  if (image) {
+    return <CatalogImage image={image} className="avatar-img" width={size} height={size} sizes={`${size}px`} />;
+  }
   return (
     <span className={`avatar-ph face-${swatch(seed)}`} style={{width: size, height: size, fontSize: Math.round(size * 0.36)}} aria-hidden="true">
       {Array.from(name.trim())[0] ?? '?'}
@@ -103,10 +154,18 @@ export function Avatar({seed, name, size = 88}: {seed: string; name: string; siz
   );
 }
 
-export function PerformerChip({slug, name, sub, size = 88, slot}: {slug: string; name: string; sub?: ReactNode; size?: number; slot?: string}) {
+export function PerformerChip({slug, name, sub, size = 88, slot, portrait}: {
+  slug: string;
+  name: string;
+  sub?: ReactNode;
+  size?: number;
+  slot?: string;
+  /** Stored portrait (Performer.portrait). */
+  portrait?: ApiImage | null;
+}) {
   return (
     <Link to={`/performers/${encodeURIComponent(slug)}`} className="performer-chip" style={{width: size + 16}} state={linkState(slot)}>
-      <Avatar seed={slug} name={name} size={size} />
+      <Avatar seed={slug} name={name} size={size} image={portrait} />
       <span className="performer-chip-name">{name}</span>
       {sub && <span className="performer-chip-sub">{sub}</span>}
     </Link>

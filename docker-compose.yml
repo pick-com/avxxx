@@ -37,6 +37,21 @@ services:
       MEDIA_LINK_ON_DEMAND: ${MEDIA_LINK_ON_DEMAND:-true}
       MEDIA_LINK_MIN_INTERVAL: ${MEDIA_LINK_MIN_INTERVAL:-2s}
       MEDIA_RESOLVE_TTL: ${MEDIA_RESOLVE_TTL:-5m}
+      # Catalog images (internal/images): S3-compatible storage; empty
+      # S3_ENDPOINT = no image fields and /api/images/ is 404. With the
+      # "storage" profile: S3_ENDPOINT=http://minio:9000.
+      S3_ENDPOINT: ${S3_ENDPOINT:-}
+      S3_BUCKET: ${S3_BUCKET:-avxxx-media}
+      S3_ACCESS_KEY: ${S3_ACCESS_KEY:-}
+      S3_SECRET_KEY: ${S3_SECRET_KEY:-}
+      S3_REGION: ${S3_REGION:-us-east-1}
+      S3_PATH_STYLE: ${S3_PATH_STYLE:-true}
+      # Public image URLs: proxy (default, /api/images/), a CDN base, or
+      # IMAGE_URL_MODE=signed (S3_PRESIGN_ENDPOINT must be browser-reachable).
+      S3_PUBLIC_BASE_URL: ${S3_PUBLIC_BASE_URL:-}
+      IMAGE_URL_MODE: ${IMAGE_URL_MODE:-proxy}
+      S3_PRESIGN_ENDPOINT: ${S3_PRESIGN_ENDPOINT:-}
+      S3_SIGNED_URL_TTL: ${S3_SIGNED_URL_TTL:-12h}
     depends_on:
       db:
         condition: service_healthy
@@ -80,6 +95,9 @@ services:
       LOG_LEVEL: ${LOG_LEVEL:-info}
       MEDIA_LINK_EVERY: ${MEDIA_LINK_EVERY:-1h}
       CROSSCHECK_EVERY: ${CROSSCHECK_EVERY:-1h}
+      # Image download / purge job slots (run by audit).
+      MEDIA_FETCH_EVERY: ${MEDIA_FETCH_EVERY:-1h}
+      MEDIA_PURGE_EVERY: ${MEDIA_PURGE_EVERY:-1h}
     depends_on:
       db:
         condition: service_healthy
@@ -120,6 +138,22 @@ services:
       THEPORNDB_API_TOKEN: ${THEPORNDB_API_TOKEN:-}
       CROSSCHECK_MAX_PER_RUN: ${CROSSCHECK_MAX_PER_RUN:-100}
       CROSSCHECK_DAILY_CAP: ${CROSSCHECK_DAILY_CAP:-1000}
+      # Image jobs (media_fetch / media_purge): CATALOG_CONTACT above is
+      # the crawler contact (empty = no downloads); limits and retention window.
+      IMAGE_FETCH_MIN_INTERVAL: ${IMAGE_FETCH_MIN_INTERVAL:-2s}
+      IMAGE_FETCH_MAX_PER_RUN: ${IMAGE_FETCH_MAX_PER_RUN:-200}
+      IMAGE_MAX_BYTES: ${IMAGE_MAX_BYTES:-8388608}
+      IMAGE_MAX_DIMENSION: ${IMAGE_MAX_DIMENSION:-1600}
+      MEDIA_PURGE_AFTER: ${MEDIA_PURGE_AFTER:-24h}
+      # Catalog images (internal/images): S3-compatible storage; empty
+      # S3_ENDPOINT = no image fields and /api/images/ is 404. With the
+      # "storage" profile: S3_ENDPOINT=http://minio:9000.
+      S3_ENDPOINT: ${S3_ENDPOINT:-}
+      S3_BUCKET: ${S3_BUCKET:-avxxx-media}
+      S3_ACCESS_KEY: ${S3_ACCESS_KEY:-}
+      S3_SECRET_KEY: ${S3_SECRET_KEY:-}
+      S3_REGION: ${S3_REGION:-us-east-1}
+      S3_PATH_STYLE: ${S3_PATH_STYLE:-true}
     depends_on:
       db:
         condition: service_healthy
@@ -147,6 +181,29 @@ services:
     depends_on:
       db:
         condition: service_healthy
+  # Optional: docker compose --profile storage up -d minio
+  # S3-compatible object storage for catalog images (docs/IMAGE_STORAGE.md).
+  # Private: no published port, no bucket policy; api and audit reach it on
+  # the compose network (S3_ENDPOINT=http://minio:9000) and the audit worker
+  # creates the bucket. Root credentials are S3_ACCESS_KEY / S3_SECRET_KEY
+  # (MinIO refuses to start while they are empty or the secret is < 8
+  # chars). MinIO no longer publishes images to Docker Hub for every
+  # release; set MINIO_IMAGE to a mirror you trust when the default cannot
+  # be pulled. Any other S3 provider works with the same S3_* variables.
+  minio:
+    image: ${MINIO_IMAGE:-minio/minio:RELEASE.2025-04-22T22-12-26Z}
+    profiles: ["storage"]
+    command: ["server", "/data"]
+    environment:
+      MINIO_ROOT_USER: ${S3_ACCESS_KEY:-}
+      MINIO_ROOT_PASSWORD: ${S3_SECRET_KEY:-}
+      MINIO_BROWSER: "off"
+    volumes: ["miniodata:/data"]
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
   # Optional: docker compose --profile monitoring up -d prometheus
   # Scrapes the services' internal metrics listeners over the compose network
   # and evaluates deploy/monitoring/alerts.yml. The UI is bound to localhost
@@ -214,5 +271,6 @@ services:
       - ${BACKUP_METRICS_DIR:-./backups/metrics}:/textfile:ro
 volumes:
   pgdata:
+  miniodata:
   promdata:
   amdata:

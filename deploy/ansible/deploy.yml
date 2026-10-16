@@ -48,6 +48,13 @@
           BACKUP_METRICS_DIR={{ backup_metrics_dir }}
           PUBLIC_BASE_URL={{ public_base_url | default(base_url | default('')) }}
           WEB_API_PROXY={{ web_api_proxy | default('true') }}
+          # Catalog image storage (docs/DATA_RETENTION_AND_IMAGES.md); empty = images off.
+          S3_ENDPOINT={{ s3_endpoint | default('') }}
+          S3_BUCKET={{ s3_bucket | default('avxxx-media') }}
+          S3_ACCESS_KEY={{ s3_access_key | default('') }}
+          S3_SECRET_KEY={{ s3_secret_key | default('') }}
+          S3_REGION={{ s3_region | default('us-east-1') }}
+          S3_PUBLIC_BASE_URL={{ s3_public_base_url | default('') }}
     - name: Build and start database
       ansible.builtin.command:
         cmd: docker compose up -d db
@@ -60,6 +67,11 @@
       ansible.builtin.command:
         cmd: docker compose build web
         chdir: "{{ app_dir }}"
+    - name: Start object storage (MinIO, compose profile "storage"; private, no published port)
+      ansible.builtin.command:
+        cmd: docker compose --profile storage up -d minio
+        chdir: "{{ app_dir }}"
+      when: storage_enabled | default(false) | bool
     - name: Start application services
       ansible.builtin.command:
         cmd: docker compose up -d api scheduler scraper audit notifier web

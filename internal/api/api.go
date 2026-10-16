@@ -76,6 +76,10 @@ type Server struct {
 	splitter splitStore
 	// sitemap backs /api/sitemap/* and the SEO check report (sitemap.go).
 	sitemap sitemapStore
+	// img backs catalog images: cover / portrait fields, /api/images/ and
+	// the admin media routes (images.go). Without S3_* only the admin
+	// routes exist and responses carry no image fields.
+	img imageServing
 	// adminToken is ADMIN_TOKEN, read once at construction. Empty disables
 	// every admin route (they all return 401).
 	adminToken string
@@ -125,6 +129,7 @@ func Register(mux *http.ServeMux, s *store.Store, mediaHandler *media.Handler) {
 		srv.evidence = s
 		srv.reports = s
 		srv.splitter = s
+		srv.setupImages(s)
 	}
 	srv.linkOnDemand = medialink.OnDemandFromEnv(os.Getenv("MEDIA_LINK_ON_DEMAND"))
 	for _, rt := range srv.routes() {
@@ -161,6 +166,7 @@ func (srv *Server) routes() []route {
 	rs = append(rs, srv.adminSplitRoutes()...)
 	rs = append(rs, srv.sitemapRoutes()...)
 	rs = append(rs, srv.attributionRoutes()...)
+	rs = append(rs, srv.imageRoutes()...)
 	return srv.followMerges(rs)
 }
 

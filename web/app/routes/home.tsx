@@ -210,6 +210,7 @@ export default function Home() {
                 key={r.id}
                 slug={r.slug}
                 title={r.canonical_title}
+                cover={r.cover}
                 badge={r.runtime_minutes ? t('card.minutes', {n: r.runtime_minutes}) : undefined}
                 meta={[r.maker_name, formatDate(r.release_date)].filter(Boolean).join(' · ')}
                 sub={!r.maker_name && !r.release_date ? formatRuntime(r.runtime_minutes) : undefined}

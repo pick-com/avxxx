@@ -1,7 +1,7 @@
 import {useEffect, useRef, useState, type ReactNode} from 'react';
 import {data, redirect, useLoaderData, useParams, useSearchParams, type LoaderFunctionArgs, type MetaFunction} from 'react-router';
 import {Link, useLocation, useNavigate} from '../lib/nav';
-import {Avatar, ReleaseRow, SectionHeader} from '../components/Cards';
+import {absoluteImageUrl, Avatar, CatalogImage, ReleaseRow, SectionHeader} from '../components/Cards';
 import {Icon} from '../components/Icon';
 import {PerformerHoverCard, PerformerSheet} from '../components/PerformerPeek';
 import {Player} from '../components/Player';
@@ -98,6 +98,8 @@ export const meta: MetaFunction<typeof loader> = ({data: d, params, matches}) =>
       : t('seo.releaseDescriptionShort', {title: r.canonical_title});
   const {lang, origin} = rootMeta(matches);
   const url = pageUrl(origin, path, lang);
+  // Stored cover only (never a source's hotlinked image).
+  const image = r.cover?.url ? absoluteImageUrl(origin, r.cover.url) : null;
   const video = compact({
     '@context': 'https://schema.org',
     '@type': 'VideoObject',
@@ -106,6 +108,7 @@ export const meta: MetaFunction<typeof loader> = ({data: d, params, matches}) =>
     description,
     uploadDate: isoDate(r.release_date),
     duration: isoMinutes(r.runtime_minutes),
+    thumbnailUrl: image ? [image] : undefined,
     url,
     inLanguage: lang,
     productionCompany: r.maker_name ? {'@type': 'Organization', name: r.maker_name} : undefined,
@@ -119,6 +122,7 @@ export const meta: MetaFunction<typeof loader> = ({data: d, params, matches}) =>
     title: t('title.named', {name: r.canonical_title}),
     description,
     ogType: 'video.movie',
+    image,
     jsonLd: [
       video,
       breadcrumbs(matches, [
@@ -294,7 +298,14 @@ export default function ReleasePage() {
               </div>
             </div>
 
-            <ReleaseMeta release={release} />
+            {release.cover ? (
+              <div className="release-overview">
+                <CatalogImage image={release.cover} alt={release.canonical_title} className="release-cover" sizes="(max-width: 640px) 40vw, 240px" />
+                <ReleaseMeta release={release} />
+              </div>
+            ) : (
+              <ReleaseMeta release={release} />
+            )}
 
             <Community slug={release.slug} releaseId={release.id} watched={!!resumeAt && resumeAt > 0} />
 
@@ -425,7 +436,7 @@ function CastMember({performer, releaseDate, onOpen}: {performer: Performer; rel
           : undefined
       }
     >
-      <Avatar seed={performer.slug} name={performer.canonical_name} size={88} />
+      <Avatar seed={performer.slug} name={performer.canonical_name} size={88} image={performer.portrait} />
       <span className="performer-chip-name">{performer.canonical_name}</span>
       {performer.canonical_name_ja && <span className="performer-chip-sub">{performer.canonical_name_ja}</span>}
       {age !== null && <span className="age-pill">{t('release.age', {age})}</span>}
@@ -562,6 +573,7 @@ function SamePerformer({performer, currentSlug, onFirst, onList}: {
               key={r.id}
               slug={r.slug}
               title={r.canonical_title}
+              cover={r.cover}
               badge={r.runtime_minutes ? t('card.minutes', {n: r.runtime_minutes}) : undefined}
               meta={t('release.samePerformer', {name: performer.canonical_name})}
               sub={formatDate(r.release_date)}

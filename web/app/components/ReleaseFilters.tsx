@@ -100,6 +100,7 @@ export function releaseCardProps(r: Release) {
     title: r.canonical_title,
     badge: r.runtime_minutes ? translate('card.minutes', {n: r.runtime_minutes}) : undefined,
     meta: [r.maker_name, formatDate(r.release_date)].filter(Boolean).join(' · ') || undefined,
+    cover: r.cover,
   };
 }
 
