@@ -236,8 +236,15 @@ func (s *Store) PerformerReleases(ctx context.Context, slug string, limit int) (
 	return out, r.Err()
 }
 
+// ReleasePerformers is the public cast of a published release. A release that
+// is not public (draft, held_review, unpublished, merged) or unknown is
+// pgx.ErrNoRows, like the release itself: its cast must not reveal it.
 func (s *Store) ReleasePerformers(ctx context.Context, slug string) ([]model.Performer, error) {
-	r, err := s.Query(ctx, `SELECT p.id,p.slug,p.canonical_name,COALESCE(p.canonical_name_ja,''),`+PublicBirthDate("p")+`,COALESCE(p.height_cm,0),COALESCE(p.bust_cm,0),COALESCE(p.waist_cm,0),COALESCE(p.hip_cm,0),p.status FROM performers p JOIN release_performers rp ON rp.performer_id=p.id JOIN releases r ON r.id=rp.release_id WHERE r.slug=$1 AND p.status='active' AND p.merged_into_id IS NULL ORDER BY rp.billing_order NULLS LAST,p.id`, slug)
+	var releaseID int64
+	if err := s.QueryRow(ctx, `SELECT id FROM releases WHERE slug=$1 AND status='published' AND merged_into_id IS NULL`, slug).Scan(&releaseID); err != nil {
+		return nil, err
+	}
+	r, err := s.Query(ctx, `SELECT p.id,p.slug,p.canonical_name,COALESCE(p.canonical_name_ja,''),`+PublicBirthDate("p")+`,COALESCE(p.height_cm,0),COALESCE(p.bust_cm,0),COALESCE(p.waist_cm,0),COALESCE(p.hip_cm,0),p.status FROM performers p JOIN release_performers rp ON rp.performer_id=p.id WHERE rp.release_id=$1 AND p.status='active' AND p.merged_into_id IS NULL ORDER BY rp.billing_order NULLS LAST,p.id`, releaseID)
 	if err != nil {
 		return nil, err
 	}
