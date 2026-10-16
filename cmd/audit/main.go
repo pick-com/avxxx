@@ -66,6 +66,14 @@
 //
 //	audit -watch-stats                       rebuild the hourly dates now, print, exit
 //	audit -watch-stats -watch-stats-days 90  backfill the last 90 dates (event retention)
+//
+// It also claims 'site_metrics' jobs (hourly, cmd/scheduler): the
+// AdminDashboard plays / DAU / watch time / completion KPIs per UTC day in
+// site_daily_metrics (internal/sitemetrics). A run rebuilds yesterday and
+// today; the first run on an empty table backfills the 90-day retention.
+//
+//	audit -site-metrics                         run the job now (yesterday and today, or the backfill), print, exit
+//	audit -site-metrics -site-metrics-days 90   rebuild the last N days (at most the event retention)
 package main
 
 import (
@@ -81,6 +89,7 @@ import (
 	"avxxx/internal/playcurve"
 	"avxxx/internal/recs"
 	"avxxx/internal/search"
+	"avxxx/internal/sitemetrics"
 	"avxxx/internal/store"
 	"avxxx/internal/watchstats"
 	"context"
@@ -115,6 +124,8 @@ func main() {
 	mediaPurgeNow := flag.Bool("media-purge", false, "run the image purge job once and exit")
 	watchStatsNow := flag.Bool("watch-stats", false, "rebuild user_watch_daily (WatchStats) once and exit")
 	watchStatsDays := flag.Int("watch-stats-days", 0, "with -watch-stats: rebuild the last N dates instead of today's (at most the 90-day event retention)")
+	siteMetricsNow := flag.Bool("site-metrics", false, "rebuild site_daily_metrics (AdminDashboard KPIs) once and exit")
+	siteMetricsDays := flag.Int("site-metrics-days", 0, "with -site-metrics: rebuild the last N days (at most the 90-day event retention)")
 	flag.Parse()
 
 	obs.SetupLogging("audit")
@@ -205,6 +216,16 @@ func main() {
 		if err != nil {
 			obs.Fatal("run failed", err)
 		}
+	case *siteMetricsNow:
+		rn := &sitemetrics.Runner{Store: s}
+		if *siteMetricsDays > 0 {
+			rn.Days = sitemetrics.BackfillDays(time.Now(), *siteMetricsDays)
+		}
+		rep, err := rn.Run(ctx)
+		printJSON(rep)
+		if err != nil {
+			obs.Fatal("run failed", err)
+		}
 	case *completenessNow:
 		rep, err := runCompleteness(ctx, s, 0)
 		printJSON(rep)
@@ -249,7 +270,7 @@ func work(ctx context.Context, s *store.Store) {
 			slog.Error("reap expired jobs", "err", err)
 		}
 		claimed := false
-		for _, kind := range []string{store.JobKindSourceHealth, store.JobKindRecsTrending, store.JobKindReleaseCurves, store.JobKindSearchStats, store.JobKindAudit, store.JobKindRecsSimilarity, store.JobKindMediaLink, store.JobKindCompletenessSnapshot, store.JobKindCrossCheck, store.JobKindMediaPurge, store.JobKindMediaFetch, store.JobKindWatchStats, store.JobKindWatchStatsNightly} {
+		for _, kind := range []string{store.JobKindSourceHealth, store.JobKindRecsTrending, store.JobKindReleaseCurves, store.JobKindSearchStats, store.JobKindAudit, store.JobKindRecsSimilarity, store.JobKindMediaLink, store.JobKindCompletenessSnapshot, store.JobKindCrossCheck, store.JobKindMediaPurge, store.JobKindMediaFetch, store.JobKindWatchStats, store.JobKindWatchStatsNightly, store.JobKindSiteMetrics} {
 			id, version, err := s.ClaimJob(ctx, kind)
 			if errors.Is(err, pgx.ErrNoRows) {
 				continue
@@ -382,6 +403,8 @@ func execute(ctx context.Context, s *store.Store, kind string, id int64) (any, e
 		return rn.Run(ctx)
 	case store.JobKindWatchStats, store.JobKindWatchStatsNightly:
 		return (&watchstats.Runner{Store: s, JobID: id, Kind: kind}).Run(ctx)
+	case store.JobKindSiteMetrics:
+		return (&sitemetrics.Runner{Store: s, JobID: id}).Run(ctx)
 	}
 	if kind == store.JobKindSourceHealth {
 		rep, err := (&audit.HealthRunner{Store: s, Config: healthConfig(), JobID: id}).Run(ctx)

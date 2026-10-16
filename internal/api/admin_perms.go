@@ -83,6 +83,7 @@ var adminRoutePerms = map[string]routePerm{
 	"GET /api/admin/playback-sources/health": rd(gDashboard),
 	"GET /api/admin/reports/completeness":    rd(gDashboard),
 	"GET /api/admin/seo/report":              rd(gDashboard),
+	"GET /api/admin/site-metrics":            rd(gDashboard),
 
 	// 视频与演员、重复与归并、字段冲突、拆分
 	"GET /api/admin/releases":                                   rd(gCatalog),

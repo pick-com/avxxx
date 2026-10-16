@@ -124,9 +124,11 @@ type Server struct {
 	// stubs backs AdminSearch 补片 / 建预约页 (admin_search_release.go).
 	stubs releaseStubStore
 	// jobsAdm backs the 夜间任务 page (admin_jobs.go).
-	jobsAdm      jobsAdmin
-	approvalOnce sync.Once
-	approvalMux  *http.ServeMux
+	jobsAdm jobsAdmin
+	// siteMetricsSt backs the AdminDashboard KPIs (admin_site_metrics.go).
+	siteMetricsSt siteMetricsStore
+	approvalOnce  sync.Once
+	approvalMux   *http.ServeMux
 	// auth backs logout, password reset, OAuth and the /api/me account
 	// routes (auth.go); oidc holds the configured Google / Apple providers
 	// (GOOGLE_* / APPLE_*; empty = buttons hidden, routes 404). oauthHTTPS:
@@ -182,6 +184,7 @@ func Register(mux *http.ServeMux, s *store.Store, mediaHandler *media.Handler) {
 		srv.adminAccts = s
 		srv.svcTokens = s
 		srv.jobsAdm = s
+		srv.siteMetricsSt = s
 		srv.rights = s
 		srv.stubs = s
 		srv.push = s
@@ -275,6 +278,7 @@ func (srv *Server) routes() []route {
 	rs = append(rs, srv.releaseRightsRoutes()...)
 	rs = append(rs, srv.releaseStubRoutes()...)
 	rs = append(rs, srv.ageGateRoutes()...)
+	rs = append(rs, srv.adminSiteMetricsRoutes()...)
 	return srv.followMerges(rs)
 }
 

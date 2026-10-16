@@ -51,6 +51,7 @@ var runnableKinds = []runKind{
 	{store.JobKindMediaPurge, "图片清理", "media_purge"},
 	{store.JobKindWatchStats, "观看统计（今天）", "watch_stats"},
 	{store.JobKindWatchStatsNightly, "观看统计（夜间）", "watch_stats_nightly"},
+	{store.JobKindSiteMetrics, "全站每日指标", "site_metrics"},
 }
 
 func runnableKind(kind string) bool {
