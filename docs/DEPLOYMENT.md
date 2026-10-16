@@ -181,6 +181,7 @@ reel.example {
 | `admin_totp_key` | `ADMIN_TOTP_KEY` | 是 | 加密管理员 TOTP 密钥的键（AES-256-GCM）；api 与 `admin` 命令用同一值。更换后需重置所有人的两步验证 |
 | `public_base_url` / `base_url` | `PUBLIC_BASE_URL` / `BASE_URL` | 是 | 对外 origin（`https://reel.example`）；SSR canonical/站点地图、通知里的链接 |
 | `catalog_contact` | `CATALOG_CONTACT` | 抓取需要 | 爬虫 User-Agent 联系方式；空则目录任务 `config_error` |
+| `age_gate_key` | `AGE_GATE_KEY` | 是 | 进站 18+ 确认 Cookie 的 HMAC 键（`openssl rand -hex 32`）；api 与 web 共用。空则用公开的开发键，任何人都能伪造确认 Cookie。更换后所有访客需重新确认 |
 | `log_hash_key` | `LOG_HASH_KEY` | 建议 | 日志中用户 id 的 HMAC 键；空则每次重启随机（哈希不可跨重启关联） |
 | `dmm_api_id` / `dmm_affiliate_id` | `DMM_API_ID` / `DMM_AFFILIATE_ID` | 可选 | DMM/FANZA Affiliate API；affiliate id 须 990–999 结尾。只发往 `api.dmm.com`，日志/任务/入库前脱敏 |
 | `theporndb_api_token` | `THEPORNDB_API_TOKEN` | 可选 | ThePornDB 个人 token，只发往 `api.theporndb.net` |
