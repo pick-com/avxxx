@@ -398,8 +398,8 @@ export function parseAgeGate(cause: unknown): AgeGateFinding[] | null {
 
 // ---------------------------------------------------------------- moderation
 
-export type QueueKind = 'reports' | 'danmaku' | 'reviews' | 'rating_floods';
-export type QueueCounts = {reports: number; reports_overdue: number; danmaku: number; reviews: number; rating_floods: number};
+export type QueueKind = 'reports' | 'danmaku' | 'reviews' | 'rating_floods' | 'comments';
+export type QueueCounts = {reports: number; reports_overdue: number; danmaku: number; reviews: number; rating_floods: number; comments?: number};
 export type Report = {
   id: number;
   target_type: string;
@@ -440,6 +440,20 @@ export type QueuedReview = {
   open_reports: number;
   created_at: string;
 };
+/** store.QueuedComment (评论; parent_id set on a reply). */
+export type QueuedComment = {
+  id: number;
+  release_id: number;
+  release_slug: string;
+  parent_id: number | null;
+  user_id: number;
+  body: string;
+  spoiler: boolean;
+  status: string;
+  likes: number;
+  open_reports: number;
+  created_at: string;
+};
 export type RatingFlood = {
   release_id: number;
   release_slug: string;
@@ -450,7 +464,7 @@ export type RatingFlood = {
   anonymous: number;
 };
 export type ModerationAction = 'fold' | 'delete' | 'delete_mute' | 'approve';
-export type ModerationTarget = 'danmaku' | 'reviews' | 'ratings';
+export type ModerationTarget = 'danmaku' | 'reviews' | 'comments' | 'ratings';
 export type Keyword = {word: string; category: string};
 export const KEYWORD_CATEGORIES = ['ad', 'abuse', 'spoiler', 'illegal', 'political', 'other'] as const;
 
