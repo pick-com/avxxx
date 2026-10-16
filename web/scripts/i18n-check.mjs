@@ -12,7 +12,14 @@
 //   4. a locale value is empty, or its {placeholders} differ from zh-CN's;
 //   5. a locale whose script has no Han characters (en, ko, vi, es, th)
 //      still has Han characters in a value (left untranslated);
-//   6. a required locale file is missing.
+//   6. a required locale file is missing;
+//   7. a plural block ({n, plural, one {...} other {...}}, app/lib/plural.ts)
+//      is malformed, has no `other` branch, misses `one` in a language that
+//      has it, uses a category the language does not have, or its variable
+//      or branch placeholders are not zh-CN placeholders.
+//
+// With a plural block, placeholders compare as sets: the block's variable
+// plus every {name} outside and inside its branches must equal zh-CN's.
 //
 // A key counts as referenced when a string literal anywhere in app/ equals
 // it (t('a.b'), label maps typed MessageKey, ...), or when a template literal
@@ -25,6 +32,7 @@ import {readdirSync, readFileSync, statSync, existsSync} from 'node:fs';
 import {join, relative, dirname} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import ts from 'typescript';
+import {scanPlurals} from '../app/lib/plural.ts';
 
 const WEB = join(dirname(fileURLToPath(import.meta.url)), '..');
 const APP = join(WEB, 'app');
@@ -135,7 +143,56 @@ for (const k of source.keys()) if (!used.has(k)) fail(`${sourceAt.get(k)}: zh-CN
 
 // ---- Locales ----
 
-const placeholders = s => [...s.matchAll(/\{(\w+)\}/g)].map(m => m[1]).sort().join(',');
+const placeholderList = s => [...s.matchAll(/\{(\w+)\}/g)].map(m => m[1]);
+const placeholders = s => placeholderList(s).sort().join(',');
+
+/** Plural blocks of `s`, or null (reported) when malformed. */
+function pluralBlocks(where, key, s) {
+  try {
+    return scanPlurals(s);
+  } catch (e) {
+    fail(`${where}: '${key}' ${e.message}`);
+    return null;
+  }
+}
+
+/** Placeholder names of a value with plural blocks: variables, outside and branch {names}. */
+function pluralNames(s, blocks) {
+  const names = new Set();
+  let at = 0;
+  for (const b of blocks) {
+    placeholderList(s.slice(at, b.start)).forEach(n => names.add(n));
+    names.add(b.name);
+    for (const text of b.branches.values()) placeholderList(text).forEach(n => names.add(n));
+    at = b.end;
+  }
+  placeholderList(s.slice(at)).forEach(n => names.add(n));
+  return [...names].sort().join(',');
+}
+
+const categories = lang => new Set(new Intl.PluralRules(lang).resolvedOptions().pluralCategories);
+
+/** Checks a value's plural blocks for `lang`; returns its placeholder signature. */
+function checkPlurals(rel, key, value, lang) {
+  const blocks = pluralBlocks(rel, key, value);
+  if (!blocks) return null;
+  if (!blocks.length) return {sig: placeholders(value), plural: false};
+  const cats = categories(lang);
+  for (const b of blocks) {
+    for (const sel of b.branches.keys()) {
+      if (!sel.startsWith('=') && !cats.has(sel)) fail(`${rel}: '${key}' plural '${sel}' is not a ${lang} plural category (${[...cats].join(', ')})`);
+    }
+    if (cats.has('one') && !b.branches.has('one')) fail(`${rel}: '${key}' plural block '${b.name}' needs a 'one' branch in ${lang}`);
+  }
+  return {sig: pluralNames(value, blocks), plural: true};
+}
+
+const sourceSig = new Map();
+for (const [k, v] of source) {
+  const r = checkPlurals(sourceAt.get(k), k, v, 'zh-CN');
+  if (r) sourceSig.set(k, r);
+}
+const nameSet = sig => [...new Set(sig.split(',').filter(Boolean))].sort().join(',');
 const HAN = /\p{Script=Han}/u;
 
 const files = existsSync(LOCALES) ? readdirSync(LOCALES).filter(f => f.endsWith('.json')) : [];
@@ -164,8 +221,13 @@ for (const f of files.sort()) {
       fail(`${rel}: '${k}' is empty`);
       continue;
     }
-    const want = placeholders(source.get(k));
-    const got = placeholders(v);
+    const r = checkPlurals(rel, k, v, lang);
+    const src = sourceSig.get(k);
+    if (!r || !src) continue;
+    // Sets once either side has a plural block (a branch may omit or repeat a name).
+    const plural = r.plural || src.plural;
+    const want = plural ? nameSet(src.sig) : src.sig;
+    const got = plural ? nameSet(r.sig) : r.sig;
     if (want !== got) fail(`${rel}: '${k}' placeholders {${got}} differ from zh-CN {${want}}`);
     if (NO_HAN.has(lang) && HAN.test(v)) fail(`${rel}: '${k}' still contains Chinese text: ${JSON.stringify(v)}`);
   }

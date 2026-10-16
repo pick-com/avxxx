@@ -3,6 +3,7 @@ import {useLocation, useNavigate} from 'react-router';
 import {setUiLang as setAnalyticsLang} from './analytics';
 import {setContentLang as setApiContentLang, type LangCode} from './api';
 import {setFormatLocale} from './format';
+import {expandPlurals} from './plural';
 import {withBundled} from './locales';
 import {DEFAULT_LANG, isLang, isPrefixable, localizePath, normalizeLang, splitLangPath, stripLang, writeLangCookie} from './langs';
 import {zhCN, type MessageKey} from './messages.zh-CN';
@@ -63,7 +64,10 @@ function writeLocal(key: string, value: LangCode) {
 let currentDict: Messages = {};
 let currentLang: LangCode = DEFAULT_LANG;
 
-function format(template: string, vars?: Record<string, string | number>): string {
+function format(template: string, vars: Record<string, string | number> | undefined, lang: LangCode): string {
+  // Plural blocks first ({n, plural, one {...} other {...}}, lib/plural.ts),
+  // then the plain {placeholders}, including those inside the chosen branch.
+  template = expandPlurals(template, vars, lang);
   if (!vars) return template;
   return template.replace(/\{(\w+)\}/g, (m, k: string) => (k in vars ? String(vars[k]) : m));
 }
@@ -72,7 +76,7 @@ function format(template: string, vars?: Record<string, string | number>): strin
 export function t(key: MessageKey, vars?: Record<string, string | number>): string {
   const dict = renderScope()?.dict ?? currentDict;
   const value = dict[key];
-  return format(typeof value === 'string' && value ? value : zhCN[key] ?? key, vars);
+  return format(typeof value === 'string' && value ? value : zhCN[key] ?? key, vars, renderScope()?.lang ?? currentLang);
 }
 
 export const uiLang = (): LangCode => renderScope()?.lang ?? currentLang;
