@@ -9,6 +9,9 @@ import {clearSearchHistory, getSearchHistory, recordSearchHistory} from './api';
 const KEY = 'recent_searches';
 const MAX = 10;
 
+/** The dedupe key of a search: width-folded (NFKC), lower case, single spaces. */
+export const searchKey = (q: string) => q.normalize('NFKC').toLowerCase().trim().replace(/\s+/g, ' ');
+
 export function readRecentSearches(): string[] {
   try {
     const parsed: unknown = JSON.parse(window.localStorage.getItem(KEY) || '[]');
@@ -19,9 +22,11 @@ export function readRecentSearches(): string[] {
 }
 
 export function rememberSearch(query: string) {
-  const q = query.trim();
+  const q = query.trim().replace(/\s+/g, ' ');
   if (!q) return;
-  const next = [q, ...readRecentSearches().filter(x => x !== q)].slice(0, MAX);
+  // As typed, deduplicated case-insensitively like the server (search.NormalizeQuery).
+  const key = searchKey(q);
+  const next = [q, ...readRecentSearches().filter(x => searchKey(x) !== key)].slice(0, MAX);
   try {
     window.localStorage.setItem(KEY, JSON.stringify(next));
   } catch {

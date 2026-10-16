@@ -219,7 +219,7 @@ func (srv *Server) searchSuggest(w http.ResponseWriter, r *http.Request) {
 // searchHistoryStore backs the signed-in recent searches.
 type searchHistoryStore interface {
 	SearchHistory(ctx context.Context, userID int64, limit int) ([]string, error)
-	RecordSearch(ctx context.Context, userID int64, q string) error
+	RecordSearch(ctx context.Context, userID int64, q, display string) error
 	ClearSearchHistory(ctx context.Context, userID int64) (int64, error)
 }
 
@@ -241,8 +241,9 @@ func (srv *Server) searchHistory(w http.ResponseWriter, r *http.Request, uid int
 	reply(w, map[string]any{"items": v}, err)
 }
 
-// recordSearch: POST /api/me/search-history {q} stores a search (normalized;
-// the newest 20 are kept).
+// recordSearch: POST /api/me/search-history {q} stores a search as typed,
+// deduplicated by its normalized form ("Summer" and "summer" are one entry
+// showing the latest spelling); the newest 20 are kept.
 func (srv *Server) recordSearch(w http.ResponseWriter, r *http.Request, uid int64) {
 	var in struct {
 		Q string `json:"q"`
@@ -263,7 +264,8 @@ func (srv *Server) recordSearch(w http.ResponseWriter, r *http.Request, uid int6
 	if !srv.withSearchHistory(w) {
 		return
 	}
-	reply(w, map[string]any{"saved": true, "q": q}, srv.searchHist.RecordSearch(r.Context(), uid, q))
+	display := search.DisplayQuery(in.Q)
+	reply(w, map[string]any{"saved": true, "q": display}, srv.searchHist.RecordSearch(r.Context(), uid, q, display))
 }
 
 // clearSearchHistory: DELETE /api/me/search-history (最近搜索 · 清除).

@@ -442,12 +442,17 @@ func (s *Store) CatalogFacets(ctx context.Context) (CatalogFacets, error) {
 // SearchHistoryKeep is how many recent searches are kept per user.
 const SearchHistoryKeep = 20
 
-// RecordSearch stores q (already normalized) as the user's newest search
-// and trims the history to SearchHistoryKeep entries.
-func (s *Store) RecordSearch(ctx context.Context, userID int64, q string) error {
+// RecordSearch stores a search as the user's newest and trims the history
+// to SearchHistoryKeep entries. q is the normalized form (search.NormalizeQuery),
+// the key that dedupes case- and width-insensitively; display is the form as
+// typed (search.DisplayQuery), shown back and updated to the latest spelling.
+func (s *Store) RecordSearch(ctx context.Context, userID int64, q, display string) error {
+	if display == "" {
+		display = q
+	}
 	return pgx.BeginFunc(ctx, s, func(tx pgx.Tx) error {
-		if _, err := tx.Exec(ctx, `INSERT INTO user_search_history(user_id,query) VALUES($1,$2)
-			ON CONFLICT (user_id,query) DO UPDATE SET searched_at=now()`, userID, q); err != nil {
+		if _, err := tx.Exec(ctx, `INSERT INTO user_search_history(user_id,query,display) VALUES($1,$2,$3)
+			ON CONFLICT (user_id,query) DO UPDATE SET display=EXCLUDED.display, searched_at=now()`, userID, q, display); err != nil {
 			return err
 		}
 		_, err := tx.Exec(ctx, `DELETE FROM user_search_history WHERE user_id=$1 AND query NOT IN (
@@ -456,12 +461,13 @@ func (s *Store) RecordSearch(ctx context.Context, userID int64, q string) error 
 	})
 }
 
-// SearchHistory returns the user's recent searches, newest first.
+// SearchHistory returns the user's recent searches as typed, newest first
+// (rows from before migration 049 have only the normalized form).
 func (s *Store) SearchHistory(ctx context.Context, userID int64, limit int) ([]string, error) {
 	if limit <= 0 || limit > SearchHistoryKeep {
 		limit = SearchHistoryKeep
 	}
-	rows, err := s.Query(ctx, `SELECT query FROM user_search_history WHERE user_id=$1 ORDER BY searched_at DESC LIMIT $2`, userID, limit)
+	rows, err := s.Query(ctx, `SELECT COALESCE(display,query) FROM user_search_history WHERE user_id=$1 ORDER BY searched_at DESC LIMIT $2`, userID, limit)
 	if err != nil {
 		return nil, err
 	}

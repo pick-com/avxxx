@@ -337,15 +337,15 @@ func TestDiscoverIntegration(t *testing.T) {
 
 	// ---- search history
 	for i := range 22 {
-		if err := s.RecordSearch(ctx, u1, fmt.Sprintf("q%02d", i)); err != nil {
+		if err := s.RecordSearch(ctx, u1, fmt.Sprintf("q%02d", i), ""); err != nil {
 			t.Fatal(err)
 		}
 	}
-	if err := s.RecordSearch(ctx, u1, "q05"); err != nil { // repeat moves to the top
+	if err := s.RecordSearch(ctx, u1, "q05", "Q05"); err != nil { // repeat moves to the top, latest spelling shown
 		t.Fatal(err)
 	}
 	hist, err := s.SearchHistory(ctx, u1, 0)
-	if err != nil || len(hist) != SearchHistoryKeep || hist[0] != "q05" || hist[1] != "q21" || slices.Contains(hist, "q01") {
+	if err != nil || len(hist) != SearchHistoryKeep || hist[0] != "Q05" || hist[1] != "q21" || slices.Contains(hist, "q01") {
 		t.Errorf("history = %v, %v", hist, err)
 	}
 	if n, err := s.ClearSearchHistory(ctx, u1); err != nil || n != SearchHistoryKeep {
