@@ -11,8 +11,10 @@
 // source yet and no attempt still backing off. Each is searched by DVD code
 // through the source's governed Fetcher (contact User-Agent, robots.txt,
 // min_request_interval and the daily page budget of source_crawl_policies,
-// shared with the source's incremental crawl). A unique exact code match is
-// saved through SaveCatalogRecord, where the fallback rules apply: it only
+// shared with the source's incremental crawl). A unique exact code match
+// whose code key (catalog.CodeMatchKey: the API drops zero padding, so
+// "HEYZO-123" matches "HEYZO-0123") leads to this release alone is saved
+// through SaveCatalogRecord, where the fallback rules apply: it only
 // attaches to the existing release, fills fields no better source has and
 // never opens a field conflict on its own. Every try is one
 // crosscheck_attempts row with a backoff, like internal/medialink.

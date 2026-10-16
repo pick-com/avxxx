@@ -4,6 +4,7 @@ import (
 	"avxxx/internal/catalog"
 	"context"
 	"errors"
+	"slices"
 
 	"github.com/jackc/pgx/v5"
 )
@@ -31,27 +32,75 @@ func fallbackOnlySource(ctx context.Context, tx pgx.Tx, sourceID int64) (bool, e
 }
 
 // fallbackReleaseSlug is the slug of the existing release a fallback record
-// attaches to: the release its earlier save attached to, else the release
-// under slug (the code slug); "" when neither exists.
-func fallbackReleaseSlug(ctx context.Context, tx pgx.Tx, sourceID int64, key, slug string) (string, error) {
+// attaches to: the release its earlier save attached to, else the one
+// release fallbackCodeReleaseIDs finds for slug (the code slug) and code;
+// "" when there is none, or several. Matching by the code key lets
+// "HEYZO-123" (third-party APIs drop zero padding) reach "HEYZO-0123", and
+// two releases sharing a key ("ABC-001" and "ABC-1") stay unresolved for an
+// admin rather than one of them getting the record.
+func fallbackReleaseSlug(ctx context.Context, tx pgx.Tx, sourceID int64, key, slug, code string) (string, error) {
 	var id int64
 	err := tx.QueryRow(ctx, `SELECT release_id FROM source_records WHERE source_id=$1 AND entity_type='release' AND source_record_key=$2 AND release_id IS NOT NULL`,
 		sourceID, key).Scan(&id)
-	if errors.Is(err, pgx.ErrNoRows) {
-		err = tx.QueryRow(ctx, `SELECT id FROM releases WHERE slug=$1`, slug).Scan(&id)
-	}
-	if errors.Is(err, pgx.ErrNoRows) {
-		return "", nil
-	}
-	if err != nil {
-		return "", err
-	}
-	if id, err = survivingID(ctx, tx, "releases", id); err != nil {
+	switch {
+	case err == nil:
+		if id, err = survivingID(ctx, tx, "releases", id); err != nil {
+			return "", err
+		}
+	case errors.Is(err, pgx.ErrNoRows):
+		ids, err := fallbackCodeReleaseIDs(ctx, tx, slug, code)
+		if err != nil || len(ids) != 1 {
+			return "", err
+		}
+		id = ids[0]
+	default:
 		return "", err
 	}
 	var out string
 	err = tx.QueryRow(ctx, `SELECT slug FROM releases WHERE id=$1`, id).Scan(&out)
 	return out, err
+}
+
+// fallbackCodeReleaseIDs are the surviving releases (merges followed) a
+// fallback record could attach to, in id order: the release under slug and,
+// when code is set, every release with a DVD code of the same
+// catalog.CodeMatchKey (SQL code_match_key, migration 033).
+func fallbackCodeReleaseIDs(ctx context.Context, tx pgx.Tx, slug, code string) ([]int64, error) {
+	rows, err := tx.Query(ctx, `SELECT id FROM releases WHERE slug=$1
+		UNION SELECT release_id FROM release_identifiers
+		WHERE $2<>'' AND identifier_type='dvd_code' AND code_match_key(normalized_value)=code_match_key($2)`, slug, code)
+	if err != nil {
+		return nil, err
+	}
+	ids, err := pgx.CollectRows(rows, pgx.RowTo[int64])
+	if err != nil {
+		return nil, err
+	}
+	out := []int64{}
+	for _, id := range ids {
+		sid, err := survivingID(ctx, tx, "releases", id)
+		if err != nil {
+			return nil, err
+		}
+		if !slices.Contains(out, sid) {
+			out = append(out, sid)
+		}
+	}
+	slices.Sort(out)
+	return out, nil
+}
+
+// CrossCheckCodeReleases implements crosscheck.Store: the surviving
+// releases SaveCatalogRecord would weigh for a fallback record with DVD
+// code code (fallbackCodeReleaseIDs under its code slug), in id order. The
+// record attaches only when this is exactly one release.
+func (s *Store) CrossCheckCodeReleases(ctx context.Context, code string) ([]int64, error) {
+	tx, err := s.BeginTx(ctx, pgx.TxOptions{AccessMode: pgx.ReadOnly})
+	if err != nil {
+		return nil, err
+	}
+	defer tx.Rollback(ctx)
+	return fallbackCodeReleaseIDs(ctx, tx, catalog.ReleaseSlug(code, "", "", ""), code)
 }
 
 // fallbackPerformerSlug is the slug of the existing performer a fallback

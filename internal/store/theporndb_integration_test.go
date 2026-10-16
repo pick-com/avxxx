@@ -56,11 +56,9 @@ func TestThePornDBCrossCheckIntegration(t *testing.T) {
 		return *v
 	}
 	sfx := fmt.Sprint(time.Now().UnixNano())
-	// The code number must not start with a zero: ThePornDBCode canonicalizes
-	// "TPB-01234" to "TPB-1234", whose slug is not the release's, and the
-	// runner then reports the match as ambiguous by design. (The old
-	// sfx[len(sfx)-5:] was one of "00000".."99000" on macOS, whose clock has
-	// microsecond resolution, so one run in ten failed with Ambiguous:2.)
+	// A fixed code number keeps the expected codes stable. (Zero-padded
+	// numbers, which ThePornDBCode canonicalizes, "TPB-01234" to "TPB-1234",
+	// match by code key: TestThePornDBCodeKeyIntegration.)
 	const num = "51234"
 
 	// ---- Seed: one disabled third_party_api source behind the license gate.

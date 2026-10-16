@@ -31,6 +31,8 @@ type fakeStore struct {
 	exhausted bool
 	tried     int
 	usage     int64
+	// codeReleases overrides CrossCheckCodeReleases by code key.
+	codeReleases map[string][]int64
 }
 
 func (f *fakeStore) SaveCatalogRecord(_ context.Context, _ int64, _ string, rec catalog.Record) (int64, error) {
@@ -51,6 +53,25 @@ func (f *fakeStore) DueCrossChecks(_ context.Context, _ int64, _ time.Time, limi
 	for _, c := range f.due {
 		if !skip[c.ReleaseID] && len(out) < limit {
 			out = append(out, c)
+		}
+	}
+	return out, nil
+}
+
+// CrossCheckCodeReleases answers from codeReleases (by catalog.CodeMatchKey)
+// when set, else with the due releases having a code of the same key.
+func (f *fakeStore) CrossCheckCodeReleases(_ context.Context, code string) ([]int64, error) {
+	key := catalog.CodeMatchKey(code)
+	if ids, ok := f.codeReleases[key]; ok {
+		return ids, nil
+	}
+	var out []int64
+	for _, c := range f.due {
+		for _, cc := range c.Codes {
+			if catalog.CodeMatchKey(cc) == key {
+				out = append(out, c.ReleaseID)
+				break
+			}
 		}
 	}
 	return out, nil
@@ -149,7 +170,7 @@ func TestRunnerOutcomes(t *testing.T) {
 		{ReleaseID: 2, Slug: "abp-123", Codes: []string{"ABP-123"}},
 		{ReleaseID: 3, Slug: "midv-001-2", Codes: []string{"MIDV-001"}},
 		{ReleaseID: 4, Slug: "juq-743", Codes: []string{"JUQ-743"}, Prev: prevMiss},
-	}}
+	}, codeReleases: map[string][]int64{"MIDV-1": {3, 99}}} // 99: the release under slug midv-001
 	now := time.Date(2026, 10, 16, 12, 0, 0, 0, time.UTC)
 	r := newRunner(st, api, testToken)
 	r.Now = func() time.Time { return now }
@@ -190,6 +211,44 @@ func TestRunnerOutcomes(t *testing.T) {
 		if req.URL.Query().Get("q") == "" || strings.Contains(req.URL.String(), testToken) {
 			t.Fatalf("request %s", req.URL)
 		}
+	}
+}
+
+// ThePornDB drops zero padding ("HEYZO-0123" comes back as "HEYZO-123"):
+// the match is by code key and saved when the key names the release alone;
+// two catalog releases sharing the key stay ambiguous.
+func TestRunnerCodeKey(t *testing.T) {
+	api := newFakeAPI(t)
+	api.bodies["HEYZO-0123"] = list(scene("cccccccc-dddd-4eee-8fff-000000000001", "HEYZO-123"))
+	api.bodies["TPB-02000"] = list(scene("cccccccc-dddd-4eee-8fff-000000000002", "TPB-2000"))
+	api.bodies["ABC-0042"] = list(scene("cccccccc-dddd-4eee-8fff-000000000003", "ABC-42"))
+	st := &fakeStore{src: reviewedSource(), found: true, due: []Candidate{
+		{ReleaseID: 1, Slug: "heyzo-0123", Codes: []string{"HEYZO-0123"}},
+		{ReleaseID: 2, Slug: "tpb-02000", Codes: []string{"TPB-02000"}},
+		{ReleaseID: 3, Slug: "abc-0042", Codes: []string{"ABC-0042"}},
+	}, codeReleases: map[string][]int64{"ABC-42": {3, 4}}} // 4: "ABC-042", a different title
+	r := newRunner(st, api, testToken)
+	rep, err := r.Run(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ar := rep.Adapters[0]; ar.Checked != 3 || ar.Found != 2 || ar.Ambiguous != 1 {
+		t.Fatalf("report %+v", ar)
+	}
+	byRelease := map[int64]Attempt{}
+	for _, a := range st.attempts {
+		byRelease[a.ReleaseID] = a
+	}
+	for _, id := range []int64{1, 2} {
+		if a := byRelease[id]; a.Status != StatusFound || a.MatchedKey == "" {
+			t.Fatalf("attempt %d = %+v", id, a)
+		}
+	}
+	if a := byRelease[3]; a.Status != StatusAmbiguous || !strings.Contains(a.LastError, "[3 4]") || a.NextTryAt != nil {
+		t.Fatalf("colliding attempt %+v", a)
+	}
+	if len(st.saved) != 2 || st.saved[0].Fields["dvd_code"] != "HEYZO-123" || st.saved[1].Fields["dvd_code"] != "TPB-2000" {
+		t.Fatalf("saved %+v", st.saved)
 	}
 }
 

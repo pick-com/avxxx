@@ -635,7 +635,7 @@ func (s *Store) SaveCatalogRecord(ctx context.Context, sourceID int64, parserVer
 			return 0, err
 		}
 		if fallback {
-			if slug, err = fallbackReleaseSlug(ctx, tx, sourceID, rec.SourceKey, slug); err != nil {
+			if slug, err = fallbackReleaseSlug(ctx, tx, sourceID, rec.SourceKey, slug, code); err != nil {
 				return 0, err
 			}
 			if slug == "" {
@@ -666,9 +666,11 @@ func (s *Store) SaveCatalogRecord(ctx context.Context, sourceID int64, parserVer
 			scope := catalog.MakerScope(maker, recordText(rec.Fields["maker_id"]))
 			// A fallback-only source fills a missing code but never adds
 			// another maker scope for a code the release already has: its
-			// studio naming ("Madonna TPDB") is not an identity key.
+			// studio naming ("Madonna TPDB") is not an identity key, nor
+			// is its unpadded copy ("HEYZO-123") of a code the release
+			// has ("HEYZO-0123").
 			_, err = tx.Exec(ctx, `INSERT INTO release_identifiers(release_id,identifier_type,identifier_value,normalized_value,identifier_scope,source_id)
-				SELECT $1,'dvd_code',$2,$3,$4,$5 WHERE NOT ($6 AND EXISTS (SELECT 1 FROM release_identifiers WHERE release_id=$1 AND identifier_type='dvd_code' AND normalized_value=$3))
+				SELECT $1,'dvd_code',$2,$3,$4,$5 WHERE NOT ($6 AND EXISTS (SELECT 1 FROM release_identifiers WHERE release_id=$1 AND identifier_type='dvd_code' AND code_match_key(normalized_value)=code_match_key($3)))
 				ON CONFLICT DO NOTHING`, id, code, catalog.NormalizeIdentifier(code), scope, sourceID, fallback)
 			if err != nil {
 				return 0, err
