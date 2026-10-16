@@ -410,6 +410,19 @@ UNIQUE(source_id, entity_type, source_record_key)
 
 来源统计例如 XCITY 收藏数 761、JAV Database 收藏数 14，不合并为 775；它们进入独立来源指标，本站只计算 `site_popularity_score`。
 
+### 5.5 拆分非合并产生的实体（已实现：`internal/identity/split.go`，`internal/store/split.go`，migration 030）
+
+入库有时把两个真实的人（不同来源的同名演员）或两部作品（错误的番号匹配）挂到同一个实体上。撤销合并只能处理合并产生的实体；拆分则从一个实体的来源证据中选出一部分，新建实体承接它们：
+
+- **可选证据**：演员为 `source_records`（`performer_id` 指向它）以及为它署名的作品来源记录（`release_performer_sources`，只移动署名证据，作品来源记录仍属原作品）；作品为 `source_records`，媒体关联（`release_media_sources`）不来自来源记录，需显式选择。
+- **派生数据**（`identity.BuildSplitPlan`，纯函数）：别名、`performer_external_ids`、`release_identifiers` 按证据键（别名规范形、DMM actress id、规范化番号/content_id）判断——只被移走的记录支持才移动，两边都支持或无人支持则留在原实体；无证据键时按写入来源判断（该来源在原实体上不再有记录才移动）。`release_performers` / `release_tags` 只由移走的证据支持时移动，两边都有证据时复制到新实体；原作品的 `performers` / `tags` override 只复制不移走，演员拆分时作品 `performers` override 的署名不变。来源级证据行（`release_performer_sources`、`release_tag_sources`）随记录移动；来源指标按来源判断。
+- **规范字段**：两边都按字段优先级策略（`source_field_policies` / 来源层级）从各自剩余证据重算。原实体保留 override；原值只来自移走证据时清空（必填字段保留），无证据的字段不变。新实体没有 override，必填名称无证据时用署名名，否则沿用原值。两边的 pending `field_conflicts` 标记 `superseded` 后按新证据重新打开。
+- **用户数据**（关注、收藏、观看历史、评分、评论、预约、稍后看、播放源）默认留在原实体，只有管理员按 id 显式选择的行才移动。
+- **slug**：原实体 slug 永不改变；新实体按 3.1 / 3.2 规则取第一个未占用（含 `slug_redirects`）的候选——演员为名称、读音、`dmm-actress-<id>`，作品为各移动记录的番号 slug、`标题-来源-key`——最后兜底 `performer-<id>` / `release-<id>`，永不为空。新实体沿用原实体的 `status`。
+- **审计与防回并**：写入不可变 `review_events`（`action='split'`，`before_value` 为原实体行、相关关系和选中用户数据快照，`after_value` 为完整计划、新实体行）；`not_duplicate_pairs` 记录这一对（`review_event_id` 指向拆分事件），候选生成不再提出。入库时：演员记录沿用来源记录之前解析到的演员；作品记录若之前属于与番号 slug 所属作品构成 not-duplicate 的作品，继续更新自己的作品；作品署名若之前指向参与拆分的演员，直接沿用（同名匹配无法区分两人），否则解析结果与之前的演员构成 not-duplicate 时用之前的演员；按番号关联媒体时，媒体已关联到与番号作品构成 not-duplicate 的作品则保持不变。
+- **撤销**：`POST /api/admin/splits/{event_id}/undo` 删除 not-duplicate 对，经合并路径把新实体并回原实体（合并事件 `action='undo_split'`，`reverts_event_id` 指向拆分事件，只能撤销一次；新 slug 301 到原实体），然后按全部证据重算原实体规范字段。拆分后任一方又被合并时返回 409。
+- **API**：`GET /api/admin/{performers|releases}/{id}/split-preview?source_records=1,2&media_links=javtiful`（不带选择时只列出可选证据），`POST …/split`（`{"source_records":[…],"version":n,"reason":"…","media_links":[…],"move_user_data":{"favorites":[user_id]}}`，`X-Admin-User` 为 actor）。版本过期、实体已合并、作品 `held_review`、演员 `hidden` 返回 409；选择为空、未知或会让原实体没有任何证据时返回 400。
+
 ## 6. Review 机制
 
 数据不一致不覆盖旧值，进入 `field_conflicts`；实体疑似同人进入 `identity_candidates`。Review 页面必须展示当前值、所有候选值、来源 URL、抓取时间、parser version 和证据。

@@ -72,6 +72,8 @@ type Server struct {
 	seriesSt seriesStore
 	evidence evidenceStore
 	reports  reportStore
+	// splitter backs the entity split routes (admin_split.go).
+	splitter splitStore
 	// adminToken is ADMIN_TOKEN, read once at construction. Empty disables
 	// every admin route (they all return 401).
 	adminToken string
@@ -119,6 +121,7 @@ func Register(mux *http.ServeMux, s *store.Store, mediaHandler *media.Handler) {
 		srv.seriesSt = s
 		srv.evidence = s
 		srv.reports = s
+		srv.splitter = s
 	}
 	srv.linkOnDemand = medialink.OnDemandFromEnv(os.Getenv("MEDIA_LINK_ON_DEMAND"))
 	for _, rt := range srv.routes() {
@@ -152,6 +155,7 @@ func (srv *Server) routes() []route {
 	rs = append(rs, srv.adminMediaLinkRoutes()...)
 	rs = append(rs, srv.seriesRoutes()...)
 	rs = append(rs, srv.adminReportRoutes()...)
+	rs = append(rs, srv.adminSplitRoutes()...)
 	return srv.followMerges(rs)
 }
 

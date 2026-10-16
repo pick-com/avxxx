@@ -325,9 +325,36 @@ func (s *Store) MergeCandidate(ctx context.Context, candidateID, targetID int64,
 	default:
 		return MergeResult{}, ErrInvalidMergeTarget
 	}
-	table, specs, ok := identity.Tables(c.EntityType)
+	res, err := mergeEntities(ctx, tx, mergeOp{EntityType: c.EntityType, TargetID: targetID, SourceID: sourceID,
+		Action: "merge", Actor: actor, Reason: reason, CandidateID: &candidateID})
+	if err != nil {
+		return MergeResult{}, err
+	}
+	if _, err = tx.Exec(ctx, `UPDATE identity_candidates SET status='merged' WHERE id=$1`, candidateID); err != nil {
+		return MergeResult{}, err
+	}
+	return res, tx.Commit(ctx)
+}
+
+// mergeOp is one merge of SourceID into TargetID. Action is the review event
+// action: "merge", or "undo_split" when a split is reverted, with
+// RevertsEventID naming the split event.
+type mergeOp struct {
+	EntityType         string
+	TargetID, SourceID int64
+	Action             string
+	Actor, Reason      string
+	CandidateID        *int64
+	RevertsEventID     *int64
+}
+
+// mergeEntities is the merge path shared by MergeCandidate and UndoSplit; it
+// runs inside the caller's transaction.
+func mergeEntities(ctx context.Context, tx pgx.Tx, op mergeOp) (MergeResult, error) {
+	targetID, sourceID := op.TargetID, op.SourceID
+	table, specs, ok := identity.Tables(op.EntityType)
 	if !ok {
-		return MergeResult{}, fmt.Errorf("unknown entity type %q", c.EntityType)
+		return MergeResult{}, fmt.Errorf("unknown entity type %q", op.EntityType)
 	}
 	ents, err := lockEntities(ctx, tx, table, targetID, sourceID)
 	if err != nil {
@@ -335,9 +362,9 @@ func (s *Store) MergeCandidate(ctx context.Context, candidateID, targetID int64,
 	}
 	target, source := ents[targetID], ents[sourceID]
 	if target.MergedTo != nil || source.MergedTo != nil {
-		return MergeResult{}, conflict("%s %d or %d is already merged", c.EntityType, targetID, sourceID)
+		return MergeResult{}, conflict("%s %d or %d is already merged", op.EntityType, targetID, sourceID)
 	}
-	in := identity.MergeInput{EntityType: c.EntityType, TargetID: targetID, SourceID: sourceID, Target: target.Row, Source: source.Row,
+	in := identity.MergeInput{EntityType: op.EntityType, TargetID: targetID, SourceID: sourceID, Target: target.Row, Source: source.Row,
 		TargetRows: map[string][]json.RawMessage{}, SourceRows: map[string][]json.RawMessage{}}
 	for _, spec := range specs {
 		if in.TargetRows[spec.Table], err = relationRows(ctx, tx, spec, targetID); err != nil {
@@ -351,7 +378,7 @@ func (s *Store) MergeCandidate(ctx context.Context, candidateID, targetID int64,
 	if err != nil {
 		return MergeResult{}, err
 	}
-	res := MergeResult{EntityType: c.EntityType, TargetID: targetID, SourceID: sourceID, TargetSlug: target.Slug, SourceSlug: source.Slug,
+	res := MergeResult{EntityType: op.EntityType, TargetID: targetID, SourceID: sourceID, TargetSlug: target.Slug, SourceSlug: source.Slug,
 		Moved: map[string]int{}, Deduplicated: map[string]int{}, AddedAliases: plan.AddAliases}
 	for _, tp := range plan.Tables {
 		key := keyExpr(tp.Key)
@@ -400,18 +427,15 @@ func (s *Store) MergeCandidate(ctx context.Context, candidateID, targetID int64,
 	if err != nil {
 		return MergeResult{}, err
 	}
-	if err = tx.QueryRow(ctx, `INSERT INTO review_events(entity_type,entity_id,action,before_value,after_value,reason,actor,candidate_id) VALUES($1,$2,'merge',$3::jsonb,$4::jsonb,NULLIF($5,''),$6,$7) RETURNING id`,
-		c.EntityType, sourceID, string(before), string(after), reason, actor, candidateID).Scan(&res.ReviewEventID); err != nil {
+	if err = tx.QueryRow(ctx, `INSERT INTO review_events(entity_type,entity_id,action,before_value,after_value,reason,actor,candidate_id,reverts_event_id) VALUES($1,$2,$3,$4::jsonb,$5::jsonb,NULLIF($6,''),$7,$8,$9) RETURNING id`,
+		op.EntityType, sourceID, op.Action, string(before), string(after), op.Reason, op.Actor, op.CandidateID, op.RevertsEventID).Scan(&res.ReviewEventID); err != nil {
 		return MergeResult{}, err
 	}
 	if _, err = tx.Exec(ctx, `INSERT INTO slug_redirects(entity_type,old_slug,entity_id,review_event_id) VALUES($1,$2,$3,$4) ON CONFLICT(entity_type,old_slug) DO UPDATE SET entity_id=EXCLUDED.entity_id,review_event_id=EXCLUDED.review_event_id,created_at=now()`,
-		c.EntityType, source.Slug, targetID, res.ReviewEventID); err != nil {
+		op.EntityType, source.Slug, targetID, res.ReviewEventID); err != nil {
 		return MergeResult{}, err
 	}
-	if _, err = tx.Exec(ctx, `UPDATE identity_candidates SET status='merged' WHERE id=$1`, candidateID); err != nil {
-		return MergeResult{}, err
-	}
-	return res, tx.Commit(ctx)
+	return res, nil
 }
 
 // MarkNotDuplicate records that a pending candidate's two entities are

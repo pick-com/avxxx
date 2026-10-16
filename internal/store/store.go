@@ -4,6 +4,7 @@ import (
 	"avxxx/internal/audit"
 	"avxxx/internal/catalog"
 	"avxxx/internal/i18n"
+	"avxxx/internal/identity"
 	"avxxx/internal/model"
 	"avxxx/migrations"
 	"context"
@@ -302,6 +303,20 @@ func (s *Store) LinkMediaByIdentifier(ctx context.Context, source, mediaID, medi
 	if err != nil {
 		return false, err
 	}
+	// A media id already linked to a release that was split from the code's
+	// release (a not-duplicate pair) stays where it is.
+	var owner int64
+	err = s.QueryRow(ctx, `SELECT release_id FROM release_media_sources WHERE source=lower($1) AND media_id=$2`, source, mediaID).Scan(&owner)
+	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
+		return false, err
+	}
+	keep, err := keepPrevious(ctx, s, identity.ReleaseType, releaseID, owner)
+	if err != nil {
+		return false, err
+	}
+	if keep {
+		releaseID = owner
+	}
 	return true, s.LinkMediaToRelease(ctx, releaseID, source, mediaID, mediaURL)
 }
 
@@ -593,6 +608,11 @@ func (s *Store) SaveCatalogRecord(ctx context.Context, sourceID int64, parserVer
 			return 0, fmt.Errorf("release title is required")
 		}
 		slug := catalog.ReleaseSlug(code, title, "source", rec.SourceKey)
+		// A record split off to its own release keeps updating that release
+		// instead of the one its code slug names.
+		if slug, err = releaseRecordSlug(ctx, tx, sourceID, rec.SourceKey, slug); err != nil {
+			return 0, err
+		}
 		var id int64
 		var date any = nil
 		if v, ok := rec.Fields["release_date"].(string); ok && v != "" {
@@ -654,19 +674,42 @@ func (s *Store) SaveCatalogRecord(ctx context.Context, sourceID int64, parserVer
 			if name == "" || catalog.BoilerplateName(name) != "" {
 				continue // never create a performer from site chrome text
 			}
-			// Japanese-only names (DMM) resolve by actress id or name match,
-			// or are created under a romaji / source-scoped slug.
-			performerID, slug, err := resolvePerformer(ctx, tx, sourceID, ref)
+			// A credit of a performer involved in a split stays where the
+			// split put it (FINAL_DATA_DESIGN 5.5).
+			prev, err := previousCredit(ctx, tx, sourceRecordID, name)
 			if err != nil {
 				return 0, err
 			}
-			if performerID == 0 {
-				if err = tx.QueryRow(ctx, `INSERT INTO performers(slug,canonical_name) VALUES($1,$2) ON CONFLICT(slug) DO UPDATE SET updated_at=now() RETURNING id`, slug, name).Scan(&performerID); err != nil {
+			sticky, err := stickyCredit(ctx, tx, prev)
+			if err != nil {
+				return 0, err
+			}
+			performerID := prev
+			if !sticky {
+				// Japanese-only names (DMM) resolve by actress id or name
+				// match, or are created under a romaji / source-scoped slug.
+				var slug string
+				performerID, slug, err = resolvePerformer(ctx, tx, sourceID, ref)
+				if err != nil {
 					return 0, err
 				}
-			}
-			if performerID, err = survivingID(ctx, tx, "performers", performerID); err != nil {
-				return 0, err
+				if performerID == 0 {
+					if err = tx.QueryRow(ctx, `INSERT INTO performers(slug,canonical_name) VALUES($1,$2) ON CONFLICT(slug) DO UPDATE SET updated_at=now() RETURNING id`, slug, name).Scan(&performerID); err != nil {
+						return 0, err
+					}
+				}
+				if performerID, err = survivingID(ctx, tx, "performers", performerID); err != nil {
+					return 0, err
+				}
+				// Never a candidate ruled a different person than the
+				// record's previous performer.
+				keep, err := keepPrevious(ctx, tx, identity.PerformerType, performerID, prev)
+				if err != nil {
+					return 0, err
+				}
+				if keep {
+					performerID = prev
+				}
 			}
 			if err = linkPerformerIdentity(ctx, tx, sourceID, performerID, ref); err != nil {
 				return 0, err
