@@ -154,7 +154,7 @@ func TestAccountIntegration(t *testing.T) {
 	if err := json.Unmarshal(buf.Bytes(), &export); err != nil {
 		t.Fatalf("export is not JSON: %v\n%s", err, buf.String())
 	}
-	for _, sec := range []string{"account", "settings", "sessions", "terms_acceptances", "interests", "watch_history", "reviews"} {
+	for _, sec := range []string{"account", "settings", "sessions", "terms_acceptances", "interests", "watch_history", "playlists", "reviews"} {
 		if _, ok := export[sec]; !ok {
 			t.Errorf("export misses %s", sec)
 		}

@@ -529,6 +529,11 @@ var exportSections = []struct{ name, sql string }{
 		FROM watch_history w JOIN releases r ON r.id=w.release_id WHERE w.user_id=$1`},
 	{"favorites", `SELECT COALESCE(json_agg(json_build_object('release',r.slug,'title',r.canonical_title,'created_at',f.created_at) ORDER BY f.created_at DESC),'[]')
 		FROM favorites f JOIN releases r ON r.id=f.release_id WHERE f.user_id=$1`},
+	// Playlists (migration 036); share_token is a capability URL and is left out.
+	{"playlists", `SELECT COALESCE(json_agg(json_build_object('name',p.name,'description',p.description,'visibility',p.visibility,'is_default',p.is_default,
+		'created_at',p.created_at,'items',(SELECT COALESCE(json_agg(json_build_object('release',r.slug,'title',r.canonical_title,'added_at',i.created_at) ORDER BY i.created_at),'[]')
+		  FROM playlist_items i JOIN releases r ON r.id=i.release_id WHERE i.playlist_id=p.id)) ORDER BY p.position, p.id),'[]')
+		FROM playlists p WHERE p.user_id=$1`},
 	{"watch_later", `SELECT COALESCE(json_agg(json_build_object('release',r.slug,'title',r.canonical_title,'position',w.position,'created_at',w.created_at) ORDER BY w.position),'[]')
 		FROM watch_later w JOIN releases r ON r.id=w.release_id WHERE w.user_id=$1`},
 	{"follows", `SELECT COALESCE(json_agg(json_build_object('performer',p.slug,'name',p.canonical_name,'notify_mode',f.notify_mode,'created_at',f.created_at) ORDER BY f.created_at),'[]')
