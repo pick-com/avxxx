@@ -192,7 +192,7 @@ func TestReleaseTakenDownAnswers451(t *testing.T) {
 func TestLegalRoutes(t *testing.T) {
 	c := &stubCompliance{}
 	h := newComplianceServer(c)
-	if rec := do(h, "GET", "/api/legal/terms/current-version", "", ""); rec.Code != 200 || !strings.Contains(rec.Body.String(), `"version":3`) {
+	if rec := do(h, "GET", "/api/legal/terms/current-version", "", ""); rec.Code != 200 || !strings.Contains(rec.Body.String(), `"version":"3"`) {
 		t.Errorf("current-version: %d %s", rec.Code, rec.Body)
 	}
 	if rec := do(h, "GET", "/api/legal/privacy?lang=en&version=1", "", ""); rec.Code != 200 || !strings.Contains(rec.Body.String(), `"fallback":true`) {

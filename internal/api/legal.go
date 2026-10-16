@@ -28,15 +28,22 @@ func (srv *Server) legalRoutes() []route {
 }
 
 // currentTermsVersion: GET /api/legal/terms/current-version, the terms
-// version in force ({"kind", "version", "effective_at"}). The account flow
-// stores this version in terms_acceptances; in Go call
+// version in force: {"kind", "version" (string, e.g. "2"), "version_number",
+// "effective_at"}. The account flow stores "version" in terms_acceptances
+// (web lib/account.ts currentTermsVersion); in Go call
 // store.CurrentLegalVersion(ctx, "terms").
 func (srv *Server) currentTermsVersion(w http.ResponseWriter, r *http.Request) {
 	if !srv.withCompliance(w) {
 		return
 	}
 	v, err := srv.compliance.CurrentLegalVersion(r.Context(), "terms")
-	reply(w, v, err)
+	if err != nil {
+		reply(w, nil, err)
+		return
+	}
+	// terms_acceptances.version is text (migration 037; web lib/account.ts
+	// currentTermsVersion reads a string), so the version goes out as one.
+	reply(w, map[string]any{"kind": v.Kind, "version": strconv.Itoa(v.Version), "version_number": v.Version, "effective_at": v.EffectiveAt}, nil)
 }
 
 // legalDocument: GET /api/legal/{kind}?lang=&version=, the current (or the
