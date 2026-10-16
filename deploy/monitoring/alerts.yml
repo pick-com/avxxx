@@ -1,0 +1,211 @@
+# Prometheus alerting rules for avxxx (docs/PRODUCTION_OPERATIONS.md 监控与告警).
+#
+# Metric sources (internal/obs): the api exposes HTTP, events and pool
+# metrics; scraper / audit / notifier expose job, crawl and delivery metrics;
+# the scheduler (singleton) exposes the database-derived gauges (queue,
+# leases, checkpoints, audit, source health, play pairing).
+#
+# severity: page = wake someone up; warning = next working hour; info = review.
+# Validate: ./scripts/check-alerts.sh (promtool check rules in a container).
+groups:
+  - name: avxxx-availability
+    rules:
+      - alert: ApiHealthProbeFailing
+        # Same check as GET /api/health (database ping), evaluated on every
+        # 1-minute scrape; 3 consecutive failures (PRODUCTION_OPERATIONS.md).
+        expr: avxxx_health_up{job="avxxx-api"} == 0 or up{job="avxxx-api"} == 0
+        for: 3m
+        labels:
+          severity: page
+        annotations:
+          summary: "API health check failing on {{ $labels.instance }}"
+          description: "/api/health (database ping) or the API metrics listener has failed for 3 minutes."
+      - alert: WorkerDown
+        expr: up{job=~"avxxx-(scheduler|scraper|audit|notifier)"} == 0
+        for: 5m
+        labels:
+          severity: page
+        annotations:
+          summary: "{{ $labels.job }} is down"
+          description: "The {{ $labels.job }} metrics listener has not answered for 5 minutes; the process is likely crashed or restarting."
+      - alert: ApiHigh5xxRate
+        expr: |
+          sum(rate(avxxx_http_requests_total{job="avxxx-api",code=~"5.."}[5m]))
+            / sum(rate(avxxx_http_requests_total{job="avxxx-api"}[5m])) > 0.01
+        for: 10m
+        labels:
+          severity: page
+        annotations:
+          summary: "API 5xx rate {{ $value | humanizePercentage }}"
+          description: "More than 1% of API requests returned 5xx for 10 minutes (99.9% availability target, PRD 13)."
+      - alert: ReleaseDetailP99High
+        # Tech plan 3.12: 作品详情 API P99 ≤ 150 ms.
+        expr: |
+          histogram_quantile(0.99, sum by (le) (rate(avxxx_http_request_duration_seconds_bucket{route="/api/releases/{slug}",status_class="2xx"}[10m]))) > 0.15
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Release detail P99 {{ $value | humanizeDuration }} (target 150 ms)"
+      - alert: RecsP99High
+        # Tech plan 3.12: 推荐 API P99 ≤ 50 ms (precomputed).
+        expr: |
+          histogram_quantile(0.99, sum by (le, route) (rate(avxxx_http_request_duration_seconds_bucket{route=~"/api/recs|/api/trending|/api/trending/performers",status_class="2xx"}[10m]))) > 0.05
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: "{{ $labels.route }} P99 {{ $value | humanizeDuration }} (target 50 ms)"
+      - alert: PlayConfigP99High
+        # On the first-frame path (PRD 13 首帧 ≤ 1.5 s P75); 300 ms leaves the
+        # player most of that budget. Operational threshold, not a PRD number.
+        expr: |
+          histogram_quantile(0.99, sum by (le) (rate(avxxx_http_request_duration_seconds_bucket{route="/api/releases/{slug}/play-config",status_class="2xx"}[10m]))) > 0.3
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: "play-config P99 {{ $value | humanizeDuration }} (threshold 300 ms)"
+      - alert: DbPoolSaturated
+        expr: |
+          avxxx_db_pool_conns{state="acquired"} / on (job, instance) avxxx_db_pool_max_conns > 0.9
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "{{ $labels.job }} database pool {{ $value | humanizePercentage }} busy"
+
+  - name: avxxx-jobs
+    rules:
+      - alert: JobsBacklogNotDraining
+        # pending 任务持续增长 (PRODUCTION_OPERATIONS.md): the oldest due job
+        # has waited 30 minutes.
+        expr: avxxx_jobs_oldest_due_age_seconds > 1800
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: "{{ $labels.kind }} jobs waiting {{ $value | humanizeDuration }}"
+          description: "Due pending {{ $labels.kind }} jobs are not being claimed; check the worker for that kind."
+      - alert: JobsPendingGrowing
+        expr: |
+          sum by (kind) (avxxx_jobs_queued{state="due"}) > 20
+            and sum by (kind) (delta(avxxx_jobs_queued{state="due"}[1h])) > 0
+        for: 30m
+        labels:
+          severity: warning
+        annotations:
+          summary: "{{ $labels.kind }} due backlog growing ({{ $value }} jobs)"
+      - alert: JobsExpiredLeases
+        # expired lease (PRODUCTION_OPERATIONS.md). Workers reap every loop, so
+        # a lease that stays expired means no worker of that kind is alive.
+        expr: sum by (kind) (avxxx_jobs_expired_leases) > 0
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "{{ $value }} {{ $labels.kind }} jobs with expired leases"
+      - alert: JobLeaseLost
+        expr: sum by (kind) (increase(avxxx_job_lease_lost_total[30m])) > 0
+        labels:
+          severity: info
+        annotations:
+          summary: "{{ $labels.kind }} worker lost a job lease (heartbeat failed)"
+      - alert: JobsFailed
+        # PRD 13: 任务失败自动重试并告警 — these exhausted their retries.
+        expr: sum by (kind) (avxxx_jobs_failed_last_hour) > 0
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "{{ $value }} {{ $labels.kind }} jobs failed in the last hour"
+          description: "See jobs.error / error_code in the admin task page."
+      - alert: CrawlCheckpointStale
+        # checkpoint 长时间不推进 (PRODUCTION_OPERATIONS.md).
+        expr: time() - avxxx_crawl_checkpoint_last_success_timestamp_seconds > 86400
+        for: 30m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Crawl source {{ $labels.source_id }} checkpoint has not advanced for {{ $value | humanizeDuration }}"
+      - alert: CrawlSourceBlocked
+        expr: sum by (source_id) (increase(avxxx_crawl_blocked_total[1h])) > 0
+        labels:
+          severity: info
+        annotations:
+          summary: "Crawl source {{ $labels.source_id }} was blocked (429/403); parked until Retry-After"
+      - alert: DbStatsFailing
+        expr: avxxx_dbstats_up == 0
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Scheduler cannot read queue / audit state; job and data-quality alerts are blind"
+
+  - name: avxxx-data-quality
+    rules:
+      - alert: SourceHealthBelowAlphaGate
+        # PRD Alpha gate / tech plan 3.12: 片源健康分 ≥ 95.
+        expr: avxxx_source_health_score < 95 and avxxx_source_health_attempts >= 50
+        for: 30m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Pooled source health {{ $value }} < 95 (Alpha gate)"
+      - alert: PlayableRateLow
+        # Tech plan 3.12: 可播放率 < 95%.
+        expr: avxxx_source_health_playable_ratio < 0.95 and avxxx_source_health_attempts >= 50
+        for: 30m
+        labels:
+          severity: page
+        annotations:
+          summary: "Playable rate {{ $value | humanizePercentage }} < 95%"
+      - alert: SourceHealthStale
+        expr: time() - avxxx_source_health_last_run_timestamp_seconds > 3600
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: "No source health run for {{ $value | humanizeDuration }} (expected every 10 minutes)"
+      - alert: EventsQuarantineRateHigh
+        # PRD 14.5 隔离区: invalid events are quarantined, not stored.
+        expr: |
+          sum(rate(avxxx_events_total{outcome="quarantined"}[15m]))
+            / sum(rate(avxxx_events_total[15m])) > 0.05
+          and sum(rate(avxxx_events_total[15m])) > 0.1
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: "{{ $value | humanizePercentage }} of analytics events quarantined"
+          description: "A client release likely broke an event schema; see events_quarantine.reason."
+      - alert: PlayPairingLow
+        # PRD 14.5: play_request 与 play_end 的配对率低于 95% 报警.
+        expr: avxxx_play_pairing_ratio < 0.95 and avxxx_play_pairing_requests >= 100
+        for: 30m
+        labels:
+          severity: warning
+        annotations:
+          summary: "play_request→play_end pairing {{ $value | humanizePercentage }} < 95%"
+      - alert: NotifierFailures
+        expr: sum by (channel) (increase(avxxx_notifier_deliveries_total{status=~"failed|error"}[1h])) > 5
+        labels:
+          severity: warning
+        annotations:
+          summary: "{{ $value }} {{ $labels.channel }} notifications failed in the last hour"
+      - alert: RAgeHold
+        # Compliance (tech plan 2.2.3, PRD 6.4): a release was held because a
+        # performer may have been under 18 at filming. Page someone to review.
+        expr: increase(avxxx_audit_holds_total{rule="R-AGE"}[15m]) > 0
+        labels:
+          severity: page
+        annotations:
+          summary: "R-AGE hold: {{ $value }} release(s) held for age review"
+          description: "Review in AdminAudit (rule R-AGE) before the release can be republished."
+      - alert: RAgeIssuesUnresolved
+        expr: sum(avxxx_audit_open_issues{rule="R-AGE"}) > 0
+        for: 24h
+        labels:
+          severity: warning
+        annotations:
+          summary: "{{ $value }} R-AGE audit issues open for more than 24 h"

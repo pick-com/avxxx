@@ -31,6 +31,7 @@
           SMTP_USER={{ smtp_user | default('') }}
           SMTP_PASSWORD={{ smtp_password | default('') }}
           MAIL_FROM={{ mail_from | default('') }}
+          LOG_HASH_KEY={{ log_hash_key | default('') }}
     - name: Build and start database
       ansible.builtin.command:
         cmd: docker compose up -d db
@@ -43,6 +44,11 @@
       ansible.builtin.command:
         cmd: docker compose up -d api scheduler scraper audit notifier
         chdir: "{{ app_dir }}"
+    - name: Start monitoring (Prometheus + alert rules, localhost-only UI)
+      ansible.builtin.command:
+        cmd: docker compose --profile monitoring up -d prometheus
+        chdir: "{{ app_dir }}"
+      when: monitoring_enabled | default(false) | bool
     - name: Check API health
       ansible.builtin.uri:
         url: http://127.0.0.1:8080/api/health
