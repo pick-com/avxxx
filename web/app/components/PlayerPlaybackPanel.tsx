@@ -7,11 +7,13 @@ import {SwitchRow} from './Switch';
 
 /**
  * 播放 tab of the player settings sheet (desktop gear and mobile sheet):
- * 循环播放, the A-B loop and 定时停止. The Player owns the state and
- * applies it through the <video> API; this only renders and reports.
+ * 循环播放, the A-B loop, 定时停止 and 氛围模式. The Player owns the state
+ * and applies it through the <video> API; this only renders and reports.
  */
-export function PlayerPlaybackPanel({loop, ab, sleep}: {
+export function PlayerPlaybackPanel({loop, ab, sleep, ambient}: {
   loop: {on: boolean; onChange: (on: boolean) => void};
+  /** 氛围模式; `available` false: the source's frames cannot be read (toggle hidden, hint shown). */
+  ambient: {on: boolean; available: boolean; onChange: (on: boolean) => void};
   /** A / B from the current time; `time` labels the buttons. */
   ab: {value: AbLoop; time: number; setA: () => void; setB: () => void; clear: () => void};
   /** 定时停止; `left`: whole seconds of a running timed choice. */
@@ -74,6 +76,16 @@ export function PlayerPlaybackPanel({loop, ab, sleep}: {
           ))}
         </div>
       </div>
+      {ambient.available ? (
+        <SwitchRow label={t('player.ambient')} description={t('player.ambientHint')} checked={ambient.on} onChange={ambient.onChange} />
+      ) : (
+        <div className="set-row">
+          <div className="set-text">
+            <span className="set-label">{t('player.ambient')}</span>
+            <span className="set-desc">{t('player.ambientBlocked')}</span>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

@@ -26,6 +26,8 @@ import {applyVolume, writeVolume} from '../lib/volumePrefs';
 import {registerSeeker} from '../lib/playerSeek';
 import {NO_AB, abActive, abMarkers, abSeekTarget, endAction, setAbPoint, type AbLoop} from '../lib/playerLoop';
 import {SLEEP_OFF, sleepOnNavigate, sleepSecondsLeft, sleepTick, startSleep, type SleepChoice, type SleepState} from '../lib/sleepTimer';
+import {ambientActive, readAmbientPref, writeAmbientPref} from '../lib/ambient';
+import {AmbientGlow} from './AmbientGlow';
 import {DanmakuBar, DanmakuLayer, DanmakuListSheet, DanmakuSettings, useDanmakuFeed, type DanmakuLayerHandle} from './Danmaku';
 import {EpisodesSheet, type PlayerEpisodes} from './Episodes';
 import {Icon} from './Icon';
@@ -142,6 +144,9 @@ type LockableOrientation = ScreenOrientation & {lock?: (orientation: string) => 
  * fading over the last 10 s before the pause (not remembered as the
  * viewer's volume); kept across source switches, ended by another release.
  * 播完本集 stops at the end of this video instead of autoplay-next.
+ * 氛围模式 (lib/ambient.ts, AmbientGlow): remembered in this browser; off in
+ * fullscreen, the mini player and while casting; a source whose frames
+ * cannot be read (tainted canvas) turns it off for that source.
  */
 export type PlayerProps = Parameters<typeof Player>[0];
 
@@ -278,6 +283,11 @@ export function Player({slug, releaseId, title, resumeAt, startAt, onBack, theat
   // The volume before the fade, on the element it was taken from.
   const sleepFade = useRef<{el: HTMLVideoElement; base: number} | null>(null);
   useEffect(() => setSleep(s => sleepOnNavigate(s)), [slug]);
+  // 氛围模式: read after mount (no localStorage on the server render).
+  const [ambientPref, setAmbientPref] = useState(false);
+  useEffect(() => setAmbientPref(readAmbientPref(window.localStorage)), []);
+  // The source (stream key) whose frames cannot be read.
+  const [ambientBlockedKey, setAmbientBlockedKey] = useState<string | null>(null);
   const rateRef = useRef(rate);
   rateRef.current = rate;
   fullscreenRef.current = fullscreen;
@@ -402,6 +412,8 @@ export function Player({slug, releaseId, title, resumeAt, startAt, onBack, theat
   }, [clock.paused, poke]);
   // Casting keeps the controls (and the progress) up: the picture is on the device.
   const chromeVisible = chromeOn || clock.paused || clock.ended || settings.open || casting;
+  const ambientBlocked = !!stream && ambientBlockedKey === stream.key;
+  const ambientOn = ambientActive({pref: ambientPref, blocked: ambientBlocked, video: !!stream && !!videoEl, fullscreen, mini, casting: casting || gcast.connected});
 
   // play_end when the release changes or the player goes away.
   useEffect(
@@ -1279,9 +1291,14 @@ export function Player({slug, releaseId, title, resumeAt, startAt, onBack, theat
     setSleep(startSleep(choice, Date.now()));
     showFlash(choice === 'off' ? t('player.sleepOff') : choice === 'episode' ? t('player.sleepEpisodeSet') : t('player.sleepSet', {n: choice}));
   };
+  const chooseAmbient = (on: boolean) => {
+    setAmbientPref(on);
+    writeAmbientPref(window.localStorage, on);
+  };
   const playbackPanel = stream ? (
     <PlayerPlaybackPanel
       loop={{on: loop, onChange: chooseLoop}}
+      ambient={{on: ambientPref, available: !ambientBlocked, onChange: chooseAmbient}}
       sleep={{value: sleep.choice, left: sleepLeft, onChange: chooseSleep}}
       ab={{
         value: ab,
@@ -1314,7 +1331,7 @@ export function Player({slug, releaseId, title, resumeAt, startAt, onBack, theat
     ) : null;
 
   return (
-    <div className="player-wrap" data-mini={mini ? 'true' : undefined}>
+    <div className="player-wrap" data-mini={mini ? 'true' : undefined} data-ambient={ambientOn ? 'true' : undefined}>
       <div
         ref={shellRef}
         className="player-shell"
@@ -1338,6 +1355,17 @@ export function Player({slug, releaseId, title, resumeAt, startAt, onBack, theat
           }
         }}
       >
+        {ambientOn && stream && videoEl && (
+          <AmbientGlow
+            key={stream.key}
+            video={videoEl}
+            reducedMotion={reducedMotion}
+            onBlocked={() => {
+              setAmbientBlockedKey(stream.key);
+              showFlash(t('player.ambientBlocked'), true);
+            }}
+          />
+        )}
         <div
           className="player"
           data-idle={idle ? 'true' : 'false'}
