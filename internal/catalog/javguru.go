@@ -114,17 +114,41 @@ func guruClassify(raw string) (EntityType, string) {
 	return "", ""
 }
 func guruLabel(text, label string) string {
-	i := strings.Index(strings.ToLower(text), strings.ToLower(label))
+	lower := strings.ToLower(text)
+	i := strings.Index(lower, strings.ToLower(label))
 	if i < 0 {
 		return ""
 	}
 	v := strings.TrimSpace(text[i+len(label):])
-	for _, n := range []string{"Japanese Name", "Cup", "Height", "Birthday", "Code", "Release Date", "Maker"} {
-		if j := strings.Index(strings.ToLower(v), strings.ToLower(n)); j > 0 {
+	// The value ends where the next "Label:" starts. Only a label followed by
+	// a colon counts, so a value that contains a label word ("Example
+	// Maker") is kept whole.
+	for _, n := range guruLabels {
+		if j := guruLabelAt(v, n); j > 0 {
 			v = v[:j]
 		}
 	}
-	return strings.Trim(strings.TrimSpace(v), ":-")
+	return strings.TrimSpace(strings.Trim(strings.TrimSpace(v), ":-"))
+}
+
+var guruLabels = []string{"Japanese Name", "Cup", "Height", "Birthday", "Code", "Release Date", "Maker", "Tags", "Actress", "Genre"}
+
+// guruLabelAt returns the index in v of label followed by optional spaces and
+// a colon (case-insensitive), or -1.
+func guruLabelAt(v, label string) int {
+	lv, ll := strings.ToLower(v), strings.ToLower(label)
+	for from := 0; from < len(lv); {
+		j := strings.Index(lv[from:], ll)
+		if j < 0 {
+			return -1
+		}
+		j += from
+		if rest := strings.TrimLeft(lv[j+len(ll):], " \t"); strings.HasPrefix(rest, ":") {
+			return j
+		}
+		from = j + len(ll)
+	}
+	return -1
 }
 func guruLinks(d *goquery.Document, part string) []string {
 	out := []string{}
