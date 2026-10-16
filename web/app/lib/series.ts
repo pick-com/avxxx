@@ -67,3 +67,10 @@ export const toSeriesReleasePage = (b: (Body<SeriesRelease> & {episode_basis?: s
 
 export const listSeriesReleases = (slug: string, sort: SeriesReleaseSort, cursor?: string | null, signal?: AbortSignal): Promise<SeriesReleasePage> =>
   api<Body<SeriesRelease> & {episode_basis?: string}>(seriesReleasesPath(slug, sort, cursor), {signal}).then(toSeriesReleasePage);
+
+/** Most releases the player's 选集 drawer and the 同系列 panel list (the API's page maximum). */
+export const SERIES_EPISODES_LIMIT = 100;
+
+/** The series' releases in episode order, the first SERIES_EPISODES_LIMIT (选集 · MobilePlayerFull). */
+export const listSeriesEpisodes = (slug: string, signal?: AbortSignal): Promise<SeriesReleasePage> =>
+  api<Body<SeriesRelease> & {episode_basis?: string}>(seriesReleasesPath(slug, 'episode', null, SERIES_EPISODES_LIMIT), {signal}).then(toSeriesReleasePage);

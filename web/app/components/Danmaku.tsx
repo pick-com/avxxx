@@ -4,7 +4,28 @@ import {isAbort} from '../lib/api';
 import {track} from '../lib/analytics';
 import {useAuth} from '../lib/auth';
 import {getDanmaku, postDanmaku, postErrorMessage, reportDanmaku, type Danmaku, type ReportReason} from '../lib/community';
-import {DANMAKU_COLORS, FONT_PX, SPEED_PX, setDanmakuPref, useDanmakuPrefs, type DanmakuPrefs} from '../lib/danmakuPrefs';
+import {
+  DANMAKU_COLORS,
+  DANMAKU_LANGS,
+  FONT_PX,
+  SPEED_PX,
+  keptByDensity,
+  langAllowed,
+  setDanmakuPref,
+  useDanmakuPrefs,
+  type DanmakuLang,
+  type DanmakuPrefs,
+} from '../lib/danmakuPrefs';
+import {
+  MAX_BLOCK_WORDS,
+  MAX_BLOCK_WORD_LENGTH,
+  addBlockWord,
+  foldBlockText,
+  hitsBlockWord,
+  removeBlockWord,
+  useDanmakuBlockWords,
+  useDanmakuBlockWordsSync,
+} from '../lib/danmakuBlockWords';
 import {formatClock} from '../lib/format';
 import {useT} from '../lib/i18n';
 import type {MessageKey} from '../lib/messages.zh-CN';
@@ -17,14 +38,21 @@ import {Switch} from './Switch';
 //
 //   useDanmakuFeed   loads 60 s segments around the playhead (GET .../danmaku).
 //   DanmakuLayer     draws them over the video: scroll / top / bottom lanes,
-//                    opacity, size, speed, display area, block types, 防挡字幕.
+//                    opacity, size, speed, display area, density, block
+//                    types, language filter, personal block words, 防挡字幕.
 //   DanmakuBar       on/off, the send box (login, 50 characters, mute 403,
 //                    429), the list and the settings button.
 //   DanmakuListSheet loaded danmaku around the playhead, with 举报.
 //   DanmakuSettings  the settings tab of the player sheet.
 //
-// Not built: language filter / auto translation and 屏蔽词 (no backend
-// fields yet), hiding during ads (no ads yet).
+// Language filter: the server detects danmaku.lang on post (community.
+// DetectLang, a script heuristic; migration 045 backfills older rows) and the
+// filter runs here. Personal block words: danmakuBlockWords.ts (synced
+// through user_settings for logged-in users, localStorage for visitors).
+//
+// Not built: auto-translation (PRD 5.5 语言过滤与自动翻译; out of scope, it
+// needs a translation service and per-language caching of danmaku bodies),
+// hiding during ads (ads are on hold).
 
 export const DANMAKU_MAX = 50;
 const SEGMENT_MS = 60_000;
@@ -110,9 +138,17 @@ export type DanmakuLayerHandle = {
   spawn: (d: Danmaku) => void;
 };
 
-function blocked(d: Danmaku, p: DanmakuPrefs): boolean {
+/** Filtered out for this viewer by language or a personal block word (the list sheet hides these too). */
+function filteredOut(d: Danmaku, p: DanmakuPrefs, foldedWords: string[]): boolean {
+  if (d.mine) return false;
+  return !langAllowed(d.lang, p.langs) || hitsBlockWord(d.body, foldedWords);
+}
+
+function blocked(d: Danmaku, p: DanmakuPrefs, foldedWords: string[]): boolean {
   if (d.spoiler && p.blockSpoiler) return true;
   if (d.mine) return false;
+  if (filteredOut(d, p, foldedWords)) return true;
+  if (!keptByDensity(d.id, p.density)) return true;
   if (d.mode === 'top' && p.blockTop) return true;
   if (d.mode === 'bottom' && p.blockBottom) return true;
   if (d.mode === 'scroll' && p.blockScroll) return true;
@@ -137,6 +173,12 @@ export function DanmakuLayer({video, feed, prefs, reducedMotion, ref}: {
   const layerRef = useRef<HTMLDivElement>(null);
   const prefsRef = useRef(prefs);
   prefsRef.current = prefs;
+  const {user} = useAuth();
+  useDanmakuBlockWordsSync(user?.id ?? null);
+  const words = useDanmakuBlockWords();
+  const folded = useMemo(() => words.map(foldBlockText), [words]);
+  const foldedRef = useRef(folded);
+  foldedRef.current = folded;
   const motionRef = useRef(reducedMotion);
   motionRef.current = reducedMotion;
   const lanes = useRef({scroll: [] as number[], top: [] as number[], bottom: [] as number[]});
@@ -155,7 +197,7 @@ export function DanmakuLayer({video, feed, prefs, reducedMotion, ref}: {
     const layer = layerRef.current;
     const p = prefsRef.current;
     if (!layer || !p.enabled) return;
-    if (!force && blocked(d, p)) return;
+    if (!force && blocked(d, p, foldedRef.current)) return;
     if (!force && p.blockRepeat) {
       const key = normalize(d.body);
       const last = recent.current.get(key);
@@ -276,6 +318,9 @@ export function DanmakuLayer({video, feed, prefs, reducedMotion, ref}: {
 
   // Display changes apply to what comes next; blocking a type clears the screen.
   useEffect(() => clear(), [prefs.blockTop, prefs.blockBottom, prefs.blockScroll, prefs.blockColor, prefs.blockSpoiler, prefs.area, prefs.antiSubtitle, prefs.size, clear]);
+  // Narrowing languages, density or adding a block word clears the screen too.
+  const langKey = prefs.langs.join(',');
+  useEffect(() => clear(), [langKey, prefs.density, folded, clear]);
 
   return <div ref={layerRef} className="dm-layer" aria-hidden="true" style={{opacity: prefs.opacity}} />;
 }
@@ -416,8 +461,14 @@ export function DanmakuListSheet({open, onClose, feed, video, container}: {
   const [reporting, setReporting] = useState<number | null>(null);
   const [revealed, setRevealed] = useState<Set<number>>(new Set());
   const [done, setDone] = useState<Record<number, string>>({});
-  // Snapshot when opened (and when new items load), so the list does not jump.
-  const list = useMemo(() => (open ? [...feed.items.current] : []), [open, feed.version, feed.items]);
+  const words = useDanmakuBlockWords();
+  // Snapshot when opened (and when new items load), so the list does not jump;
+  // the language filter and block words apply here too.
+  const list = useMemo(() => {
+    if (!open) return [];
+    const folded = words.map(foldBlockText);
+    return feed.items.current.filter(d => !filteredOut(d, prefs, folded));
+  }, [open, feed.version, feed.items, words, prefs]);
 
   useEffect(() => {
     if (!open) setReporting(null);
@@ -527,6 +578,125 @@ const BLOCKS: {key: 'blockTop' | 'blockBottom' | 'blockScroll' | 'blockColor' | 
   {key: 'blockSpoiler', label: 'danmaku.blockSpoiler'},
 ];
 
+const LANG_NAMES: Record<DanmakuLang, MessageKey> = {
+  zh: 'danmaku.langZh',
+  ja: 'danmaku.langJa',
+  ko: 'danmaku.langKo',
+  en: 'danmaku.langEn',
+  es: 'danmaku.langEs',
+  vi: 'danmaku.langVi',
+  th: 'danmaku.langTh',
+  und: 'danmaku.langOther',
+};
+
+/** 语言过滤: 全部, or any set of languages (all of them selected again means 全部). */
+function LangFilter({langs}: {langs: DanmakuLang[]}) {
+  const t = useT();
+  const toggle = (l: DanmakuLang) => {
+    const next = langs.includes(l) ? langs.filter(x => x !== l) : DANMAKU_LANGS.filter(x => x === l || langs.includes(x));
+    setDanmakuPref('langs', next.length === DANMAKU_LANGS.length ? [] : next);
+  };
+  return (
+    <div className="dm-set-block">
+      <span className="dm-set-text">
+        <span className="dm-set-label" id="dm-lang-label">
+          {t('danmaku.langFilter')}
+        </span>
+        <span className="dm-set-desc">{t('danmaku.langFilterDesc')}</span>
+      </span>
+      <div className="chip-row chip-row-wrap" role="group" aria-labelledby="dm-lang-label">
+        <button type="button" className={langs.length === 0 ? 'chip chip-on' : 'chip'} aria-pressed={langs.length === 0} onClick={() => setDanmakuPref('langs', [])}>
+          {langs.length === 0 && <Icon name="check" size={14} />}
+          {t('danmaku.langAll')}
+        </button>
+        {DANMAKU_LANGS.map(l => {
+          const on = langs.includes(l);
+          return (
+            <button key={l} type="button" className={on ? 'chip chip-on' : 'chip'} aria-pressed={on} onClick={() => toggle(l)}>
+              {on && <Icon name="check" size={14} />}
+              {t(LANG_NAMES[l])}
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+/** 屏蔽词: the viewer's own list; danmaku containing a word are hidden. */
+function BlockWords() {
+  const t = useT();
+  const {status} = useAuth();
+  const words = useDanmakuBlockWords();
+  const [draft, setDraft] = useState('');
+  const [error, setError] = useState('');
+  const add = () => {
+    const word = draft.trim();
+    if (!word) return;
+    if (Array.from(word).length > MAX_BLOCK_WORD_LENGTH) setError(t('danmaku.blockWordTooLong', {n: MAX_BLOCK_WORD_LENGTH}));
+    else if (words.length >= MAX_BLOCK_WORDS) setError(t('danmaku.blockWordsFull', {n: MAX_BLOCK_WORDS}));
+    else if (!addBlockWord(word)) setError(t('danmaku.blockWordDuplicate'));
+    else {
+      setDraft('');
+      setError('');
+    }
+  };
+  return (
+    <div className="dm-set-block">
+      <span className="dm-set-text">
+        <span className="dm-set-label">{t('danmaku.blockWords')}</span>
+        <span className="dm-set-desc">{status === 'user' ? t('danmaku.blockWordsSynced') : t('danmaku.blockWordsLocal')}</span>
+      </span>
+      <form
+        className="dm-word-form"
+        onSubmit={event => {
+          event.preventDefault();
+          add();
+        }}
+      >
+        <label className="sr-only" htmlFor="dm-word-input">
+          {t('danmaku.blockWordInput')}
+        </label>
+        <input
+          id="dm-word-input"
+          className="dm-word-input"
+          type="text"
+          value={draft}
+          placeholder={t('danmaku.blockWordPlaceholder')}
+          autoComplete="off"
+          enterKeyHint="done"
+          aria-invalid={!!error || undefined}
+          aria-describedby={error ? 'dm-word-error' : undefined}
+          onChange={e => {
+            setDraft(e.target.value);
+            if (error) setError('');
+          }}
+        />
+        <button type="submit" className="btn btn-sm" disabled={!draft.trim()}>
+          {t('danmaku.blockWordAdd')}
+        </button>
+      </form>
+      {error && (
+        <p className="dm-error" id="dm-word-error" role="alert">
+          {error}
+        </p>
+      )}
+      {words.length > 0 && (
+        <ul className="dm-words" aria-label={t('danmaku.blockWordsCount', {n: words.length, max: MAX_BLOCK_WORDS})}>
+          {words.map(w => (
+            <li key={w} className="dm-word">
+              <span>{w}</span>
+              <button type="button" aria-label={t('danmaku.blockWordRemove', {word: w})} onClick={() => removeBlockWord(w)}>
+                <Icon name="close" size={14} />
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+}
+
 const COLOR_NAMES: Record<string, MessageKey> = {
   '#FFFFFF': 'danmaku.colorWhite',
   '#FE0302': 'danmaku.colorRed',
@@ -587,6 +757,16 @@ export function DanmakuSettings() {
           {value: 1, label: 'danmaku.areaFull'},
         ]}
       />
+      <Segmented
+        label={t('danmaku.density')}
+        value={p.density}
+        onChange={v => setDanmakuPref('density', v)}
+        options={[
+          {value: 'low', label: 'danmaku.densityLow'},
+          {value: 'medium', label: 'danmaku.densityMedium'},
+          {value: 'high', label: 'danmaku.densityHigh'},
+        ]}
+      />
       <div className="dm-set-block">
         <span className="dm-set-label" id="dm-block-label">
           {t('danmaku.block')}
@@ -600,6 +780,8 @@ export function DanmakuSettings() {
           ))}
         </div>
       </div>
+      <LangFilter langs={p.langs} />
+      <BlockWords />
       <div className="dm-set-row">
         <span className="dm-set-text">
           <span className="dm-set-label">{t('danmaku.antiSubtitle')}</span>

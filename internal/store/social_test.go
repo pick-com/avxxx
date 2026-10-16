@@ -2,7 +2,9 @@ package store
 
 import (
 	"errors"
+	"fmt"
 	"slices"
+	"strings"
 	"testing"
 	"time"
 )
@@ -27,6 +29,11 @@ func TestApplySettingsPatch(t *testing.T) {
 		{"subtitle langs dedupe", `{"subtitle_langs":["en","ja","en"]}`, func(u UserSettings) bool {
 			return slices.Equal(u.SubtitleLangs, []string{"en", "ja"})
 		}},
+		{"danmaku block words default empty", `{}`, func(u UserSettings) bool { return u.DanmakuBlockWords != nil && len(u.DanmakuBlockWords) == 0 }},
+		{"danmaku block words trimmed, deduped case-insensitively", `{"danmaku_block_words":[" 剧透 ","SPOILER","spoiler","前方高能"]}`, func(u UserSettings) bool {
+			return slices.Equal(u.DanmakuBlockWords, []string{"剧透", "SPOILER", "前方高能"})
+		}},
+		{"danmaku block words cleared", `{"danmaku_block_words":[]}`, func(u UserSettings) bool { return len(u.DanmakuBlockWords) == 0 }},
 		{"timezone", `{"timezone":"Asia/Tokyo"}`, func(u UserSettings) bool { return u.Location().String() == "Asia/Tokyo" }},
 		{"quiet hours off", `{"quiet_hours":null}`, func(u UserSettings) bool { return u.QuietHours == nil }},
 		{"quiet hours set", `{"quiet_hours":{"start":"23:30","end":"07:00"}}`, func(u UserSettings) bool {
@@ -65,6 +72,10 @@ func TestApplySettingsPatch(t *testing.T) {
 		`{"notify_prefs":{"spam":{"in_app":true}}}`,
 		`{"notify_prefs":{"new_work":{"sms":true}}}`,
 		`{"notify_prefs":{"new_work":{"push":"on"}}}`,
+		`{"danmaku_block_words":"剧透"}`, `{"danmaku_block_words":null}`, `{"danmaku_block_words":[1]}`,
+		`{"danmaku_block_words":["  "]}`, `{"danmaku_block_words":["一二三四五六七八九十一二三四五六七八九十一"]}`,
+		`{"danmaku_block_words":["a\u0007b"]}`,
+		`{"danmaku_block_words":[` + manyWords(101) + `]}`,
 	}
 	for _, body := range bad {
 		if _, err := ApplySettingsPatch(def, []byte(body)); !errors.Is(err, ErrInvalidSettings) {
@@ -219,4 +230,13 @@ func TestPlanDelivery(t *testing.T) {
 	if d.InApp || !slices.Equal(d.Channels, []string{"email"}) || !d.SendAfter.Equal(now) {
 		t.Errorf("reservation delivery = %+v", d)
 	}
+}
+
+// manyWords is n distinct words as JSON array elements.
+func manyWords(n int) string {
+	w := make([]string, n)
+	for i := range w {
+		w[i] = fmt.Sprintf("%q", fmt.Sprintf("w%d", i))
+	}
+	return strings.Join(w, ",")
 }

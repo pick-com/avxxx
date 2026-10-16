@@ -5,6 +5,7 @@ import {absoluteImageUrl, Avatar, CatalogImage, ReleaseRow, SectionHeader} from 
 import {PerformerHoverCard, PerformerSheet} from '../components/PerformerPeek';
 import {Player} from '../components/Player';
 import {HostedPlayer} from '../components/PlayerHost';
+import {SeriesEpisodesPanel, type PlayerEpisodes} from '../components/Episodes';
 import type {EndItem} from '../components/PlayerStates';
 import {Community} from '../components/Ratings';
 import {Comments} from '../components/Comments';
@@ -33,6 +34,7 @@ import {useAsync} from '../lib/useAsync';
 import {useCanonicalSlug} from '../lib/useCanonicalSlug';
 import {useMediaQuery} from '../lib/useMediaQuery';
 import {QUEUE_LISTS, readQueue, type Queue} from '../lib/queue';
+import {listSeriesEpisodes} from '../lib/series';
 import {parseStartTime} from '../lib/interactions';
 import {getRecs, performerName, reasonText, recTitle, inRelatedTab, type RecItem, type RelatedTab} from '../lib/recs';
 import type {ShellHandle} from './shell';
@@ -151,6 +153,10 @@ export const meta: MetaFunction<typeof loader> = ({data: d, params, matches}) =>
 // it reports autoplay_next.
 // 接下来播放: GET /api/recs?slot=related&release= with reason labels and
 // 相关推荐 / 同演员 / 同系列 tabs (tabs only when the reason codes allow).
+// 选集: a release in a series (2+ works) loads the series in episode order
+// for the Player's fullscreen 选集 drawer and the 同系列 panel above
+// 接下来播放; switching navigates here (autoplay, ?list= kept when the
+// episode is in the queue), so PlayerHost keeps one player instance.
 // Without the recs routes, or with no related rows, it falls back to the
 // first performer's other works.
 // 即将上线: GET /api/releases/{slug} also serves upcoming works; the page then
@@ -217,6 +223,19 @@ export default function ReleasePage() {
   const resumeAt = history.data?.find(item => item.slug === slug)?.progress_seconds;
   // DMM and other sources that require a credit where their data is shown.
   const credits = useCredits({kind: 'release', slug}, own?.credits);
+  const seriesSlug = release?.series?.slug;
+  const seriesEpisodes = useAsync(signal => listSeriesEpisodes(seriesSlug ?? '', signal), [seriesSlug], !!seriesSlug);
+  const episodeQuery = (target: string) => (queue && queue.slugs.includes(target) ? `?list=${queue.name}` : '');
+  const episodes: PlayerEpisodes | undefined =
+    release?.series?.slug && (seriesEpisodes.data?.items.length ?? 0) > 1
+      ? {
+          seriesName: release.series.display_name || release.series.name,
+          seriesSlug: release.series.slug,
+          items: (seriesEpisodes.data?.items ?? []).map(r => ({slug: r.slug, title: r.canonical_title, episode: r.episode, runtimeMinutes: r.runtime_minutes})),
+          current: slug,
+          onPick: target => navigate(`/releases/${encodeURIComponent(target)}${episodeQuery(target)}`, {state: {autoplay: true, reason: 'same_series'}}),
+        }
+      : undefined;
 
   useCanonicalSlug('releases', slug, release?.slug);
 
@@ -276,6 +295,7 @@ export default function ReleasePage() {
           onEnded={() => setEnded(true)}
           onReplay={() => setEnded(false)}
           related={endItems}
+          episodes={episodes}
           overlay={
             ended && prefs.autoplay && next && release ? (
               <AutoplayNext
@@ -361,6 +381,7 @@ export default function ReleasePage() {
 
       <aside className="video-aside" aria-label={t('release.upNext')}>
         {queue && queueIndex >= 0 && <QueuePanel queue={queue} index={queueIndex} />}
+        {episodes && <SeriesEpisodesPanel episodes={episodes} query={episodeQuery} />}
         {release && <UpNext slug={slug} performer={performers[0]} series={release.series ?? undefined} onFirst={setRelated} onList={setEndItems} />}
       </aside>
     </div>

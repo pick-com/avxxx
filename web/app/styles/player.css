@@ -726,3 +726,101 @@
     animation-duration: 2.4s;
   }
 }
+
+/* ---- 选集 drawer and 同系列 panel (components/Episodes.tsx) ---- */
+
+.ep-sheet-head {
+  padding: 0 16px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.ep-sheet-head .sheet-title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ep-list {
+  margin: 0;
+  padding: 4px 8px 16px;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+}
+
+.ep-item {
+  width: 100%;
+  min-height: 48px;
+  padding: 8px;
+  border: 0;
+  border-radius: 8px;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  text-decoration: none;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  cursor: pointer;
+}
+
+a.ep-item:hover,
+button.ep-item:hover {
+  background: var(--surface2);
+}
+
+.ep-item[aria-current] {
+  background: var(--surface2);
+  box-shadow: inset 3px 0 0 var(--accent);
+  cursor: default;
+}
+
+.ep-num {
+  flex-shrink: 0;
+  min-width: 52px;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  color: var(--faint);
+}
+
+.ep-item[aria-current] .ep-num,
+.ep-now {
+  color: var(--accent);
+}
+
+.ep-title {
+  flex: 1;
+  min-width: 0;
+  font-size: 14px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ep-meta,
+.ep-now {
+  flex-shrink: 0;
+  font-size: 12px;
+  color: var(--faint);
+}
+
+.ep-now {
+  font-weight: 500;
+}
+
+.ep-panel-name {
+  margin: -6px 0 0;
+  font-size: 13px;
+  color: var(--muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ep-list-compact {
+  padding: 0;
+}
