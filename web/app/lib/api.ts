@@ -678,6 +678,7 @@ export const rotatePlaylistToken = (id: number) => api<Playlist>(`me/playlists/$
 export const addToPlaylist = (id: number, slug: string) => api<{saved: boolean}>(`me/playlists/${id}/items/${enc(slug)}`, {method: 'PUT'});
 export const removeFromPlaylist = (id: number, slug: string) =>
   api<{deleted: boolean}>(`me/playlists/${id}/items/${enc(slug)}`, {method: 'DELETE'});
+export const reorderPlaylist = (id: number, slugs: string[]) => api<{saved: boolean}>(`me/playlists/${id}/reorder`, {method: 'POST', body: {slugs}});
 export const moveLaterToPlaylist = (slug: string, playlistId: number) =>
   api<{moved: boolean}>(`me/watch-later/${enc(slug)}/move`, {method: 'POST', body: {playlist_id: playlistId}});
 /** Unprefixed path of the public page for a share token. */

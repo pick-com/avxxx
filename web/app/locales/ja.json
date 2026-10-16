@@ -281,6 +281,7 @@
   "release.queueNext": "次へ · 再生終了後に自動再生",
   "release.queueNth": "{n} 本目",
   "release.queueManage": "後で見るを管理",
+  "release.queuePlaylist": "コレクションを開く",
   "discover.searchHint": "動画・出演者を検索",
   "discover.filtered": "絞り込み結果",
   "discover.sortNewest": "発売日の新しい順",

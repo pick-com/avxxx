@@ -35,6 +35,9 @@ func (s *stubSitemap) SitemapPerformers(ctx context.Context, c string, l int) ([
 func (s *stubSitemap) SitemapTags(ctx context.Context, c string, l int) ([]store.SitemapEntry, string, error) {
 	return s.list(ctx, c, l)
 }
+func (s *stubSitemap) SitemapPlaylists(ctx context.Context, c string, l int) ([]store.SitemapEntry, string, error) {
+	return s.list(ctx, c, l)
+}
 func (s *stubSitemap) SitemapCounts(context.Context) (store.SitemapCounts, error) {
 	return store.SitemapCounts{Releases: 3, PublishedReleases: 5, Performers: 7, Tags: 9}, s.err
 }

@@ -110,7 +110,7 @@ const playlistColumns = `p.id,p.name,p.description,p.visibility,p.share_token,p.
 	 WHERE i.playlist_id=p.id AND r.status='published' AND r.merged_into_id IS NULL),
 	ARRAY(SELECT r.slug FROM playlist_items i JOIN releases r ON r.id=i.release_id
 	      WHERE i.playlist_id=p.id AND r.status='published' AND r.merged_into_id IS NULL
-	      ORDER BY i.created_at DESC, r.id DESC LIMIT 4)`
+	      ORDER BY i.position NULLS FIRST, i.created_at DESC, r.id DESC LIMIT 4)`
 
 func scanPlaylist(row rowScanner, extra ...any) (Playlist, error) {
 	var p Playlist
@@ -271,12 +271,13 @@ func (s *Store) DeletePlaylist(ctx context.Context, userID, id int64) error {
 	return err
 }
 
-// playlistItems lists a playlist's published releases, newest addition first.
+// playlistItems lists a playlist's published releases in the owner's order
+// (position; new additions first until the owner reorders).
 func (s *Store) playlistItems(ctx context.Context, playlistID int64) ([]PlaylistItem, error) {
 	rows, err := s.Query(ctx, `SELECT r.slug,r.canonical_title,COALESCE(r.title_ja,''),COALESCE(r.runtime_minutes,0),i.created_at
 		FROM playlist_items i JOIN releases r ON r.id=i.release_id
 		WHERE i.playlist_id=$1 AND r.status='published' AND r.merged_into_id IS NULL
-		ORDER BY i.created_at DESC, r.id DESC LIMIT `+itoa(MaxPlaylistItems), playlistID)
+		ORDER BY i.position NULLS FIRST, i.created_at DESC, r.id DESC LIMIT `+itoa(MaxPlaylistItems), playlistID)
 	if err != nil {
 		return nil, err
 	}
@@ -356,7 +357,10 @@ func addPlaylistItem(ctx context.Context, tx pgx.Tx, userID, id int64, releaseSl
 	if n >= MaxPlaylistItems {
 		return conflict("a playlist holds at most %d videos", MaxPlaylistItems)
 	}
-	if _, err := tx.Exec(ctx, `INSERT INTO playlist_items(playlist_id,release_id) VALUES($1,$2) ON CONFLICT DO NOTHING`, id, releaseID); err != nil {
+	// New items go first (min(position) - 1), as before manual ordering.
+	if _, err := tx.Exec(ctx, `INSERT INTO playlist_items(playlist_id,release_id,position)
+		SELECT $1,$2,COALESCE(min(position),1)-1 FROM playlist_items WHERE playlist_id=$1
+		ON CONFLICT DO NOTHING`, id, releaseID); err != nil {
 		return err
 	}
 	_, err := tx.Exec(ctx, `UPDATE playlists SET updated_at=now() WHERE id=$1`, id)
@@ -382,6 +386,62 @@ func (s *Store) RemovePlaylistItem(ctx context.Context, userID, id int64, releas
 	}
 	_, err := s.Exec(ctx, `DELETE FROM playlist_items WHERE playlist_id=$1 AND release_id=$2`, id, releaseID)
 	return err
+}
+
+// ReorderPlaylist rewrites one of the user's playlists' positions 1..n:
+// ordered lists slugs in their new order, and items it leaves out keep their
+// relative order after them (ReorderPositions). Unknown or repeated slugs are
+// ErrInvalidOrder; another user's playlist is pgx.ErrNoRows.
+func (s *Store) ReorderPlaylist(ctx context.Context, userID, id int64, ordered []string) error {
+	tx, err := s.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback(ctx)
+	var owned bool
+	if err := tx.QueryRow(ctx, `SELECT true FROM playlists WHERE id=$1 AND user_id=$2 FOR UPDATE`, id, userID).Scan(&owned); err != nil {
+		return err
+	}
+	rows, err := tx.Query(ctx, `SELECT r.slug,r.id FROM playlist_items i JOIN releases r ON r.id=i.release_id
+		WHERE i.playlist_id=$1 ORDER BY i.position NULLS FIRST, i.created_at DESC, r.id DESC`, id)
+	if err != nil {
+		return err
+	}
+	var current []string
+	ids := map[string]int64{}
+	for rows.Next() {
+		var slug string
+		var rid int64
+		if err := rows.Scan(&slug, &rid); err != nil {
+			rows.Close()
+			return err
+		}
+		current = append(current, slug)
+		ids[slug] = rid
+	}
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		return err
+	}
+	order, err := reorderPositionsIn(current, ordered, "the playlist")
+	if err != nil {
+		return err
+	}
+	releaseIDs := make([]int64, len(order))
+	positions := make([]int32, len(order))
+	for i, slug := range order {
+		releaseIDs[i] = ids[slug]
+		positions[i] = int32(i + 1)
+	}
+	if _, err := tx.Exec(ctx, `UPDATE playlist_items i SET position=v.pos
+		FROM unnest($2::bigint[], $3::int[]) AS v(release_id, pos)
+		WHERE i.playlist_id=$1 AND i.release_id=v.release_id`, id, releaseIDs, positions); err != nil {
+		return err
+	}
+	if _, err := tx.Exec(ctx, `UPDATE playlists SET updated_at=now() WHERE id=$1`, id); err != nil {
+		return err
+	}
+	return tx.Commit(ctx)
 }
 
 // MoveWatchLaterToPlaylist adds a release to one of the user's playlists and

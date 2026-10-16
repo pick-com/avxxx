@@ -7,7 +7,10 @@ package store
 //   - releases:   published, unmerged and playable (an active or degraded
 //     playback_sources row, or a provider mapping in release_media_sources);
 //   - performers: active, unmerged, credited on at least one published release;
-//   - tags:       tags of published, unmerged releases (the /discover?tag= pages).
+//   - tags:       tags of published, unmerged releases (the /discover?tag= pages);
+//   - playlists:  public 收藏夹 holding at least one published release, by
+//     share_token (/playlists/{token}). Link-only and private playlists are
+//     never listed: a link-only URL is a capability the owner hands out.
 //
 // Held releases (held_review), drafts and hidden performers never appear.
 
@@ -36,6 +39,7 @@ type SitemapCounts struct {
 	PublishedReleases int64 `json:"published_releases"`
 	Performers        int64 `json:"performers"`
 	Tags              int64 `json:"tags"`
+	Playlists         int64 `json:"playlists"`
 }
 
 const (
@@ -129,6 +133,17 @@ func (s *Store) SitemapPerformers(ctx context.Context, cursor string, limit int)
 		WHERE p.id>$1 AND `+sitemapPerformerSQL+` ORDER BY p.id LIMIT $2`, cursor, limit)
 }
 
+const sitemapPlaylistSQL = `p.visibility='public' AND EXISTS (
+	SELECT 1 FROM playlist_items i JOIN releases r ON r.id=i.release_id
+	WHERE i.playlist_id=p.id AND r.status='published' AND r.merged_into_id IS NULL)`
+
+// SitemapPlaylists lists public playlists with a published release in id
+// order; Slug is the share_token.
+func (s *Store) SitemapPlaylists(ctx context.Context, cursor string, limit int) ([]SitemapEntry, string, error) {
+	return s.sitemapByID(ctx, `SELECT p.id,p.share_token,p.updated_at FROM playlists p
+		WHERE p.id>$1 AND `+sitemapPlaylistSQL+` ORDER BY p.id LIMIT $2`, cursor, limit)
+}
+
 // SitemapTags lists the tags of published releases in tag order; UpdatedAt
 // is the newest change among their releases.
 func (s *Store) SitemapTags(ctx context.Context, cursor string, limit int) ([]SitemapEntry, string, error) {
@@ -167,8 +182,9 @@ func (s *Store) SitemapCounts(ctx context.Context) (SitemapCounts, error) {
 		(SELECT count(*) FROM releases r WHERE r.status='published' AND r.merged_into_id IS NULL),
 		(SELECT count(*) FROM performers p WHERE `+sitemapPerformerSQL+`),
 		(SELECT count(DISTINCT t.normalized_tag) FROM release_tags t JOIN releases r ON r.id=t.release_id
-			WHERE r.status='published' AND r.merged_into_id IS NULL AND t.normalized_tag<>'')`).
-		Scan(&c.Releases, &c.PublishedReleases, &c.Performers, &c.Tags)
+			WHERE r.status='published' AND r.merged_into_id IS NULL AND t.normalized_tag<>''),
+		(SELECT count(*) FROM playlists p WHERE `+sitemapPlaylistSQL+`)`).
+		Scan(&c.Releases, &c.PublishedReleases, &c.Performers, &c.Tags, &c.Playlists)
 	return c, err
 }
 

@@ -281,6 +281,7 @@
   "release.queueNext": "다음 · 끝나면 자동 재생",
   "release.queueNth": "{n}번째",
   "release.queueManage": "나중에 보기 관리",
+  "release.queuePlaylist": "컬렉션 열기",
   "discover.searchHint": "영상, 배우 검색",
   "discover.filtered": "필터 결과",
   "discover.sortNewest": "발매일 최신순",

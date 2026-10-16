@@ -281,6 +281,7 @@
   "release.queueNext": "Siguiente · se reproduce automáticamente",
   "release.queueNth": "N.º {n}",
   "release.queueManage": "Gestionar Ver más tarde",
+  "release.queuePlaylist": "Abrir colección",
   "discover.searchHint": "Busca videos e intérpretes",
   "discover.filtered": "Resultados filtrados",
   "discover.sortNewest": "Por fecha de lanzamiento, más recientes primero",

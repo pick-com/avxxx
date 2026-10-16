@@ -193,6 +193,7 @@ var expectedRoutes = []string{
 	"GET /api/sitemap/releases",
 	"GET /api/sitemap/performers",
 	"GET /api/sitemap/tags",
+	"GET /api/sitemap/playlists",
 	"GET /api/sitemap/counts",
 	"POST /api/admin/seo/report",
 	"GET /api/admin/seo/report",
@@ -214,6 +215,7 @@ var expectedRoutes = []string{
 	"POST /api/me/playlists/{id}/share-token",
 	"PUT /api/me/playlists/{id}/items/{release_slug}",
 	"DELETE /api/me/playlists/{id}/items/{release_slug}",
+	"POST /api/me/playlists/{id}/reorder",
 	"POST /api/me/watch-later/{release_slug}/move",
 	"GET /api/playlists/{token}",
 	// Home curation, 高分短片 and announcements (home.go).

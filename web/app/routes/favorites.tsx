@@ -1,6 +1,6 @@
-import {useEffect, useState, type FormEvent} from 'react';
+import {useEffect, useRef, useState, type FormEvent} from 'react';
 import {useSearchParams} from 'react-router';
-import {ReleaseRow, Thumb} from '../components/Cards';
+import {Thumb} from '../components/Cards';
 import {Icon} from '../components/Icon';
 import {CardGridSkeleton, EmptyState, ErrorBanner} from '../components/States';
 import {
@@ -10,6 +10,7 @@ import {
   getPlaylists,
   PLAYLIST_VISIBILITIES,
   removeFromPlaylist,
+  reorderPlaylist,
   rotatePlaylistToken,
   updatePlaylist,
   type Playlist,
@@ -19,8 +20,11 @@ import {
 import {useAuth} from '../lib/auth';
 import {formatDate} from '../lib/format';
 import {t, useT} from '../lib/i18n';
+import {Link, useNavigate} from '../lib/nav';
 import {playlistName, shareUrl, visibilityHint, visibilityIcon, visibilityLabel} from '../lib/playlists';
+import {playlistQueue, queueStartPath, startQueue} from '../lib/queue';
 import {useAsync} from '../lib/useAsync';
+import {shuffled, useReorder} from '../lib/useReorder';
 import '../styles/library.css';
 
 export const meta = () => [{title: t('title.favorites')}];
@@ -30,7 +34,9 @@ export const meta = () => [{title: t('title.favorites')}];
 // Visibility 私密 / 链接可见 / 公开; non-private playlists get a share link
 // (/playlists/{share_token}) that can be reset, which revokes the old one.
 // The default playlist backs the release page's quick 收藏 and cannot be
-// deleted.
+// deleted. Items are in the owner's order: drag the handle or focus it and
+// press ↑ / ↓ (POST /api/me/playlists/{id}/reorder). 全部播放 / 随机播放
+// start a playlist:<id> session queue the video page follows (lib/queue).
 export default function Favorites() {
   const t = useT();
   const {status} = useAuth();
@@ -166,10 +172,50 @@ function PlaylistPanel({playlist, onChange, onDeleted}: {playlist: Playlist; onC
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [copied, setCopied] = useState('');
+  const [announce, setAnnounce] = useState('');
+  const navigate = useNavigate();
+  const listRef = useRef<HTMLOListElement>(null);
+  const committed = useRef<string[]>([]);
 
   useEffect(() => {
-    if (detail.data) setItems(detail.data.items);
+    if (detail.data) {
+      setItems(detail.data.items);
+      committed.current = detail.data.items.map(i => i.slug);
+    }
   }, [detail.data]);
+
+  const saveOrder = async (next: PlaylistItem[]) => {
+    const order = next.map(i => i.slug);
+    if (order.join('\n') === committed.current.join('\n')) return;
+    const previous = committed.current;
+    committed.current = order;
+    setError('');
+    try {
+      await reorderPlaylist(playlist.id, order);
+    } catch (cause) {
+      committed.current = previous;
+      setItems(cur => previous.map(slug => cur.find(i => i.slug === slug)).filter((i): i is PlaylistItem => !!i));
+      setError(cause instanceof Error ? t('later.orderNotSavedWith', {message: cause.message}) : t('later.orderNotSaved'));
+    }
+  };
+  const {dragging, handleProps} = useReorder(items, setItems, {
+    listRef,
+    rowSelector: '.later-item',
+    onCommit: saveOrder,
+    announce: (item, index, viaKeyboard) =>
+      setAnnounce(viaKeyboard ? t('later.moved', {title: item.title, n: index + 1, total: items.length}) : t('later.movedShort', {title: item.title, n: index + 1})),
+  });
+
+  const play = (order: PlaylistItem[]) => {
+    if (order.length === 0) return;
+    const name = playlistQueue(playlist.id);
+    startQueue(
+      name,
+      order.map(i => i.slug),
+      {title: playlistName(playlist), titles: Object.fromEntries(order.map(i => [i.slug, i.title])), manage: `/favorites?id=${playlist.id}`},
+    );
+    navigate(queueStartPath(name, order[0].slug));
+  };
 
   const run = async (fn: () => Promise<void>, failed: string) => {
     setBusy(true);
@@ -210,12 +256,14 @@ function PlaylistPanel({playlist, onChange, onDeleted}: {playlist: Playlist; onC
   const remove = async (item: PlaylistItem) => {
     const before = items;
     setItems(before.filter(i => i.slug !== item.slug));
+    committed.current = committed.current.filter(s => s !== item.slug);
     setError('');
     try {
       await removeFromPlaylist(playlist.id, item.slug);
       onChange({...playlist, item_count: Math.max(0, playlist.item_count - 1), cover_slugs: playlist.cover_slugs.filter(s => s !== item.slug)});
     } catch (cause) {
       setItems(before);
+      committed.current = before.map(i => i.slug);
       setError(cause instanceof Error ? cause.message : t('favorites.removeFailed'));
     }
   };
@@ -250,6 +298,18 @@ function PlaylistPanel({playlist, onChange, onDeleted}: {playlist: Playlist; onC
             {playlist.description && <p className="muted pl-desc">{playlist.description}</p>}
           </div>
           <div className="action-row">
+            {items.length > 0 && (
+              <>
+                <button type="button" className="btn btn-primary" onClick={() => play(items)}>
+                  <Icon name="play" size={16} filled />
+                  {t('later.playAll')}
+                </button>
+                <button type="button" className="btn btn-secondary" onClick={() => play(shuffled(items))}>
+                  <Icon name="shuffle" size={16} />
+                  {t('later.shuffle')}
+                </button>
+              </>
+            )}
             <button type="button" className="text-btn" onClick={() => setEditing(true)}>
               {t('playlists.edit')}
             </button>
@@ -319,15 +379,42 @@ function PlaylistPanel({playlist, onChange, onDeleted}: {playlist: Playlist; onC
       ) : items.length === 0 ? (
         <EmptyState icon="favorites" title={t('favorites.emptyTitle')} body={t('favorites.emptyBody')} actions={[{to: '/', label: t('common.goHome')}]} />
       ) : (
-        <div className="row-list">
-          {items.map(item => (
-            <ReleaseRow key={item.slug} slug={item.slug} title={item.title} meta={t('favorites.savedAt', {date: formatDate(item.added_at)})}>
-              <button type="button" className="text-btn" onClick={() => remove(item)} aria-label={t('favorites.removeLabel', {title: item.title})}>
-                {t('favorites.remove')}
-              </button>
-            </ReleaseRow>
-          ))}
-        </div>
+        <>
+          <p className="muted later-hint" id="pl-order-hint">
+            {t('later.dragHint')}
+          </p>
+          <span className="sr-only" role="status" aria-live="polite">
+            {announce}
+          </span>
+          <ol className="later-list" ref={listRef}>
+            {items.map((item, index) => (
+              <li key={item.slug} className={dragging === item.slug ? 'later-item is-dragging' : 'later-item'}>
+                <button
+                  type="button"
+                  className="drag-handle"
+                  aria-label={t('later.handle', {title: item.title, n: index + 1})}
+                  aria-describedby="pl-order-hint"
+                  {...handleProps(item, index)}
+                >
+                  <Icon name="grip" />
+                </button>
+                <span className="later-index" aria-hidden="true">
+                  {index + 1}
+                </span>
+                <Link to={`/releases/${encodeURIComponent(item.slug)}`} className="release-row-link">
+                  <Thumb seed={item.slug} badge={item.runtime_minutes ? t('card.minutes', {n: item.runtime_minutes}) : undefined} className="thumb-row" />
+                  <span className="release-row-text">
+                    <span className="card-title">{item.title}</span>
+                    <span className="card-meta">{t('favorites.savedAt', {date: formatDate(item.added_at)})}</span>
+                  </span>
+                </Link>
+                <button type="button" className="text-btn" onClick={() => remove(item)} aria-label={t('favorites.removeLabel', {title: item.title})}>
+                  {t('favorites.remove')}
+                </button>
+              </li>
+            ))}
+          </ol>
+        </>
       )}
     </section>
   );

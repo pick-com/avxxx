@@ -111,6 +111,7 @@ export const pagesZhCN = {
   'release.queueNext': '下一个 · 播完自动播放',
   'release.queueNth': '第 {n} 个',
   'release.queueManage': '管理稍后观看',
+  'release.queuePlaylist': '打开收藏夹',
 
   // discover
   'discover.searchHint': '搜索视频、演员',

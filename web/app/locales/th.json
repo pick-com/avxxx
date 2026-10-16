@@ -281,6 +281,7 @@
   "release.queueNext": "ถัดไป · เล่นอัตโนมัติเมื่อจบ",
   "release.queueNth": "ลำดับที่ {n}",
   "release.queueManage": "จัดการดูภายหลัง",
+  "release.queuePlaylist": "เปิดคอลเลกชัน",
   "discover.searchHint": "ค้นหาวิดีโอ นักแสดง",
   "discover.filtered": "ผลการกรอง",
   "discover.sortNewest": "ตามวันวางจำหน่าย ใหม่สุดก่อน",

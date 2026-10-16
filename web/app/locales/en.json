@@ -281,6 +281,7 @@
   "release.queueNext": "Next · plays automatically",
   "release.queueNth": "#{n}",
   "release.queueManage": "Manage Watch later",
+  "release.queuePlaylist": "Open playlist",
   "discover.searchHint": "Search videos and performers",
   "discover.filtered": "Filtered results",
   "discover.sortNewest": "Release date, newest first",

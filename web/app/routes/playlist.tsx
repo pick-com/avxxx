@@ -8,9 +8,12 @@ import {isGone, serverApi} from '../lib/api.server';
 import {formatDate, formatRuntime} from '../lib/format';
 import {t, useT} from '../lib/i18n';
 import {routeLang} from '../lib/langs';
+import {useNavigate} from '../lib/nav';
 import {playlistName, visibilityIcon, visibilityLabel} from '../lib/playlists';
+import {playlistQueue, queueStartPath, startQueue} from '../lib/queue';
 import {seoMeta, type SeoHandle} from '../lib/seo';
 import {useAsync} from '../lib/useAsync';
+import {shuffled} from '../lib/useReorder';
 import '../styles/library.css';
 
 export const handle: SeoHandle = {seo: true};
@@ -20,7 +23,8 @@ export const handle: SeoHandle = {seo: true};
 // public and link-only playlists (private and unknown tokens are 404, so a
 // private playlist is never readable by anyone but its owner). Link-only
 // playlists are noindex (meta robots and X-Robots-Tag); public ones may be
-// indexed.
+// indexed. 全部播放 / 随机播放 start a playlist:<id> session queue the video
+// page follows (lib/queue), in the owner's order.
 
 type PlaylistLoad = {token: string; detail?: PlaylistDetail; missing?: boolean; unavailable?: boolean};
 
@@ -62,6 +66,7 @@ export default function PublicPlaylist() {
   const loaded = useLoaderData<typeof loader>() as PlaylistLoad | null;
   const own = loaded && loaded.token === token ? loaded : null;
   const missingOnServer = !!own?.missing;
+  const navigate = useNavigate();
   const detail = useAsync(signal => api<PlaylistDetail>(`playlists/${encodeURIComponent(token)}`, {signal}), [token], !missingOnServer, own?.detail);
 
   if (missingOnServer || detail.error) {
@@ -79,6 +84,16 @@ export default function PublicPlaylist() {
   const d = detail.data;
   if (!d) return <div className="page narrow">{detail.slow && <BlockSkeleton lines={4} />}</div>;
   const p = d.playlist;
+  const play = (order: PlaylistDetail['items']) => {
+    if (order.length === 0) return;
+    const name = playlistQueue(p.id);
+    startQueue(
+      name,
+      order.map(i => i.slug),
+      {title: playlistName(p), titles: Object.fromEntries(order.map(i => [i.slug, i.title])), manage: `/playlists/${encodeURIComponent(token)}`},
+    );
+    navigate(queueStartPath(name, order[0].slug));
+  };
   return (
     <div className="page narrow lib-page">
       <header className="pl-public-head">
@@ -88,6 +103,18 @@ export default function PublicPlaylist() {
           {[t(visibilityLabel[p.visibility]), p.owner_name && t('playlists.by', {name: p.owner_name}), t('playlists.count', {n: p.item_count})].filter(Boolean).join(' · ')}
         </p>
         {p.description && <p className="pl-desc">{p.description}</p>}
+        {d.items.length > 0 && (
+          <div className="action-row">
+            <button type="button" className="btn btn-primary" onClick={() => play(d.items)}>
+              <Icon name="play" size={16} filled />
+              {t('later.playAll')}
+            </button>
+            <button type="button" className="btn btn-secondary" onClick={() => play(shuffled(d.items))}>
+              <Icon name="shuffle" size={16} />
+              {t('later.shuffle')}
+            </button>
+          </div>
+        )}
       </header>
       {d.items.length === 0 ? (
         <EmptyState icon="favorites" title={t('playlists.publicEmpty')} />
