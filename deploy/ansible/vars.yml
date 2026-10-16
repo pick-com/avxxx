@@ -3,7 +3,9 @@ app_dir: /opt/avxxx
 deploy_user: avxxx
 git_repo: git@github.com:pick-com/avxxx.git
 git_branch: main
-database_url: postgres://avxxx:avxxx@db:5432/avxxx?sslmode=disable
+# Must carry the same password the db container was initialised with
+# (POSTGRES_PASSWORD in deploy.yml); use a URL-safe one (openssl rand -hex 32).
+database_url: "postgres://avxxx:{{ postgres_password | default('change-me') | urlencode }}@db:5432/avxxx?sslmode=disable"
 compose_project: avxxx
 # Daily pg_dump (scripts/backup-db.sh) via cron; opt in with -e backup_cron_enabled=true.
 # Also copy the dumps off this host (docs/PRODUCTION_OPERATIONS.md 备份与恢复).

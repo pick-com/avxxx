@@ -93,6 +93,10 @@ type Crawl struct {
 	Now      func() time.Time
 }
 
+// ErrEmptyListing is returned when an automatic crawl's discovery page lists
+// no records at all. The run fails (and is retried) instead of completing.
+var ErrEmptyListing = errors.New("catalog: discovery page lists no records")
+
 type CrawlResult struct {
 	Phase   Phase
 	Pages   int
@@ -140,6 +144,7 @@ func (c *Crawl) Run(ctx context.Context) (CrawlResult, error) {
 		}
 	}
 	page := c.StartURL
+	narrowed := false // incremental head filtered to recent records (IncrementalStarter)
 	if phase == PhaseBaseline && cp.Cursor != "" && SameSite(c.StartURL, cp.Cursor) {
 		page = cp.Cursor
 	} else if s, ok := c.Adapter.(IncrementalStarter); ok && phase == PhaseIncremental && cp.Watermark != nil {
@@ -149,7 +154,7 @@ func (c *Crawl) Run(ctx context.Context) (CrawlResult, error) {
 		// since then. The head marks below still stop the run. Baseline and
 		// verify always start from their own cursor / the start URL.
 		if u := s.IncrementalStart(c.StartURL, *cp.Watermark); u != "" && SameSite(c.StartURL, u) {
-			page = u
+			page, narrowed = u, true
 		}
 	}
 	inline := false
@@ -211,6 +216,21 @@ func (c *Crawl) Run(ctx context.Context) (CrawlResult, error) {
 		records, err := c.Adapter.Discover(ctx, index)
 		if err != nil {
 			return fail(key, "discover_failed", err)
+		}
+		if len(records) == 0 && phase == PhaseIncremental && narrowed && res.Pages == 0 {
+			// A date-filtered head (DMM gte_date) can legitimately be empty:
+			// nothing new since the last pass. Keep the marks and their time.
+			res.Stop = StopComplete
+			return res, nil
+		}
+		if len(records) == 0 && phase != PhaseVerify {
+			// A catalog listing page with nothing on it is a broken or
+			// truncated response (or a redesign the adapter no longer
+			// parses), not the end of the archive: a baseline would mark the
+			// pass complete and an incremental run would move its watermark
+			// past records it never saw. Fail without touching checkpoints;
+			// verify runs report the empty page instead.
+			return fail(key, "empty_listing", fmt.Errorf("%w: %s", ErrEmptyListing, page))
 		}
 		reachedMark := false
 		for _, discovered := range records {

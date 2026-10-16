@@ -155,6 +155,27 @@ func resolvePerformer(ctx context.Context, tx pgx.Tx, sourceID int64, ref perfor
 	return createPerformer(ctx, tx, ref)
 }
 
+// resolveCredit is resolvePerformer for a release credit the record made
+// before (prev, 0 = new credit). When the name no longer resolves on its own —
+// it now matches several performers (both sides of a split, two people
+// sharing a Japanese name) — the credit stays on prev instead of creating
+// another performer on every crawl.
+func resolveCredit(ctx context.Context, tx pgx.Tx, sourceID int64, ref performerRef, prev int64) (int64, string, error) {
+	if prev == 0 {
+		return resolvePerformer(ctx, tx, sourceID, ref)
+	}
+	if id, err := performerByExternalID(ctx, tx, ref.DMMID); err != nil || id != 0 {
+		return finishResolve(ctx, tx, id, err)
+	}
+	if s := catalog.NameSlug(ref.Name); s != "" {
+		return 0, s, nil
+	}
+	if id, err := performerByName(ctx, tx, ref); err != nil || id != 0 {
+		return finishResolve(ctx, tx, id, err)
+	}
+	return finishResolve(ctx, tx, prev, nil)
+}
+
 // performerRecordSlug is the slug a performer record upserts under. A record
 // seen before keeps updating the performer it resolved to (its slug never
 // changes, whatever the name slugs to now); otherwise resolvePerformer decides.

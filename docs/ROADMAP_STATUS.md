@@ -2,7 +2,7 @@
 
 > 状态更新时间：2026-10-16
 >
-> 当前基础能力完成度约为 **94%**。基础架构、目录采集、调度、WebApp 浏览、Javtiful 播放映射、审核后台、生产 smoke/备份和 Ansible 部署已经可运行；来源授权/robots/terms 门禁、baseline/增量/verify 任务隔离、字段优先级策略和 fixture 验收工具已完成。剩余工作主要集中在来源覆盖（更多 adapter 和录制 fixture）、图片存储、生产值班通道配置和正式生产验收（监控、Alertmanager 通知、主机与备份告警已就绪）。
+> 当前基础能力完成度约为 **96%**。基础架构、目录采集、调度、WebApp 浏览、Javtiful 播放映射、审核后台、生产 smoke/备份和 Ansible 部署已经可运行；来源授权/robots/terms 门禁、baseline/增量/verify 任务隔离、字段优先级策略和 fixture 验收工具已完成。剩余工作主要集中在来源覆盖（更多 adapter 和录制 fixture）、图片存储、生产值班通道配置和正式生产验收（监控、Alertmanager 通知、主机与备份告警已就绪）。
 >
 > 注意：门禁上线后，`license_status` 未审核（`review_required` / `manual_only`）或缺少 `terms_reviewed_at` / `terms_url` 的目录来源不再自动抓取，只能手动创建 verify 任务；需管理员通过 `PUT /api/admin/sources/{id}/license` 记录条款审核后才恢复增量。爬虫必须配置 `CATALOG_CONTACT`（User-Agent 联系方式），否则目录任务以 `config_error` 失败。
 
@@ -107,8 +107,8 @@
 - [x] 主机与备份监控：node_exporter（磁盘 < 15% warning / < 5% page、内存、负载），`backup-db.sh` 写 textfile 指标，备份超过 26 小时或 < 1 MiB 告警；Ansible 可选每日备份 cron（`backup_cron_enabled`）
 - [x] robots、terms、授权和配额门禁
 - [x] 数据保留和图片使用策略（[DATA_RETENTION_AND_IMAGES.md](DATA_RETENTION_AND_IMAGES.md)：只有 `official_api`/`licensed`/`internal` 且管理员复核 `images_allowed` 的来源可存图；`internal/objstore` S3 兼容存储 + compose `storage` profile MinIO；`media_fetch`/`media_purge` 任务；公开接口 `cover`/`portrait` 字段和 `/api/images/`；屏蔽/下架 24 h 内清理；DMM 图片转存待法务确认）
-- [ ] 部署、备份和恢复文档
-- [ ] 全量验收：重复抓取不重复实体、阻断不清空数据、公开 API 不泄露 raw_data（最后一项已有集成测试 `TestPublicAPINoRawDataIntegration` 遍历全部公开 GET 路由）
+- [x] 部署、备份和恢复文档（`docs/DEPLOYMENT.md`：Ansible provision/deploy、完整 Caddyfile 与 TLS、密钥/vault 清单、按 tag/SHA 发布与镜像标签回滚、只向前且幂等的迁移及其回滚含义、发布后检查、每日备份/保留/异地拷贝、生产恢复、来源许可首跑清单；`make restore-drill`（`scripts/restore-drill.sh`）把最新备份或种子库恢复到一次性 postgres:17、逐表比对 dump 行数、在其上启动 API 跑 smoke，本地种子模式约 9 秒、2 MB/35 万行 dump 约 4 秒，建议每月演练）
+- [x] 全量验收：重复抓取不重复实体、阻断不清空数据、公开 API 不泄露 raw_data（`internal/acceptance`，随 `make test-integration` / CI integration 运行，`make acceptance` 单独运行：经生产路径 Enqueue→Claim→`crawlrun`→Finish 抓取 javdatabase/xcity/javguru/DMM/RSS 与 ThePornDB 式回退来源的 httptest 站点。重复/乱序/大小写/空白变化的再入库不新增任何行；403/429/503/验证页/404/500/robots/许可门禁/预算/解析失败/跳过/退化/空页/DMM 错误不清空数据、不丢 last_seen_at、不推进 checkpoint；覆盖、扣留、合并、拆分经多轮重抓保持；遍历全部公开 GET 路由无 raw_data、凭据、覆盖原因、隐藏生日、未发布作品。验收中发现并修复 9 个缺陷：字段历史每次重抓翻倍、退化页/改标题生成重复作品、拆分后署名重抓生成新演员、空列表页推进 checkpoint、javdatabase 空标签生成伪 content_id、javguru/xcity 标签解析、未发布作品的 /performers 返回 200、回退来源新增品番作用域、Ansible 默认 DATABASE_URL 密码不一致）
 
 ## 阶段完成标记
 
@@ -150,4 +150,4 @@ JAV Database adapter 已接入 scraper，可完成发现、详情抓取、解析
 **增量调度：分页 checkpoint、预算限速、阻断隔离、授权/robots 门禁和 baseline/增量隔离已完成**  
 **数据质量：字段优先级策略和 fixture 验收工具已完成，录制 fixture 未达标（各来源 0/20、0/100）**  
 **WebApp 完整交付：主要浏览和审核流程已完成，checkpoint 与来源证据展示未完成**  
-**生产化验收：基础检查、备份和恢复已完成，正式环境验收未完成**
+**生产化验收：部署/备份/恢复手册、恢复演练和全量验收套件已完成；正式环境（生产主机值班通道、首次许可审核）验收未完成**

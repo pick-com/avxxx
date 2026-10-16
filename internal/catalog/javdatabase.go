@@ -121,14 +121,26 @@ func absolute(base, raw string) string {
 	}
 	return b.ResolveReference(u).String()
 }
+
+// javdatabaseLabels are the "Label:" markers of JAV Database detail pages.
+var javdatabaseLabels = []string{"Content ID:", "DVD ID:", "DOB:", "Debut:", "Measurements:", "Cup:", "Height:", "Shoe Size:", "Release Date:", "Runtime:", "Studio:", "Director:", "Genre(s):", "Idol(s)/Actress(es):", "Tags:", "JP:"}
+
 func labelValue(text, label string) string {
 	i := strings.Index(text, label)
 	if i < 0 {
 		return ""
 	}
 	v := strings.TrimSpace(text[i+len(label):])
-	for _, next := range []string{"Content ID:", "DVD ID:", "DOB:", "Debut:", "Measurements:", "Cup:", "Height:", "Shoe Size:", "Release Date:", "Runtime:", "Studio:", "Director:", "Genre(s):", "Idol(s)/Actress(es):", "Tags:", "JP:"} {
-		if j := strings.Index(v, next); j >= 0 && j > 0 {
+	for _, next := range javdatabaseLabels {
+		if strings.HasPrefix(v, next) {
+			// An empty label ("Content ID:" with no value) is followed
+			// directly by the next one: there is no value. (It once stored
+			// "Release Date: 2024-06-01" as a global content_id.)
+			return ""
+		}
+	}
+	for _, next := range javdatabaseLabels {
+		if j := strings.Index(v, next); j > 0 {
 			v = v[:j]
 		}
 	}

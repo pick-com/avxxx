@@ -236,8 +236,15 @@ func (s *Store) PerformerReleases(ctx context.Context, slug string, limit int) (
 	return out, r.Err()
 }
 
+// ReleasePerformers is the public cast of a published release. A release that
+// is not public (draft, held_review, unpublished, merged) or unknown is
+// pgx.ErrNoRows, like the release itself: its cast must not reveal it.
 func (s *Store) ReleasePerformers(ctx context.Context, slug string) ([]model.Performer, error) {
-	r, err := s.Query(ctx, `SELECT p.id,p.slug,p.canonical_name,COALESCE(p.canonical_name_ja,''),`+PublicBirthDate("p")+`,COALESCE(p.height_cm,0),COALESCE(p.bust_cm,0),COALESCE(p.waist_cm,0),COALESCE(p.hip_cm,0),p.status FROM performers p JOIN release_performers rp ON rp.performer_id=p.id JOIN releases r ON r.id=rp.release_id WHERE r.slug=$1 AND p.status='active' AND p.merged_into_id IS NULL ORDER BY rp.billing_order NULLS LAST,p.id`, slug)
+	var releaseID int64
+	if err := s.QueryRow(ctx, `SELECT id FROM releases WHERE slug=$1 AND status='published' AND merged_into_id IS NULL`, slug).Scan(&releaseID); err != nil {
+		return nil, err
+	}
+	r, err := s.Query(ctx, `SELECT p.id,p.slug,p.canonical_name,COALESCE(p.canonical_name_ja,''),`+PublicBirthDate("p")+`,COALESCE(p.height_cm,0),COALESCE(p.bust_cm,0),COALESCE(p.waist_cm,0),COALESCE(p.hip_cm,0),p.status FROM performers p JOIN release_performers rp ON rp.performer_id=p.id WHERE rp.release_id=$1 AND p.status='active' AND p.merged_into_id IS NULL ORDER BY rp.billing_order NULLS LAST,p.id`, releaseID)
 	if err != nil {
 		return nil, err
 	}
@@ -657,7 +664,12 @@ func (s *Store) SaveCatalogRecord(ctx context.Context, sourceID int64, parserVer
 		if code != "" {
 			// Never the bare "maker:" (Japanese maker names have no ASCII slug).
 			scope := catalog.MakerScope(maker, recordText(rec.Fields["maker_id"]))
-			_, err = tx.Exec(ctx, `INSERT INTO release_identifiers(release_id,identifier_type,identifier_value,normalized_value,identifier_scope,source_id) VALUES($1,'dvd_code',$2,$3,$4,$5) ON CONFLICT DO NOTHING`, id, code, catalog.NormalizeIdentifier(code), scope, sourceID)
+			// A fallback-only source fills a missing code but never adds
+			// another maker scope for a code the release already has: its
+			// studio naming ("Madonna TPDB") is not an identity key.
+			_, err = tx.Exec(ctx, `INSERT INTO release_identifiers(release_id,identifier_type,identifier_value,normalized_value,identifier_scope,source_id)
+				SELECT $1,'dvd_code',$2,$3,$4,$5 WHERE NOT ($6 AND EXISTS (SELECT 1 FROM release_identifiers WHERE release_id=$1 AND identifier_type='dvd_code' AND normalized_value=$3))
+				ON CONFLICT DO NOTHING`, id, code, catalog.NormalizeIdentifier(code), scope, sourceID, fallback)
 			if err != nil {
 				return 0, err
 			}
@@ -733,7 +745,7 @@ func (s *Store) SaveCatalogRecord(ctx context.Context, sourceID int64, parserVer
 				// Japanese-only names (DMM) resolve by actress id or name
 				// match, or are created under a romaji / source-scoped slug.
 				var slug string
-				performerID, slug, err = resolvePerformer(ctx, tx, sourceID, ref)
+				performerID, slug, err = resolveCredit(ctx, tx, sourceID, ref, prev)
 				if err != nil {
 					return 0, err
 				}
@@ -817,10 +829,18 @@ func writeFieldValues(ctx context.Context, tx pgx.Tx, sourceRecordID int64, fiel
 		if err != nil {
 			return nil, err
 		}
-		if _, err = tx.Exec(ctx, `UPDATE source_field_values SET is_current=false WHERE source_record_id=$1 AND field_name=$2 AND is_current`, sourceRecordID, field); err != nil {
+		// Field history records changes: an unchanged value keeps its current
+		// row (captured_at = when the value was first seen; the record's
+		// last_seen_at says when it was last confirmed). Without this every
+		// re-crawl appended one row per field (a full baseline pass doubled
+		// the table).
+		if _, err = tx.Exec(ctx, `UPDATE source_field_values SET is_current=false WHERE source_record_id=$1 AND field_name=$2 AND is_current
+			AND normalized_value IS DISTINCT FROM $3::jsonb`, sourceRecordID, field, string(raw)); err != nil {
 			return nil, err
 		}
-		if _, err = tx.Exec(ctx, `INSERT INTO source_field_values(source_record_id,field_name,raw_value,normalized_value,confidence,captured_at,is_current) VALUES($1,$2,$3::jsonb,$3::jsonb,'verified',now(),true)`, sourceRecordID, field, string(raw)); err != nil {
+		if _, err = tx.Exec(ctx, `INSERT INTO source_field_values(source_record_id,field_name,raw_value,normalized_value,confidence,captured_at,is_current)
+			SELECT $1,$2,$3::jsonb,$3::jsonb,'verified',now(),true
+			WHERE NOT EXISTS (SELECT 1 FROM source_field_values WHERE source_record_id=$1 AND field_name=$2 AND is_current)`, sourceRecordID, field, string(raw)); err != nil {
 			return nil, err
 		}
 		if field == catalog.FieldPageTitle {

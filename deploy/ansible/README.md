@@ -2,6 +2,8 @@
 
 部署方式参考 `books/deploy/ansible`：provision 负责主机依赖和用户，deploy 负责拉取代码、生成环境变量、启动 PostgreSQL、API、scheduler 和 scraper。
 
+完整的部署 / 回滚 / 备份 / 恢复手册（含 Caddy、密钥清单、来源许可首跑清单）见 `docs/DEPLOYMENT.md`。`database_url` 默认由 `postgres_password` 派生，二者不必分别传入。
+
 ## 使用
 
 1. 编辑 `inventory.ini`，替换目标主机。

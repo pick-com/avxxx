@@ -74,17 +74,17 @@ func (a XCITYAdapter) Parse(ctx context.Context, doc Document, entity EntityType
 		}
 		f["name"] = name
 		f[FieldPageTitle] = pageTitle(d)
-		f["birth_date"] = xcityLabel(text, "生年月日")
-		f["birth_place"] = xcityLabel(text, "出身地")
-		f["height_cm"] = number(xcityLabel(text, "身長"))
-		f["measurements"] = xcityLabel(text, "スリーサイズ")
-		f["cup_size"] = xcityLabel(text, "バスト")
+		f["birth_date"] = xcityLabel(d, text, "生年月日")
+		f["birth_place"] = xcityLabel(d, text, "出身地")
+		f["height_cm"] = number(xcityLabel(d, text, "身長"))
+		f["measurements"] = xcityLabel(d, text, "スリーサイズ")
+		f["cup_size"] = xcityLabel(d, text, "バスト")
 		f["release_refs"] = xcityLinks(d, "/title/")
 	} else {
 		f["title"] = title
-		f["release_date"] = xcityLabel(text, "発売日")
-		f["maker"] = xcityLabel(text, "メーカー")
-		f["label"] = xcityLabel(text, "レーベル")
+		f["release_date"] = xcityLabel(d, text, "発売日")
+		f["maker"] = xcityLabel(d, text, "メーカー")
+		f["label"] = xcityLabel(d, text, "レーベル")
 		f["genres"] = xcityLinks(d, "/genre/")
 		f["tags"] = f["genres"]
 		f["performers"] = performerLinks(d.Find("a[href]"), doc.FinalURL, func(u string) bool {
@@ -137,7 +137,26 @@ func xcityClassify(raw string) (EntityType, string) {
 	}
 	return "", ""
 }
-func xcityLabel(text, label string) string {
+
+// xcityLabel returns the value of a profile / title label. The <dt>/<th>
+// label → <dd>/<td> value markup is read first, so a value never runs on into
+// the rest of the page (a label_name once carried every genre and the cast);
+// pages without that markup fall back to the flattened text, cut at the next
+// known label.
+func xcityLabel(d *goquery.Document, text, label string) string {
+	var out string
+	found := false
+	d.Find("dt, th").EachWithBreak(func(_ int, s *goquery.Selection) bool {
+		if strings.TrimSpace(s.Text()) != label {
+			return true
+		}
+		found = true
+		out = strings.TrimSpace(s.NextFiltered("dd, td").First().Text())
+		return false
+	})
+	if found {
+		return out
+	}
 	i := strings.Index(text, label)
 	if i < 0 {
 		return ""
