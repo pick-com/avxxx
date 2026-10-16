@@ -4,6 +4,7 @@ import {ThemeToggle} from '../components/TopBar';
 import {tokens, validAdminActor} from '../lib/api';
 import {getDashboard, getModerationOverview, getPerformerRequests, type Dashboard, type QueueCounts} from '../lib/adminApi';
 import {AdminContext} from '../lib/adminContext';
+import {getAdminTakedowns, type TakedownCounts} from '../lib/adminComplianceApi';
 import '../styles/admin.css';
 import '../styles/admin-intel.css';
 import '../styles/admin-gov.css';
@@ -32,6 +33,7 @@ const ICONS = {
   ops: 'M4 5h16v14H4zM4 9h16M9 13h6M9 16h4',
   legal: 'M7 3h7l5 5v13H7zM14 3v5h5M10 13h6M10 17h6',
   feedback: 'M4 5h16v11H9l-5 4zM8 9h8M8 12h5',
+  copyright: 'M12 21a9 9 0 100-18 9 9 0 000 18zM15 9.5a3.5 3.5 0 100 5',
 };
 
 type Badge = {n: number; tone: 'red' | 'amber' | 'plain'} | null;
@@ -56,6 +58,7 @@ export default function AdminLayout() {
   const [counts, setCounts] = useState<QueueCounts | null>(null);
   const [badgeTick, setBadgeTick] = useState(0);
   const [openRequests, setOpenRequests] = useState<number | null>(null);
+  const [takedowns, setTakedowns] = useState<TakedownCounts | null>(null);
 
   // Read storage after mount: route modules avoid browser globals during render.
   useEffect(() => {
@@ -80,6 +83,10 @@ export default function AdminLayout() {
     getPerformerRequests({status: 'open', limit: 100})
       .then(p => live && setOpenRequests(p.items.length))
       .catch(() => live && setOpenRequests(null));
+    // 版权投诉 (compliance backend; absent → no badge): overdue SLA is red.
+    getAdminTakedowns({open: true, limit: 1})
+      .then(d => live && setTakedowns(d.counts))
+      .catch(() => live && setTakedowns(null));
     return () => {
       live = false;
     };
@@ -163,11 +170,12 @@ export default function AdminLayout() {
         items: [
           {to: '/admin/legal', label: '法律文本', icon: 'legal'},
           {to: '/admin/feedback', label: '用户反馈', icon: 'feedback'},
+          {to: '/admin/takedowns', label: '版权投诉', icon: 'copyright', badge: badge(takedowns?.overdue || takedowns?.open, takedowns?.overdue ? 'red' : 'amber')},
         ],
       },
     ];
     return g;
-  }, [dash, counts, openRequests]);
+  }, [dash, counts, openRequests, takedowns]);
 
   const session = useMemo(() => ({hasToken, epoch, refreshBadges}), [hasToken, epoch, refreshBadges]);
 

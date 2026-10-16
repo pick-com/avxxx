@@ -38,6 +38,7 @@ export default [
     route(L('legal/:doc'), 'routes/legal.tsx'),
     route(L('help'), 'routes/help.tsx'),
     route(L('feedback'), 'routes/feedback.tsx'),
+    route(L('copyright'), 'routes/copyright.tsx'),
     route('*', 'routes/not-found.tsx'),
   ]),
   route(L('login'), 'routes/login.tsx'),
@@ -63,5 +64,6 @@ export default [
     route('admin/ops', 'routes/admin-ops.tsx'),
     route('admin/legal', 'routes/admin-legal.tsx'),
     route('admin/feedback', 'routes/admin-feedback.tsx'),
+    route('admin/takedowns', 'routes/admin-takedowns.tsx'),
   ]),
 ] satisfies RouteConfig;
