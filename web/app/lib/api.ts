@@ -626,7 +626,9 @@ export const login = (email: string, password: string) =>
 export const register = (email: string, password: string, displayName: string) =>
   api<AuthResult>('auth/register', {method: 'POST', body: {email, password, display_name: displayName}});
 export const getMe = (signal?: AbortSignal) => api<User>('auth/me', {signal});
-export const getWatchHistory = (signal?: AbortSignal) => api<Items<WatchItem>>('me/watch-history', {signal}).then(items);
+/** q: 播放记录 search (title, performer or product code). */
+export const getWatchHistory = (signal?: AbortSignal, q = '') =>
+  api<Items<WatchItem>>(q ? `me/watch-history?q=${encodeURIComponent(q)}` : 'me/watch-history', {signal}).then(items);
 /** later_removed: the save reached 90 % and the server dropped the release from 稍后观看. */
 export const saveWatchProgress = (slug: string, progressSeconds: number, durationSeconds: number, keepalive = false) =>
   api<{saved: boolean; later_removed?: boolean}>('me/watch-history', {

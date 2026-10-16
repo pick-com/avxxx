@@ -16,7 +16,7 @@ type accountStore interface {
 	Login(ctx context.Context, email, password string) (map[string]any, error)
 	UserByToken(ctx context.Context, token string) (map[string]any, error)
 	UserIDByToken(ctx context.Context, token string) (int64, error)
-	WatchHistory(ctx context.Context, userID int64) ([]map[string]any, error)
+	WatchHistory(ctx context.Context, userID int64, q string) ([]map[string]any, error)
 	SaveWatch(ctx context.Context, userID int64, slug string, progress, duration int) error
 	Favorites(ctx context.Context, userID int64) ([]map[string]any, error)
 	SetFavorite(ctx context.Context, userID int64, slug string, enabled bool) error
@@ -118,7 +118,8 @@ func (srv *Server) watchHistory(w http.ResponseWriter, r *http.Request) {
 		reply(w, nil, e)
 		return
 	}
-	v, e := srv.accounts.WatchHistory(r.Context(), id)
+	// ?q= searches 播放记录 by title, performer or product code (store.WatchHistory).
+	v, e := srv.accounts.WatchHistory(r.Context(), id, r.URL.Query().Get("q"))
 	reply(w, map[string]any{"items": v}, e)
 }
 

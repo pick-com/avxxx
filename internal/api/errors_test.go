@@ -22,6 +22,7 @@ type stubAccounts struct {
 	loginErr    error
 	idErr       error // returned by UserIDByToken for the "good" token
 	calls       []string
+	historyQ    string // q passed to WatchHistory
 }
 
 func (s *stubAccounts) Ping(context.Context) error {
@@ -61,7 +62,8 @@ func (s *stubAccounts) UserIDByToken(_ context.Context, token string) (int64, er
 	return 1, s.idErr
 }
 
-func (s *stubAccounts) WatchHistory(context.Context, int64) ([]map[string]any, error) {
+func (s *stubAccounts) WatchHistory(_ context.Context, _ int64, q string) ([]map[string]any, error) {
+	s.historyQ = q
 	return []map[string]any{}, nil
 }
 func (s *stubAccounts) SaveWatch(context.Context, int64, string, int, int) error { return nil }
@@ -176,6 +178,29 @@ func TestUserIDHelper(t *testing.T) {
 	r.Header.Set("Authorization", "Bearer good")
 	if _, err := srv.userID(r); err == nil || errors.Is(err, errUnauthorized) {
 		t.Errorf("db failure: err %v, want non-401 error", err)
+	}
+}
+
+// GET /api/me/watch-history?q= hands the search text to the store (播放记录 search).
+func TestWatchHistoryQuery(t *testing.T) {
+	st := &stubAccounts{}
+	srv := &Server{accounts: st}
+	mux := http.NewServeMux()
+	for _, rt := range srv.routes() {
+		mux.HandleFunc(rt.pattern, rt.handler)
+	}
+	for _, tc := range []struct{ path, want string }{
+		{"/api/me/watch-history", ""},
+		{"/api/me/watch-history?q=abc-123", "abc-123"},
+		{"/api/me/watch-history?q=%E4%B8%89%E4%B8%8A", "三上"},
+	} {
+		req := httptest.NewRequest("GET", tc.path, nil)
+		req.Header.Set("Authorization", "Bearer good")
+		rec := httptest.NewRecorder()
+		mux.ServeHTTP(rec, req)
+		if rec.Code != 200 || st.historyQ != tc.want {
+			t.Errorf("%s: status %d, q %q; want 200, %q", tc.path, rec.Code, st.historyQ, tc.want)
+		}
 	}
 }
 
