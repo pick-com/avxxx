@@ -22,6 +22,24 @@ const paths = {
   film: 'M4 6h16v12H4zM10 9l5 3-5 3z',
   alert: 'M12 3l10 18H2zM12 10v5M12 18v.01',
   empty: 'M4 7h16v13H4zM4 7l2-4h12l2 4M9 12h6',
+  // Player (Video / MobilePlayerFull / States 05).
+  pause: 'M8 5v14M16 5v14',
+  offline: 'M2 9a15 15 0 0120 0M5 12.5a10 10 0 0114 0M8.5 16a5 5 0 017 0M12 20h0M3 3l18 18',
+  check: 'M5 12l5 5 9-10',
+  settings: 'M4 7h10M18 7h2M4 17h4M12 17h8M16 5v4M10 15v4',
+  pip: 'M3 5h18v14H3zM12 11h7v6h-7z',
+  theater: 'M2 7h20v10H2z',
+  fullscreen: 'M4 9V4h5M15 4h5v5M20 15v5h-5M9 20H4v-5',
+  exitFullscreen: 'M9 4v5H4M20 9h-5V4M15 20v-5h5M4 15h5v5',
+  lock: 'M5 11h14v9H5zM8 11V8a4 4 0 018 0v3',
+  unlock: 'M5 11h14v9H5zM8 11V8a4 4 0 017.5-2',
+  cc: 'M3 5h18v14H3zM10 10a2.5 2.5 0 100 4M17 10a2.5 2.5 0 100 4',
+  chevronDown: 'M6 9l6 6 6-6',
+  volume: 'M4 9h4l5-4v14l-5-4H4zM16 8a5 5 0 010 8',
+  mute: 'M4 9h4l5-4v14l-5-4H4zM16 9l5 6M21 9l-5 6',
+  brightness: 'M12 17a5 5 0 100-10 5 5 0 000 10zM12 2v2M12 20v2M2 12h2M20 12h2',
+  rewind: 'M11 6l-7 6 7 6zM20 6l-7 6 7 6z',
+  forward: 'M13 6l7 6-7 6zM4 6l7 6-7 6z',
 } as const;
 
 export type IconName = keyof typeof paths;
