@@ -173,6 +173,12 @@ var expectedRoutes = []string{
 	"POST /api/admin/media-links/run",
 	"POST /api/admin/media-links/{release_id}/retry",
 	"POST /api/admin/media-links/{release_id}/choose",
+	"GET /api/series",
+	"GET /api/series/{slug}",
+	"GET /api/series/{slug}/releases",
+	"GET /api/releases/{slug}/evidence",
+	"GET /api/performers/{slug}/evidence",
+	"GET /api/admin/reports/completeness",
 }
 
 var (

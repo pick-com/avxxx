@@ -410,17 +410,24 @@ type ReleaseDetail struct {
 	Synopsis     string              `json:"synopsis,omitempty"` // original text; see display_synopsis for ?lang=
 	Tags         []TagRef            `json:"tags"`
 	Identifiers  []ReleaseIdentifier `json:"identifiers"`
+	Series       *SeriesRef          `json:"series,omitempty"` // migrations/027_series.sql
 }
 
 // ReleaseDetailBySlug returns a published release with its tags and
 // identifiers. A missing or unpublished release is pgx.ErrNoRows.
 func (s *Store) ReleaseDetailBySlug(ctx context.Context, slug string) (ReleaseDetail, error) {
 	var x ReleaseDetail
-	err := s.QueryRow(ctx, `SELECT `+releaseColumns+`,COALESCE(r.director_name,''),COALESCE(r.synopsis,'')
-		FROM releases r WHERE r.slug=$1 AND r.merged_into_id IS NULL AND r.status='published'`, slug).
-		Scan(&x.ID, &x.Slug, &x.CanonicalTitle, &x.TitleJA, &x.ReleaseDate, &x.RuntimeMinutes, &x.MakerName, &x.LabelName, &x.SeriesName, &x.Status, &x.DirectorName, &x.Synopsis)
+	var seriesID *int64
+	var seriesSlug, seriesName *string
+	err := s.QueryRow(ctx, `SELECT `+releaseColumns+`,COALESCE(r.director_name,''),COALESCE(r.synopsis,''),se.id,se.slug,se.name
+		FROM releases r LEFT JOIN series se ON se.id=r.series_id
+		WHERE r.slug=$1 AND r.merged_into_id IS NULL AND r.status='published'`, slug).
+		Scan(&x.ID, &x.Slug, &x.CanonicalTitle, &x.TitleJA, &x.ReleaseDate, &x.RuntimeMinutes, &x.MakerName, &x.LabelName, &x.SeriesName, &x.Status, &x.DirectorName, &x.Synopsis, &seriesID, &seriesSlug, &seriesName)
 	if err != nil {
 		return x, err
+	}
+	if seriesID != nil && seriesSlug != nil && seriesName != nil {
+		x.Series = &SeriesRef{ID: *seriesID, Slug: *seriesSlug, Name: *seriesName}
 	}
 	x.Tags = []TagRef{}
 	rows, err := s.Query(ctx, `SELECT normalized_tag,tag FROM release_tags WHERE release_id=$1 ORDER BY tag`, x.ID)

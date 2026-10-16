@@ -31,10 +31,17 @@
 // (default 200) and MEDIA_LINK_DAILY_CAP (default 2000).
 //
 //	audit -media-link  run the media link job now, print the report, exit
+//
+// It also claims 'completeness_snapshot' jobs (nightly, cmd/scheduler): the
+// daily field-completeness snapshot behind the admin completeness report's
+// trend (internal/completeness).
+//
+//	audit -completeness  store today's completeness snapshot now, print it, exit
 package main
 
 import (
 	"avxxx/internal/audit"
+	"avxxx/internal/completeness"
 	"avxxx/internal/media"
 	"avxxx/internal/medialink"
 	"avxxx/internal/obs"
@@ -64,6 +71,7 @@ func main() {
 	recsNow := flag.Bool("recs", false, "run the recommendation similarity and trending jobs once and exit")
 	searchNow := flag.Bool("search", false, "run the search statistics job once and exit")
 	mediaLinkNow := flag.Bool("media-link", false, "run the offline media link job once and exit")
+	completenessNow := flag.Bool("completeness", false, "store today's completeness snapshot and exit")
 	flag.Parse()
 
 	obs.SetupLogging("audit")
@@ -118,6 +126,12 @@ func main() {
 		if err != nil {
 			obs.Fatal("run failed", err)
 		}
+	case *completenessNow:
+		rep, err := runCompleteness(ctx, s, 0)
+		printJSON(rep)
+		if err != nil {
+			obs.Fatal("run failed", err)
+		}
 	case *once:
 		rep, err := (&audit.Runner{Store: s}).Run(ctx)
 		printJSON(rep)
@@ -146,7 +160,7 @@ func work(ctx context.Context, s *store.Store) {
 			slog.Error("reap expired jobs", "err", err)
 		}
 		claimed := false
-		for _, kind := range []string{store.JobKindSourceHealth, store.JobKindRecsTrending, store.JobKindReleaseCurves, store.JobKindSearchStats, store.JobKindAudit, store.JobKindRecsSimilarity, store.JobKindMediaLink} {
+		for _, kind := range []string{store.JobKindSourceHealth, store.JobKindRecsTrending, store.JobKindReleaseCurves, store.JobKindSearchStats, store.JobKindAudit, store.JobKindRecsSimilarity, store.JobKindMediaLink, store.JobKindCompletenessSnapshot} {
 			id, version, err := s.ClaimJob(ctx, kind)
 			if errors.Is(err, pgx.ErrNoRows) {
 				continue
@@ -208,6 +222,9 @@ func execute(ctx context.Context, s *store.Store, kind string, id int64) (any, e
 		return map[string]any{"sources": rep.Sources, "recorded": rep.Recorded, "scored": rep.Scored,
 			"insufficient_data": rep.Insufficient, "status_changes": len(rep.Changes), "pruned": rep.Pruned}, err
 	}
+	if kind == store.JobKindCompletenessSnapshot {
+		return runCompleteness(ctx, s, id)
+	}
 	if kind == store.JobKindReleaseCurves {
 		rep, err := (&playcurve.Runner{Store: s}).Run(ctx)
 		return rep, err
@@ -265,4 +282,23 @@ func sleep(ctx context.Context, d time.Duration) {
 	case <-ctx.Done():
 	case <-time.After(d):
 	}
+}
+
+// runCompleteness stores today's completeness snapshot and records the run
+// in nightly_runs (job 'completeness_snapshot', AdminDashboard).
+func runCompleteness(ctx context.Context, s *store.Store, jobID int64) (completeness.RunReport, error) {
+	start := time.Now()
+	rep, err := (&completeness.Runner{Store: s, JobID: jobID}).Run(ctx)
+	run := audit.Run{Job: completeness.JobKind, JobID: jobID, StartedAt: start, DurationMS: time.Since(start).Milliseconds(),
+		Result: "ok", Detail: map[string]any{"entities": rep.Entities, "required_complete": rep.Complete}}
+	for _, n := range rep.Entities {
+		run.Checked += int(n)
+	}
+	if err != nil {
+		run.Result = "failed"
+	}
+	if rerr := s.RecordRun(ctx, run); rerr != nil {
+		slog.Warn("record completeness run", "err", rerr)
+	}
+	return rep, err
 }

@@ -2,6 +2,7 @@ package main
 
 import (
 	"avxxx/internal/audit"
+	"avxxx/internal/completeness"
 	"avxxx/internal/obs"
 	"avxxx/internal/playcurve"
 	"avxxx/internal/recs"
@@ -85,6 +86,17 @@ func main() {
 			log.Fatalf("invalid MEDIA_LINK_EVERY %q: want a duration of at least 1m", v)
 		}
 	}
+	// Completeness snapshot (internal/completeness, run by cmd/audit): once
+	// per day at COMPLETENESS_NIGHTLY_AT (default 05:00, after the audit), the
+	// trend behind GET /api/admin/reports/completeness.
+	completenessAt := os.Getenv("COMPLETENESS_NIGHTLY_AT")
+	if completenessAt == "" {
+		completenessAt = "05:00"
+	}
+	completenessHour, completenessMinute, err := audit.ParseClock(completenessAt)
+	if err != nil {
+		log.Fatal(err)
+	}
 	interval := 60 * time.Second
 	for ctx.Err() == nil {
 		if ok, err := s.EnqueueKindSince(ctx, recs.JobKindSimilarity, audit.LastSlot(time.Now(), recsHour, recsMinute)); err != nil {
@@ -106,6 +118,11 @@ func main() {
 		}
 		if _, err := s.EnqueueKindSince(ctx, audit.JobKindSourceHealth, time.Now().Truncate(healthEvery)); err != nil {
 			log.Printf("enqueue source health: %v", err)
+		}
+		if ok, err := s.EnqueueKindSince(ctx, completeness.JobKind, audit.LastSlot(time.Now(), completenessHour, completenessMinute)); err != nil {
+			log.Printf("enqueue completeness snapshot: %v", err)
+		} else if ok {
+			log.Printf("enqueued nightly completeness snapshot")
 		}
 		// Replay peak / retention curves (PRD 14.3): hourly, run by cmd/audit.
 		if _, err := s.EnqueueKindSince(ctx, playcurve.JobKind, time.Now().Truncate(time.Hour)); err != nil {

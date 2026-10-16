@@ -271,7 +271,7 @@ func (s *Store) matchPerformers(ctx context.Context, q string, limit int, trgm b
 		sim = "GREATEST(word_similarity($2,p.canonical_name),word_similarity($2,COALESCE(p.canonical_name_ja,'')))"
 	}
 	sql := `WITH cand AS (` + strings.Join(parts, " UNION ALL ") + `), best AS (SELECT id,min(how) how FROM cand GROUP BY id)
-	SELECT p.id,p.slug,p.canonical_name,p.canonical_name_ja,p.birth_date,b.how
+	SELECT p.id,p.slug,p.canonical_name,p.canonical_name_ja,` + PublicBirthDate("p") + `,b.how
 	FROM best b JOIN performers p ON p.id=b.id
 	ORDER BY b.how,(lower(p.canonical_name)=$2 OR lower(COALESCE(p.canonical_name_ja,''))=$2) DESC,
 	  (p.canonical_name ILIKE $3 OR p.canonical_name_ja ILIKE $3) DESC,` + sim + ` DESC,p.canonical_name,p.id LIMIT $4`
