@@ -320,6 +320,9 @@ func performerEvidenceKeys(refs []performerRef) []string {
 		if catalog.DMMActressSlug(ref.DMMID) != "" {
 			add(identity.ExternalIDKey(externalDMMActress, ref.DMMID))
 		}
+		if ref.TPDBID != "" {
+			add(identity.ExternalIDKey(externalThePornDB, ref.TPDBID))
+		}
 	}
 	return out
 }
