@@ -37,11 +37,22 @@
 // trend (internal/completeness).
 //
 //	audit -completeness  store today's completeness snapshot now, print it, exit
+//
+// It also claims 'crosscheck' jobs (every CROSSCHECK_EVERY, default 1h,
+// cmd/scheduler): third-party lookups of releases that miss fields or have
+// open field conflicts (internal/crosscheck; ThePornDB with
+// THEPORNDB_API_TOKEN). The source row's license gate, crawl policy and the
+// crawler contact (CATALOG_CONTACT) apply; CROSSCHECK_MAX_PER_RUN (default
+// 100) and CROSSCHECK_DAILY_CAP (default 1000) bound each run.
+//
+//	audit -crosscheck  run the cross-check job now, print the report, exit
 package main
 
 import (
 	"avxxx/internal/audit"
+	"avxxx/internal/catalog"
 	"avxxx/internal/completeness"
+	"avxxx/internal/crosscheck"
 	"avxxx/internal/media"
 	"avxxx/internal/medialink"
 	"avxxx/internal/obs"
@@ -54,6 +65,7 @@ import (
 	"errors"
 	"flag"
 	"log/slog"
+	"net/http"
 	"os"
 	"os/signal"
 	"strconv"
@@ -72,6 +84,7 @@ func main() {
 	searchNow := flag.Bool("search", false, "run the search statistics job once and exit")
 	mediaLinkNow := flag.Bool("media-link", false, "run the offline media link job once and exit")
 	completenessNow := flag.Bool("completeness", false, "store today's completeness snapshot and exit")
+	crossCheckNow := flag.Bool("crosscheck", false, "run the third-party cross-check job once and exit")
 	flag.Parse()
 
 	obs.SetupLogging("audit")
@@ -126,6 +139,12 @@ func main() {
 		if err != nil {
 			obs.Fatal("run failed", err)
 		}
+	case *crossCheckNow:
+		rep, err := crossCheckRunner(s, 0).Run(ctx)
+		printJSON(rep)
+		if err != nil {
+			obs.Fatal("run failed", err)
+		}
 	case *completenessNow:
 		rep, err := runCompleteness(ctx, s, 0)
 		printJSON(rep)
@@ -160,7 +179,7 @@ func work(ctx context.Context, s *store.Store) {
 			slog.Error("reap expired jobs", "err", err)
 		}
 		claimed := false
-		for _, kind := range []string{store.JobKindSourceHealth, store.JobKindRecsTrending, store.JobKindReleaseCurves, store.JobKindSearchStats, store.JobKindAudit, store.JobKindRecsSimilarity, store.JobKindMediaLink, store.JobKindCompletenessSnapshot} {
+		for _, kind := range []string{store.JobKindSourceHealth, store.JobKindRecsTrending, store.JobKindReleaseCurves, store.JobKindSearchStats, store.JobKindAudit, store.JobKindRecsSimilarity, store.JobKindMediaLink, store.JobKindCompletenessSnapshot, store.JobKindCrossCheck} {
 			id, version, err := s.ClaimJob(ctx, kind)
 			if errors.Is(err, pgx.ErrNoRows) {
 				continue
@@ -205,6 +224,29 @@ func mediaLinkRunner(s *store.Store, jobID int64) *medialink.Runner {
 	return &medialink.Runner{Store: s, Search: media.NewService(reg), Config: cfg, JobID: jobID}
 }
 
+// crossCheckRunner builds the crosscheck job over every lookup adapter
+// (catalog.LookupAdapter) with the CROSSCHECK_* caps. Without the crawler
+// contact or the adapter's credentials each adapter's run records why it
+// did nothing instead of failing.
+func crossCheckRunner(s *store.Store, jobID int64) *crosscheck.Runner {
+	cfg, warn := crosscheck.ConfigFromEnv(os.Getenv)
+	for _, w := range warn {
+		slog.Warn("crosscheck config", "warning", w)
+	}
+	var adapters []catalog.LookupAdapter
+	for _, a := range catalog.Adapters() {
+		if l, ok := a.(catalog.LookupAdapter); ok {
+			adapters = append(adapters, l)
+		}
+	}
+	ua, err := catalog.UserAgentFromEnv(os.Getenv)
+	if err != nil {
+		slog.Warn("crosscheck disabled", "err", err)
+	}
+	return &crosscheck.Runner{Store: s, Adapters: adapters, Config: cfg, HTTPClient: &http.Client{Timeout: 30 * time.Second},
+		UserAgent: ua, Robots: catalog.NewRobots(&http.Client{Timeout: 20 * time.Second}, ua), JobID: jobID}
+}
+
 // execute runs one job of kind and returns its result counts.
 func execute(ctx context.Context, s *store.Store, kind string, id int64) (any, error) {
 	switch kind {
@@ -216,6 +258,8 @@ func execute(ctx context.Context, s *store.Store, kind string, id int64) (any, e
 		return (&search.Runner{Store: s, JobID: id}).Run(ctx)
 	case store.JobKindMediaLink:
 		return mediaLinkRunner(s, id).Run(ctx)
+	case store.JobKindCrossCheck:
+		return crossCheckRunner(s, id).Run(ctx)
 	}
 	if kind == store.JobKindSourceHealth {
 		rep, err := (&audit.HealthRunner{Store: s, Config: healthConfig(), JobID: id}).Run(ctx)

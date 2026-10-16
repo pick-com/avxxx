@@ -3,6 +3,7 @@ package main
 import (
 	"avxxx/internal/audit"
 	"avxxx/internal/completeness"
+	"avxxx/internal/crosscheck"
 	"avxxx/internal/obs"
 	"avxxx/internal/playcurve"
 	"avxxx/internal/recs"
@@ -86,6 +87,16 @@ func main() {
 			log.Fatalf("invalid MEDIA_LINK_EVERY %q: want a duration of at least 1m", v)
 		}
 	}
+	// Third-party cross-check (internal/crosscheck, run by cmd/audit): once
+	// per CROSSCHECK_EVERY slot (default 1h). The job itself applies each
+	// source's license gate, crawl policy and daily caps, so an unconfigured
+	// or disabled source costs one cheap no-op run.
+	crossCheckEvery := time.Hour
+	if v := os.Getenv("CROSSCHECK_EVERY"); v != "" {
+		if crossCheckEvery, err = time.ParseDuration(v); err != nil || crossCheckEvery < time.Minute {
+			log.Fatalf("invalid CROSSCHECK_EVERY %q: want a duration of at least 1m", v)
+		}
+	}
 	// Completeness snapshot (internal/completeness, run by cmd/audit): once
 	// per day at COMPLETENESS_NIGHTLY_AT (default 05:00, after the audit), the
 	// trend behind GET /api/admin/reports/completeness.
@@ -130,6 +141,9 @@ func main() {
 		}
 		if _, err := s.EnqueueKindSince(ctx, store.JobKindMediaLink, time.Now().Truncate(mediaLinkEvery)); err != nil {
 			log.Printf("enqueue media link: %v", err)
+		}
+		if _, err := s.EnqueueKindSince(ctx, crosscheck.JobKind, time.Now().Truncate(crossCheckEvery)); err != nil {
+			log.Printf("enqueue crosscheck: %v", err)
 		}
 		n, err := s.EnqueueDue(ctx)
 		if err != nil {
