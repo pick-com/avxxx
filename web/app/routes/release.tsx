@@ -2,12 +2,14 @@ import {useEffect, useState} from 'react';
 import {Link, useLocation, useNavigate, useParams} from 'react-router';
 import {Avatar, ReleaseRow, SectionHeader} from '../components/Cards';
 import {Icon} from '../components/Icon';
+import {PerformerHoverCard, PerformerSheet} from '../components/PerformerPeek';
 import {Player} from '../components/Player';
 import {BlockSkeleton, CardGridSkeleton, EmptyState, ErrorBanner} from '../components/States';
 import {getFavorites, getPerformerReleases, getRelease, getReleasePerformers, getWatchHistory, setFavorite, type Performer, type Release} from '../lib/api';
 import {useAuth} from '../lib/auth';
 import {ageAt, formatDate, formatRuntime} from '../lib/format';
 import {useAsync} from '../lib/useAsync';
+import {useMediaQuery} from '../lib/useMediaQuery';
 import type {ShellHandle} from './shell';
 
 export const handle: ShellHandle = {immersive: true};
@@ -21,13 +23,20 @@ export const meta = () => [{title: 'REEL · 视频'}];
 // TODO(tech plan 3.3 playback_sources): 片源 row with versions.
 // TODO(tech plan 3.5 GET /api/recs?slot=related): 相关推荐 / 同系列 tabs.
 // TODO: release tags and director are not returned by GET /api/releases/{slug}.
-// TODO(PRD 6.3): performer hover card / MobileActorSheet.
 export default function ReleasePage() {
   const {slug = ''} = useParams();
   const navigate = useNavigate();
   const {status} = useAuth();
   const detail = useAsync(signal => Promise.all([getRelease(slug, signal), getReleasePerformers(slug, signal)]), [slug]);
   const history = useAsync(signal => getWatchHistory(signal), [status], status === 'user');
+  const mobile = useMediaQuery('(max-width: 767px)');
+  // Hover cards need a real hover; phones and tablets (any width) get the sheet.
+  const canHover = useMediaQuery('(hover: hover) and (pointer: fine)');
+  const useSheet = mobile || !canHover;
+  const [theater, setTheater] = useState(false);
+  const [sheetPerformer, setSheetPerformer] = useState<Performer | null>(null);
+
+  useEffect(() => setSheetPerformer(null), [slug]);
 
   const release = detail.data?.[0];
   const performers = detail.data?.[1] ?? [];
@@ -61,9 +70,16 @@ export default function ReleasePage() {
   }
 
   return (
-    <div className="video-page">
+    <div className="video-page" data-theater={theater && !mobile ? 'true' : 'false'}>
       <div className="video-main">
-        <Player slug={slug} title={release?.canonical_title ?? ''} resumeAt={resumeAt} onBack={back} />
+        <Player
+          slug={slug}
+          title={release?.canonical_title ?? ''}
+          resumeAt={resumeAt}
+          onBack={back}
+          theater={theater}
+          onToggleTheater={() => setTheater(t => !t)}
+        />
 
         {!release ? (
           detail.slow && <BlockSkeleton lines={3} />
@@ -88,14 +104,26 @@ export default function ReleasePage() {
 
             {performers.length > 0 && (
               <section className="cast">
-                <SectionHeader title="主演" />
+                <SectionHeader title="主演" sub={useSheet ? '点击查看演员资料' : '鼠标悬停查看演员资料'} />
                 <div className="avatar-row">
-                  {performers.map(p => (
-                    <CastMember key={p.id} performer={p} releaseDate={release.release_date} />
-                  ))}
+                  {performers.map(p =>
+                    useSheet ? (
+                      <CastMember key={p.id} performer={p} releaseDate={release.release_date} onOpen={() => setSheetPerformer(p)} />
+                    ) : (
+                      <PerformerHoverCard key={p.id} performer={p} releaseDate={release.release_date} currentSlug={slug}>
+                        <CastMember performer={p} releaseDate={release.release_date} />
+                      </PerformerHoverCard>
+                    ),
+                  )}
                 </div>
               </section>
             )}
+            <PerformerSheet
+              performer={useSheet ? sheetPerformer : null}
+              releaseDate={release.release_date}
+              currentSlug={slug}
+              onClose={() => setSheetPerformer(null)}
+            />
           </>
         )}
       </div>
@@ -131,12 +159,26 @@ function ReleaseMeta({release}: {release: Release}) {
   );
 }
 
-function CastMember({performer, releaseDate}: {performer: Performer; releaseDate?: string}) {
+function CastMember({performer, releaseDate, onOpen}: {performer: Performer; releaseDate?: string; onOpen?: () => void}) {
   // PRD 6.4: only a release date is known (no filming year), so always 「约」;
   // hidden when either date is missing.
   const age = ageAt(performer.birth_date, releaseDate);
   return (
-    <Link to={`/performers/${encodeURIComponent(performer.slug)}`} className="performer-chip cast-member">
+    <Link
+      to={`/performers/${encodeURIComponent(performer.slug)}`}
+      className="performer-chip cast-member"
+      aria-haspopup={onOpen ? 'dialog' : undefined}
+      onClick={
+        onOpen
+          ? event => {
+              // Mobile: open MobileActorSheet in place; the video keeps playing (PRD 6.3).
+              if (event.metaKey || event.ctrlKey || event.shiftKey || event.button !== 0) return;
+              event.preventDefault();
+              onOpen();
+            }
+          : undefined
+      }
+    >
       <Avatar seed={performer.slug} name={performer.canonical_name} size={88} />
       <span className="performer-chip-name">{performer.canonical_name}</span>
       {performer.canonical_name_ja && <span className="performer-chip-sub">{performer.canonical_name_ja}</span>}
