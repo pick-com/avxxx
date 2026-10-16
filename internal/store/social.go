@@ -84,6 +84,9 @@ type UserSettings struct {
 	Timezone      string      `json:"timezone"`
 	NotifyPrefs   NotifyPrefs `json:"notify_prefs"`
 	QuietHours    *QuietHours `json:"quiet_hours"`
+
+	// LaterAutoRemove drops a watch-later entry at 90 % progress (migration 036).
+	LaterAutoRemove bool `json:"later_auto_remove"`
 }
 
 // defaultNotifyPrefs: in-app for everything; push on by default only for the
@@ -101,7 +104,7 @@ func defaultNotifyPrefs() NotifyPrefs {
 func DefaultSettings() UserSettings {
 	return UserSettings{
 		UILang: "zh-CN", ContentLang: "zh-CN", SubtitleLangs: []string{},
-		QualityPref: "auto", Autoplay: true, RememberRate: true,
+		QualityPref: "auto", Autoplay: true, RememberRate: true, LaterAutoRemove: true,
 		Theme: "system", Timezone: "UTC",
 		NotifyPrefs: defaultNotifyPrefs(),
 		QuietHours:  &QuietHours{Start: "22:00", End: "08:00"},
@@ -201,6 +204,8 @@ func ApplySettingsPatch(cur UserSettings, body []byte) (UserSettings, error) {
 			out.RememberRate, err = decodeBool(key, raw)
 		case "history_paused":
 			out.HistoryPaused, err = decodeBool(key, raw)
+		case "later_auto_remove":
+			out.LaterAutoRemove, err = decodeBool(key, raw)
 		case "subtitle_langs":
 			var langs []string
 			if json.Unmarshal(raw, &langs) != nil || langs == nil {
@@ -289,7 +294,7 @@ func ApplySettingsPatch(cur UserSettings, body []byte) (UserSettings, error) {
 	return out, nil
 }
 
-const settingsColumns = `ui_lang,content_lang,subtitle_langs,quality_pref,data_saver,autoplay,remember_rate,history_paused,theme,timezone,notify_prefs,quiet_hours`
+const settingsColumns = `ui_lang,content_lang,subtitle_langs,quality_pref,data_saver,autoplay,remember_rate,history_paused,theme,timezone,notify_prefs,quiet_hours,later_auto_remove`
 
 type rowScanner interface{ Scan(dest ...any) error }
 
@@ -297,7 +302,7 @@ func scanSettings(row rowScanner) (UserSettings, error) {
 	var u UserSettings
 	var prefs, quiet []byte
 	err := row.Scan(&u.UILang, &u.ContentLang, &u.SubtitleLangs, &u.QualityPref, &u.DataSaver, &u.Autoplay,
-		&u.RememberRate, &u.HistoryPaused, &u.Theme, &u.Timezone, &prefs, &quiet)
+		&u.RememberRate, &u.HistoryPaused, &u.Theme, &u.Timezone, &prefs, &quiet, &u.LaterAutoRemove)
 	if err != nil {
 		return u, err
 	}
@@ -350,14 +355,14 @@ func (s *Store) PatchSettings(ctx context.Context, userID int64, body []byte) (U
 		quiet, _ = json.Marshal(next.QuietHours)
 	}
 	_, err = tx.Exec(ctx, `INSERT INTO user_settings(user_id,`+settingsColumns+`,updated_at)
-		VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,now())
+		VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,now())
 		ON CONFLICT(user_id) DO UPDATE SET ui_lang=EXCLUDED.ui_lang,content_lang=EXCLUDED.content_lang,
 		subtitle_langs=EXCLUDED.subtitle_langs,quality_pref=EXCLUDED.quality_pref,data_saver=EXCLUDED.data_saver,
 		autoplay=EXCLUDED.autoplay,remember_rate=EXCLUDED.remember_rate,history_paused=EXCLUDED.history_paused,
 		theme=EXCLUDED.theme,timezone=EXCLUDED.timezone,notify_prefs=EXCLUDED.notify_prefs,
-		quiet_hours=EXCLUDED.quiet_hours,updated_at=now()`,
+		quiet_hours=EXCLUDED.quiet_hours,later_auto_remove=EXCLUDED.later_auto_remove,updated_at=now()`,
 		userID, next.UILang, next.ContentLang, next.SubtitleLangs, next.QualityPref, next.DataSaver, next.Autoplay,
-		next.RememberRate, next.HistoryPaused, next.Theme, next.Timezone, prefs, quiet)
+		next.RememberRate, next.HistoryPaused, next.Theme, next.Timezone, prefs, quiet, next.LaterAutoRemove)
 	if err != nil {
 		return UserSettings{}, err
 	}

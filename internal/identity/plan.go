@@ -67,6 +67,7 @@ var ReleaseTables = []TableSpec{
 	{Table: "source_records", FK: "release_id", Key: []string{"id"}},
 	{Table: "watch_history", FK: "release_id", Key: []string{"user_id"}, Dedupe: true},
 	{Table: "favorites", FK: "release_id", Key: []string{"user_id"}, Dedupe: true},
+	{Table: "playlist_items", FK: "release_id", Key: []string{"playlist_id"}, Dedupe: true},
 	{Table: "reservations", FK: "release_id", Key: []string{"user_id"}, Dedupe: true},
 	{Table: "watch_later", FK: "release_id", Key: []string{"user_id"}, Dedupe: true, Combine: combineWatchLater},
 	{Table: "notification_receipts", FK: "release_id", Key: []string{"user_id"}, Dedupe: true},

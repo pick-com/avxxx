@@ -221,32 +221,29 @@ func (s *Store) WatchHistory(ctx context.Context, userID int64) ([]map[string]an
 	}
 	return out, rows.Err()
 }
+
+// SetFavorite adds a release to, or removes it from, the user's default
+// playlist (migration 036 replaced the single favorites list).
 func (s *Store) SetFavorite(ctx context.Context, userID int64, slug string, enabled bool) error {
-	var id int64
-	if err := s.QueryRow(ctx, `SELECT id FROM releases WHERE slug=$1 AND status='published'`, slug).Scan(&id); err != nil {
-		return err
-	}
 	if enabled {
-		_, err := s.Exec(ctx, `INSERT INTO favorites(user_id,release_id) VALUES($1,$2) ON CONFLICT DO NOTHING`, userID, id)
-		return err
+		return s.AddPlaylistItem(ctx, userID, 0, slug)
 	}
-	_, err := s.Exec(ctx, `DELETE FROM favorites WHERE user_id=$1 AND release_id=$2`, userID, id)
-	return err
+	return s.RemovePlaylistItem(ctx, userID, 0, slug)
 }
+
+// Favorites lists the user's default playlist, newest first.
 func (s *Store) Favorites(ctx context.Context, userID int64) ([]map[string]any, error) {
-	rows, err := s.Query(ctx, `SELECT r.slug,r.canonical_title,f.created_at FROM favorites f JOIN releases r ON r.id=f.release_id WHERE f.user_id=$1 ORDER BY f.created_at DESC`, userID)
+	id, err := ensureDefaultPlaylist(ctx, s, userID)
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
-	out := []map[string]any{}
-	for rows.Next() {
-		var slug, title string
-		var at time.Time
-		if err = rows.Scan(&slug, &title, &at); err != nil {
-			return nil, err
-		}
-		out = append(out, map[string]any{"slug": slug, "title": title, "created_at": at})
+	items, err := s.playlistItems(ctx, id)
+	if err != nil {
+		return nil, err
 	}
-	return out, rows.Err()
+	out := make([]map[string]any, 0, len(items))
+	for _, it := range items {
+		out = append(out, map[string]any{"slug": it.Slug, "title": it.Title, "created_at": it.AddedAt})
+	}
+	return out, nil
 }
