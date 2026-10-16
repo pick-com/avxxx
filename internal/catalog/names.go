@@ -36,6 +36,10 @@ const (
 	NameTooManyWords     = "too_many_words"
 	NameMatchesPageTitle = "matches_page_title"
 	NameMatchesSiteName  = "matches_site_name"
+	// NameMatchesSiteTitle: equal to a <title> that the same source uses on
+	// several performers' pages, i.e. the site's own title (decided by the
+	// caller with SameName; BoilerplateName cannot know it from one page).
+	NameMatchesSiteTitle = "matches_site_title"
 )
 
 // MaxNameRunes and MaxNameWords bound a plausible performer name. Stage names
@@ -53,9 +57,12 @@ var (
 
 // BoilerplateName reports why name looks like a site title or page
 // boilerplate rather than a person's name ("" when it looks fine).
-// pageTitles are the <title> texts of the source pages the name came from:
-// a name equal to a whole title, or to its site-name part (the last
-// " - " / " | " segment), is the source's own title.
+// pageTitles are the <title> texts of the source pages the name came from.
+// Only titles of the "<subject> - <site>" shape are compared: a name equal
+// to the whole title, or to its site-name part (the last " - " / " | "
+// segment), is the source's own title. A bare title without a separator may
+// legitimately be just the performer's name, so it is not compared here
+// (see SameName for titles known to be shared across a source's pages).
 func BoilerplateName(name string, pageTitles ...string) string {
 	n := strings.Join(strings.Fields(name), " ")
 	if n == "" {
@@ -63,14 +70,14 @@ func BoilerplateName(name string, pageTitles ...string) string {
 	}
 	key := nameKey(n)
 	for _, t := range pageTitles {
-		t = strings.Join(strings.Fields(t), " ")
-		if t == "" {
+		parts := titleSeparators.Split(strings.Join(strings.Fields(t), " "), -1)
+		if len(parts) < 2 {
 			continue
 		}
 		if nameKey(t) == key {
 			return NameMatchesPageTitle
 		}
-		if parts := titleSeparators.Split(t, -1); len(parts) > 1 && nameKey(parts[len(parts)-1]) == key {
+		if nameKey(parts[len(parts)-1]) == key {
 			return NameMatchesSiteName
 		}
 	}
@@ -85,6 +92,13 @@ func BoilerplateName(name string, pageTitles ...string) string {
 		return NameTooManyWords
 	}
 	return ""
+}
+
+// SameName reports whether a and b are the same text ignoring case,
+// spacing and punctuation.
+func SameName(a, b string) bool {
+	ka := nameKey(a)
+	return ka != "" && ka == nameKey(b)
 }
 
 // nameKey folds case and drops everything but letters and digits.

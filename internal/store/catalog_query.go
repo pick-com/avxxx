@@ -3,7 +3,8 @@ package store
 // Public catalog list/detail/search queries used by the web client: filtered,
 // sorted, keyset-paginated release and performer lists, the release detail
 // payload, and the typed catalog search. Every public query only returns
-// published, unmerged releases and active, unmerged performers.
+// published, unmerged releases and active, unmerged performers, and every
+// performer birth date goes through PublicBirthDate (NULL while hidden).
 
 import (
 	"avxxx/internal/model"
@@ -342,7 +343,7 @@ func buildPerformerQuery(f PerformerFilter) (string, []any, int, error) {
 	if err := b.after(s, "p.id", f.Cursor); err != nil {
 		return "", nil, 0, err
 	}
-	sql := `SELECT p.id,p.slug,p.canonical_name,COALESCE(p.canonical_name_ja,''),p.birth_date,
+	sql := `SELECT p.id,p.slug,p.canonical_name,COALESCE(p.canonical_name_ja,''),` + PublicBirthDate("p") + `,
 	COALESCE(p.height_cm,0),COALESCE(p.bust_cm,0),COALESCE(p.waist_cm,0),COALESCE(p.hip_cm,0),p.status,
 	st.works,st.newest,` + s.keyText + ` FROM performers p
 	CROSS JOIN LATERAL (SELECT count(*) works,max(r.release_date) newest FROM release_performers rp
@@ -462,7 +463,7 @@ func (s *Store) ReleaseDetailBySlug(ctx context.Context, slug string) (ReleaseDe
 // birth_date (performers), null when unknown. Dates are YYYY-MM-DD.
 func (s *Store) SearchCatalog(ctx context.Context, q string, limit int) ([]map[string]any, error) {
 	limit = pageLimit(limit)
-	r, err := s.Query(ctx, `SELECT 'performer',id,slug,canonical_name,NULL::date,NULL::text,NULL::int,canonical_name_ja,birth_date
+	r, err := s.Query(ctx, `SELECT 'performer',id,slug,canonical_name,NULL::date,NULL::text,NULL::int,canonical_name_ja,`+PublicBirthDate("performers")+`
 		FROM performers WHERE status='active' AND merged_into_id IS NULL AND (canonical_name ILIKE '%'||$1||'%' OR canonical_name_ja ILIKE '%'||$1||'%')
 		UNION ALL
 		SELECT 'release',id,slug,canonical_title,release_date,maker_name,runtime_minutes::int,NULL::text,NULL::date

@@ -150,7 +150,9 @@ func TestBoilerplateName(t *testing.T) {
 		{"javdatabase.com", nil, NameURLLike},
 		{"An Extremely Long Name That Is Clearly Not A Person At All", nil, NameTooLong},
 		{"Aa Bb Cc Dd Ee Ff", nil, NameTooManyWords},
-		{"Jav Guru", []string{"Jav Guru"}, NameMatchesPageTitle},
+		{"Some Site", []string{"Some Site"}, ""}, // a bare title may just be the name
+		{"山田花子", []string{"山田花子"}, ""},
+		{"Yui Hatano - Some Site", []string{"Yui Hatano - Some Site"}, NameMatchesPageTitle},
 		{"Some Site", []string{"Yui Hatano | Some Site"}, NameMatchesSiteName},
 		{"  ", nil, ""},
 	}
@@ -158,5 +160,11 @@ func TestBoilerplateName(t *testing.T) {
 		if got := BoilerplateName(c.name, c.titles...); got != c.want {
 			t.Errorf("BoilerplateName(%q, %q) = %q, want %q", c.name, c.titles, got, c.want)
 		}
+	}
+}
+
+func TestSameName(t *testing.T) {
+	if !SameName("JAV  Database!", "jav database") || SameName("", "") || SameName("Yui", "Yuia") {
+		t.Fatal("SameName")
 	}
 }

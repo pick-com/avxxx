@@ -245,11 +245,10 @@ func PerformerSimilarity(docs []ReleaseDoc, audience []Interaction, w Weights, c
 			get(nb.ItemID, nb.NeighborID).cowatch = nb.Score
 		}
 	}
-	total := w.Metadata + w.CoStar + w.CoWatch
 	var out []PerformerMatch
 	for k, p := range all {
 		cs := CoStarScore(p.costar)
-		score := (w.Metadata*p.meta + w.CoStar*cs + w.CoWatch*p.cowatch) / total
+		score := mixScore(w, p.meta, cs, p.cowatch)
 		if score < cfg.MinScore {
 			continue
 		}
@@ -286,6 +285,78 @@ func PerformerSimilarity(docs []ReleaseDoc, audience []Interaction, w Weights, c
 		n++
 	}
 	return kept
+}
+
+// mixScore is the weighted mean of the three similarity parts.
+func mixScore(w Weights, meta, coStar, coWatch float64) float64 {
+	return (w.Metadata*meta + w.CoStar*coStar + w.CoWatch*coWatch) / (w.Metadata + w.CoStar + w.CoWatch)
+}
+
+// ScoreEvidence recomputes a pair's score from its stored evidence under w
+// (the same mix as PerformerSimilarity; evidence parts are rounded to three
+// decimals). Used to preview weights without rebuilding performer_similar.
+func ScoreEvidence(ev Evidence, w Weights) float64 {
+	if w.Validate() != "" {
+		w = DefaultWeights
+	}
+	return min(mixScore(w, ev.Metadata, ev.CoStarScore, ev.CoWatch), 1)
+}
+
+// StoredNeighbor is one stored neighbour of a performer.
+type StoredNeighbor struct {
+	ID       int64
+	Stored   float64 // performer_similar.score under the saved weights
+	Evidence Evidence
+}
+
+// Ranked is a candidate scored under preview weights.
+type Ranked struct {
+	ID         int64   `json:"id"`
+	Score      float64 `json:"score"`
+	Match      int     `json:"match_percent"`
+	Rank       int     `json:"rank"`        // 1-based, under the preview weights
+	StoredRank int     `json:"stored_rank"` // 1-based, in the stored order
+	Reason     string  `json:"reason"`
+}
+
+// Rerank scores cands under w and returns the top k (best first, ties by
+// id). Pairs below minScore are dropped, as the nightly job would. Only the
+// stored neighbours can be re-ranked: a pair outside the stored top list, or
+// a part whose weight was 0 when the job ran (not computed), cannot appear.
+func Rerank(cands []StoredNeighbor, w Weights, k int, minScore float64) []Ranked {
+	stored := make([]StoredNeighbor, len(cands))
+	copy(stored, cands)
+	slices.SortFunc(stored, func(a, b StoredNeighbor) int {
+		if c := cmp.Compare(b.Stored, a.Stored); c != 0 {
+			return c
+		}
+		return cmp.Compare(a.ID, b.ID)
+	})
+	storedRank := make(map[int64]int, len(stored))
+	for i, c := range stored {
+		storedRank[c.ID] = i + 1
+	}
+	out := make([]Ranked, 0, len(cands))
+	for _, c := range cands {
+		sc := ScoreEvidence(c.Evidence, w)
+		if sc < minScore {
+			continue
+		}
+		out = append(out, Ranked{ID: c.ID, Score: round3(sc), Match: int(sc*100 + 0.5), StoredRank: storedRank[c.ID], Reason: PerformerReason(c.Evidence)})
+	}
+	slices.SortFunc(out, func(a, b Ranked) int {
+		if c := cmp.Compare(b.Score, a.Score); c != 0 {
+			return c
+		}
+		return cmp.Compare(a.ID, b.ID)
+	})
+	if k > 0 && len(out) > k {
+		out = out[:k]
+	}
+	for i := range out {
+		out[i].Rank = i + 1
+	}
+	return out
 }
 
 func round3(x float64) float64 { return float64(int64(x*1000+0.5)) / 1000 }

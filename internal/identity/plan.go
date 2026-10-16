@@ -49,6 +49,8 @@ var PerformerTables = []TableSpec{
 	{Table: "performer_source_metrics", FK: "performer_id", Key: []string{"source_id", "captured_at"}, Dedupe: true},
 	{Table: "source_records", FK: "performer_id", Key: []string{"id"}},
 	{Table: "follows", FK: "performer_id", Key: []string{"user_id"}, Dedupe: true, Combine: combineFollow},
+	// Personal-information requests (migration 022) follow the person.
+	{Table: "performer_requests", FK: "performer_id", Key: []string{"id"}},
 	{Table: "audit_issues", FK: "entity_id", Key: []string{"id"}, DedupeOn: []string{"rule"}, Dedupe: true,
 		Where: "entity_type='performer' AND status='open'", Close: closeAuditIssue},
 }

@@ -30,6 +30,8 @@ type fakeStore struct {
 
 	sourceFacts   []SourceHealthFacts
 	sourceHasRuns bool
+
+	names []PerformerNameFacts // R-PERFORMER-NAME input, id order
 }
 
 func newFake(rels ...ReleaseFacts) *fakeStore {
@@ -152,6 +154,19 @@ func (f *fakeStore) SourceHealthIssues(context.Context) ([]SourceHealthFacts, bo
 		return nil, false, err
 	}
 	return f.sourceFacts, f.sourceHasRuns, nil
+}
+
+func (f *fakeStore) PerformerNames(_ context.Context, after int64, limit int) ([]PerformerNameFacts, error) {
+	if err := f.fail("PerformerNames"); err != nil {
+		return nil, err
+	}
+	var out []PerformerNameFacts
+	for _, p := range f.names {
+		if p.ID > after && len(out) < limit {
+			out = append(out, p)
+		}
+	}
+	return out, nil
 }
 
 func (f *fakeStore) open(rule Rule) []*Issue {
