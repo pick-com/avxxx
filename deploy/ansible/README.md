@@ -10,8 +10,11 @@
 ```bash
 ansible-playbook -i inventory.ini provision.yml
 ansible-playbook -i inventory.ini deploy.yml \
-  -e postgres_password='replace-me'
+  -e postgres_password='replace-me' \
+  -e admin_token='replace-me'
 ```
+
+`admin_token` 是后台接口 `/api/admin/*` 的 Bearer 令牌；不传时所有后台请求都返回 401。
 
 部署前检查：
 
@@ -20,4 +23,4 @@ ansible-playbook -i inventory.ini provision.yml --check
 ansible-playbook -i inventory.ini deploy.yml --check
 ```
 
-生产环境建议把 `postgres_password` 放进 vault，并将 `git_repo` 改为部署机可访问的 SSH 地址。
+生产环境建议把 `postgres_password`、`admin_token` 以及 SMTP / VAPID 私钥放进 vault，并将 `git_repo` 改为部署机可访问的 SSH 地址。

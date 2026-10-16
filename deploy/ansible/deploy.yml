@@ -21,6 +21,7 @@
           POSTGRES_USER=avxxx
           POSTGRES_PASSWORD={{ postgres_password | default('change-me') }}
           DATABASE_URL={{ database_url }}
+          ADMIN_TOKEN={{ admin_token | default('') }}
           BASE_URL={{ base_url | default('') }}
           VAPID_PUBLIC_KEY={{ vapid_public_key | default('') }}
           VAPID_PRIVATE_KEY={{ vapid_private_key | default('') }}
