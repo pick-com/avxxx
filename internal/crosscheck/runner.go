@@ -33,6 +33,10 @@ type Store interface {
 	DueCrossChecks(ctx context.Context, sourceID int64, now time.Time, limit int, exclude []int64) ([]Candidate, error)
 	// CrossCheckTriedSince counts attempts for sourceID tried at or after since.
 	CrossCheckTriedSince(ctx context.Context, sourceID int64, since time.Time) (int, error)
+	// CrossCheckCodeReleases returns the surviving releases a record with
+	// DVD code code could attach to: the release under its code slug and
+	// every release with a DVD code of the same catalog.CodeMatchKey.
+	CrossCheckCodeReleases(ctx context.Context, code string) ([]int64, error)
 	RecordCrossCheckAttempt(ctx context.Context, a Attempt) error
 	// CrossCheckFetchPolicy is the source's fetch policy for today
 	// (incremental phase budget); exhausted when nothing is left.
@@ -307,11 +311,19 @@ func (r *Runner) check(ctx context.Context, a catalog.LookupAdapter, fetcher *ca
 	}
 	m := matches[0]
 	code, _ := m.Fields["dvd_code"].(string)
-	if want := catalog.ReleaseSlug(code, "", "", ""); want != c.Slug {
-		// SaveCatalogRecord attaches by the code slug; a release published
-		// under another slug (split, manual edit) is left to an admin.
+	// SaveCatalogRecord attaches by the code slug or, failing that, by the
+	// code key (catalog.CodeMatchKey: the API drops zero padding). Save only
+	// when both lead to this release alone; a key shared by several catalog
+	// releases ("ABC-001" and "ABC-1") or a release published under another
+	// slug (split, manual edit) is left to an admin.
+	ids, err := r.Store.CrossCheckCodeReleases(ctx, code)
+	if err != nil {
+		return att, "", fmt.Errorf("releases for %s: %w", code, err)
+	}
+	if len(ids) != 1 || ids[0] != c.ReleaseID {
 		att.Candidates = []string{m.SourceKey}
-		finish(StatusAmbiguous, fmt.Sprintf("code slug %q is not the release slug %q", want, c.Slug))
+		reason := fmt.Sprintf("code %q (key %q) does not lead to release %q alone: catalog releases %v", code, catalog.CodeMatchKey(code), c.Slug, ids)
+		finish(StatusAmbiguous, reason)
 		return att, "", nil
 	}
 	if _, serr := sink.SaveCatalogRecord(ctx, sourceID, a.Name(), m); serr != nil {
