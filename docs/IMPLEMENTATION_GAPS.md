@@ -39,16 +39,13 @@
 
 ## 代码
 
-这些项不依赖外部输入，可以直接排期。
+原列的六项代码工作已实现（迁移 047）：AdminVideo「数据标签」tab（`web/app/components/AdminVideoCurves.tsx`）；AdminDashboard 播放 / 日活 / 时长 / 完播（`site_metrics` 任务、`site_daily_metrics`、`GET /api/admin/site-metrics`）；冷启动推荐用 Onboarding 兴趣、Tonight「想要 / 和谁看」作为软偏好（`internal/recs/prefs.go`）；AdminDedupe 对比摘要与视频三种处理（新片源 / 其他版本 / 不是重复，`release_versions`）；设置页默认片源（`user_settings.preferred_provider`）与清除搜索记录。仍未做的细节：
 
 | 画板 | 缺什么 | 证据 |
 |---|---|---|
-| `AdminVideo` | 「数据标签」tab（留存 / 重看 / 跳过曲线）：接口已有，页面没有 | `GET /api/admin/releases/{id}/curves`（`internal/api/admin_curves.go`）；`web/app/routes/admin-video.tsx` 的 `TABS` 没有该 tab，web 里没有调用 `/curves` |
-| `AdminDashboard` | 播放、日活、时长、完播 KPI | 事件已由 `POST /api/events` 入库（`internal/api/events.go`），缺聚合和接口；`web/app/routes/admin-dashboard.tsx` 注明未做 |
-| `Onboarding` `MobileOnboarding` | 用所选类型做冷启动推荐 | `user_interests` 只在 `internal/store/account.go` 读写，`internal/recs` 没有使用；`web/app/routes/welcome.tsx:30` |
-| `Tonight` | 「想要 / 和谁看」参与推荐 | 没有后端字段，只在前端和埋点里；`web/app/routes/tonight.tsx:29` |
-| `AdminDedupe` | 对比面板的实体摘要（标题、封面、作品）；视频「合并为新片源 / 合并为其他版本」 | 候选接口只返回 id 和打分证据，后端只有一种合并；`web/app/routes/admin-dedupe.tsx:29-30` |
-| `Settings` | 默认片源；在设置页清除搜索记录 | `web/app/routes/settings.tsx:31`；清除接口 `DELETE /api/me/search-history` 已有，设置页未接 |
+| `Onboarding` | 用所选类型推荐演员（第 3 步仍按作品数） | `web/app/routes/welcome.tsx` 的 TODO |
+| `Tonight` | 「和谁看 · 家人 / 自己」不影响推荐：目录没有能对应的字段，只映射了「朋友」和四种「想要」 | `internal/recs/prefs.go` `TonightPreferences` |
+| `AdminDashboard` | 日活按 UTC 日；未同意分析 Cookie 的访客按会话计，会偏高 | `internal/sitemetrics/sitemetrics.go` |
 
 ## 有意不做或已从设计中去掉
 
