@@ -40,9 +40,9 @@ export const isAgeRestricted = (cause: unknown) => cause instanceof ApiError && 
 export type GateAnswer ={status: 'ok' | 'denied'; locked_until?: string};
 
 /** POST /api/age-gate. A 403 means a denial is still locked. */
-export async function answerAgeGate(year: number, month: number): Promise<GateAnswer> {
+export async function answerAgeGate(confirmed = true): Promise<GateAnswer> {
   try {
-    return await api<GateAnswer>('age-gate', {method: 'POST', body: {year, month}});
+    return await api<GateAnswer>('age-gate', {method: 'POST', body: {confirmed}});
   } catch (cause) {
     if (cause instanceof ApiError && cause.status === 403) return {status: 'denied'};
     throw cause;

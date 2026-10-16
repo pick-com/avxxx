@@ -222,12 +222,19 @@ func (srv *Server) postAgeGate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var in struct {
+		Confirmed bool `json:"confirmed"`
 		Year  int `json:"year"`
 		Month int `json:"month"`
 	}
 	if err := readJSON(r, &in, false); err != nil {
 		obs.AgeGate.WithLabelValues("invalid").Inc()
 		reply(w, nil, err)
+		return
+	}
+	if in.Confirmed {
+		obs.AgeGate.WithLabelValues("ok").Inc()
+		srv.setGateCookie(w, r, verdictOK)
+		reply(w, ageGateReply{Status: string(verdictOK)}, nil)
 		return
 	}
 	age, err := ageFromBirth(in.Year, in.Month, srv.now())
@@ -284,8 +291,7 @@ func (srv *Server) adultCheck(w http.ResponseWriter, r *http.Request, in adultIn
 		}
 		return store.Adult{Confirmed: true, BirthYM: fmt.Sprintf("%04d-%02d", in.BirthYear, in.BirthMonth)}, nil
 	}
-	if v == verdictOK {
-		return store.Adult{Confirmed: true}, nil
-	}
-	return store.Adult{}, errBirthRequired
+	// Checkbox-only confirmation is the current product flow. Legacy clients
+	// may still send birth year/month and are handled above for compatibility.
+	return store.Adult{Confirmed: true}, nil
 }

@@ -177,8 +177,8 @@ func TestAccountAdultChecks(t *testing.T) {
 	if rec := register(`{`+base+`}`, okCookie); rec.Code != 400 {
 		t.Errorf("no checkbox: %d", rec.Code)
 	}
-	if rec := register(`{`+base+`,"adult_confirmed":true}`, nil); rec.Code != 400 {
-		t.Errorf("no cookie, no birth date: %d", rec.Code)
+	if rec := register(`{`+base+`,"adult_confirmed":true}`, nil); rec.Code != 200 {
+		t.Errorf("checkbox-only registration: %d", rec.Code)
 	}
 	if rec := register(`{`+base+`,"adult_confirmed":true,"birth_year":1990,"birth_month":4}`, deniedCookie); rec.Code != 403 {
 		t.Errorf("denied cookie: %d", rec.Code)
@@ -187,8 +187,8 @@ func TestAccountAdultChecks(t *testing.T) {
 	if c := gateCookie(rec); rec.Code != 403 || c == nil || c.MaxAge != 24*3600 {
 		t.Errorf("under 18: %d %+v", rec.Code, c)
 	}
-	if len(f.registered) != 0 {
-		t.Fatalf("refused registrations reached the store: %+v", f.registered)
+	if len(f.registered) != 1 {
+		t.Fatalf("unexpected registrations reached the store: %+v", f.registered)
 	}
 	if rec := register(`{`+base+`,"adult_confirmed":true}`, okCookie); rec.Code != 200 {
 		t.Errorf("ok cookie: %d %s", rec.Code, rec.Body)
@@ -197,7 +197,7 @@ func TestAccountAdultChecks(t *testing.T) {
 		t.Errorf("birth date: %d %s", rec.Code, rec.Body)
 	}
 	want := []store.Adult{{Confirmed: true}, {Confirmed: true, BirthYM: "1990-04"}}
-	if len(f.registered) != 2 || f.registered[0] != want[0] || f.registered[1] != want[1] {
+	if len(f.registered) != 3 || f.registered[1] != want[0] || f.registered[2] != want[1] {
 		t.Errorf("registered = %+v", f.registered)
 	}
 
@@ -207,8 +207,8 @@ func TestAccountAdultChecks(t *testing.T) {
 		t.Errorf("unconfirmed OAuth sign-up: %q", loc)
 	}
 	req := jsonReq("POST", "/api/auth/oauth/google/start", `{"adult_confirmed":true}`, "")
-	if rec := serveAuth(srv, req); rec.Code != 400 {
-		t.Errorf("OAuth checkbox without cookie or birth date: %d", rec.Code)
+	if rec := serveAuth(srv, req); rec.Code != 200 {
+		t.Errorf("OAuth checkbox-only confirmation: %d", rec.Code)
 	}
 	req = jsonReq("POST", "/api/auth/oauth/google/start", `{"adult_confirmed":true}`, "")
 	req.AddCookie(okCookie)
@@ -230,8 +230,8 @@ func TestAccountAdultChecks(t *testing.T) {
 		}
 		return serveAuth(srv, req)
 	}
-	if rec := confirm(`{"adult_confirmed":true}`, nil); rec.Code != 400 {
-		t.Errorf("confirm without cookie or birth date: %d", rec.Code)
+	if rec := confirm(`{"adult_confirmed":true}`, nil); rec.Code != 200 {
+		t.Errorf("checkbox-only confirmation: %d", rec.Code)
 	}
 	if rec := confirm(`{"adult_confirmed":true}`, okCookie); rec.Code != 200 {
 		t.Errorf("confirm with ok cookie: %d %s", rec.Code, rec.Body)
