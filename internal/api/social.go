@@ -67,6 +67,8 @@ func (srv *Server) socialRoutes() []route {
 
 		{"DELETE /api/me/watch-history/{release_slug}", srv.user(srv.deleteWatch)},
 		{"DELETE /api/me/watch-history", srv.user(srv.clearWatchHistory)},
+
+		{"GET /api/me/watch-stats", srv.user(srv.getWatchStats)},
 	}
 }
 
@@ -256,5 +258,8 @@ func (srv *Server) deleteWatch(w http.ResponseWriter, r *http.Request, uid int64
 
 func (srv *Server) clearWatchHistory(w http.ResponseWriter, r *http.Request, uid int64) {
 	n, e := srv.social.ClearWatchHistory(r.Context(), uid)
+	if e == nil {
+		srv.dropWatchStats(uid) // 观看统计 is cleared with the history
+	}
 	reply(w, map[string]int64{"deleted": n}, e)
 }
