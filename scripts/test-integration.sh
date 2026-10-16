@@ -52,4 +52,6 @@ fi
 export AVXXX_TEST_DATABASE_URL="postgres://$user:$password@127.0.0.1:$port/$db?sslmode=disable"
 echo "Running integration tests (AVXXX_TEST_DATABASE_URL -> 127.0.0.1:$port/$db)..."
 # Unset DATABASE_URL so nothing can fall back to a real database.
-env -u DATABASE_URL go test ./... -run Integration -count=1 "$@"
+# AVXXX_TEST_PKGS narrows the packages (make acceptance: ./internal/acceptance/).
+# shellcheck disable=SC2086
+env -u DATABASE_URL go test ${AVXXX_TEST_PKGS:-./...} -run Integration -count=1 "$@"
