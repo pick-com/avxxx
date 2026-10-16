@@ -8,7 +8,7 @@ package api
 import (
 	"context"
 	"crypto/ecdh"
-	"log"
+	"log/slog"
 	"net/http"
 	"strings"
 
@@ -38,7 +38,7 @@ func pushConfigFromEnv(getenv func(string) string) pushConfig {
 			_, err = ecdh.P256().NewPublicKey(raw)
 		}
 		if err != nil {
-			log.Printf("VAPID_PUBLIC_KEY is not a P-256 public key; web push disabled")
+			slog.Warn("VAPID_PUBLIC_KEY is not a P-256 public key; web push disabled")
 		} else {
 			c.vapidPublicKey = webpush.EncodeB64(raw)
 		}

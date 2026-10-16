@@ -4,11 +4,12 @@ package api
 import (
 	"avxxx/internal/community"
 	"avxxx/internal/media"
+	"avxxx/internal/obs"
 	"avxxx/internal/store"
 	"crypto/subtle"
 	"encoding/json"
 	"errors"
-	"log"
+	"log/slog"
 	"net/http"
 	"os"
 	"strings"
@@ -124,7 +125,10 @@ func (srv *Server) routes() []route {
 func reply(w http.ResponseWriter, v any, e error) {
 	w.Header().Set("Content-Type", "application/json")
 	if e != nil {
-		log.Print(e)
+		// Logged once, on the request's access-log line (obs.Middleware).
+		if !obs.RecordError(w, e) {
+			slog.Error("request failed", "err", e)
+		}
 		code, msg := errorStatus(e)
 		w.Header().Set("X-Content-Type-Options", "nosniff")
 		w.WriteHeader(code)

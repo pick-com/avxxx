@@ -1,8 +1,8 @@
 package api
 
 import (
+	"avxxx/internal/obs"
 	"encoding/json"
-	"log"
 	"net/http"
 	"net/url"
 	"strings"
@@ -46,7 +46,7 @@ func (srv *Server) mergeRedirect(entityType string, h http.HandlerFunc) http.Han
 		target, ok, err := srv.identity.ResolveMergedSlug(r.Context(), entityType, slug)
 		if err != nil {
 			// Fail open: the redirect lookup is an optimization over a 404.
-			log.Printf("merge redirect lookup %s %q: %v", entityType, slug, err)
+			obs.L(r.Context()).Warn("merge redirect lookup failed", "entity_type", entityType, "err", err)
 		}
 		if err != nil || !ok {
 			h(w, r)

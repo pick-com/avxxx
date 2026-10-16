@@ -2,6 +2,7 @@ package main
 
 import (
 	"avxxx/internal/audit"
+	"avxxx/internal/obs"
 	"avxxx/internal/playcurve"
 	"avxxx/internal/recs"
 	"avxxx/internal/search"
@@ -15,6 +16,7 @@ import (
 )
 
 func main() {
+	obs.SetupLogging("scheduler") // log.Printf below goes through the redacting slog handler
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 	s, err := store.Open(ctx)
@@ -22,6 +24,13 @@ func main() {
 		log.Fatal(err)
 	}
 	defer s.Close()
+	// The scheduler is the singleton, so it alone exposes the database-derived
+	// gauges (queue depth, leases, audit, source health, play pairing).
+	obs.RegisterPool(s.Stat)
+	obs.RegisterDB(s)
+	if err := obs.ServeMetrics(ctx, obs.MetricsAddr("127.0.0.1:9091")); err != nil {
+		log.Fatal(err)
+	}
 	// The nightly audit is enqueued once per day at AUDIT_NIGHTLY_AT (HH:MM in
 	// the process time zone, TZ; default 04:30 per PRD 10). cmd/audit runs it.
 	auditAt := os.Getenv("AUDIT_NIGHTLY_AT")
