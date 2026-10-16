@@ -2,6 +2,7 @@ import {useEffect, useState} from 'react';
 import {useParams} from 'react-router';
 import {Avatar, ReleaseCard, SectionHeader} from '../components/Cards';
 import {LoadMore} from '../components/Paging';
+import {SimilarPerformers} from '../components/PerformerRecs';
 import {FollowButton} from '../components/SocialButtons';
 import {BlockSkeleton, CardGridSkeleton, EmptyState, ErrorBanner} from '../components/States';
 import {ApiError, getPerformer, getPerformerReleases, listPerformerPage, listReleasePage, type PerformerDetail} from '../lib/api';
@@ -29,7 +30,7 @@ const LEGACY_LIMIT = 100;
 // TODO(PRD 17): 即将上线 shelf — there is no public endpoint for a performer's upcoming works yet.
 // TODO(tech plan 3.13 performer_stats): 总播放 / 粉丝 / 热度 stats.
 // TODO(tech plan 3.13 release_performers.role_type): 主演 / 客串 filters; 最热 sort.
-// TODO(tech plan 3.5 performer_similar): 相似演员.
+// 相似演员: GET /api/recs?slot=similar_performers (hidden without the recs routes).
 // TODO(tech plan 2.4 media_assets): 主照片 and 照片集.
 // TODO: aliases and multi-language names beyond canonical_name_ja are not in GET /api/performers/{slug}.
 export default function PerformerPage() {
@@ -151,6 +152,8 @@ export default function PerformerPage() {
           </>
         )}
       </section>
+
+      <SimilarPerformers slug={slug} />
     </div>
   );
 }

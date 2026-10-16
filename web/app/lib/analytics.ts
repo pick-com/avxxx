@@ -77,6 +77,10 @@ export type EventProps = {
   danmaku_send: {release_id: number; position_ms: number; length: number; color: string};
   danmaku_report: {danmaku_id: number; reason: string};
   danmaku_setting: {setting: string};
+  // 今晚看什么 (PRD 18); filters is the selected filter set, e.g. {duration: '60'}
+  tonight_open: {filters?: Record<string, string>};
+  tonight_shuffle: {attempt: number; filters?: Record<string, string>};
+  tonight_accept: {release_id: number; attempt: number; reason?: string};
   // 14.4 评分与短评 (score on the 10-point scale)
   rating_submit: {release_id: number; score: number; watched: boolean};
   review_post: {release_id: number; spoiler: boolean; watched: boolean};

@@ -7,6 +7,8 @@ export default [
     route('performers/:slug', 'routes/performer.tsx'),
     route('search', 'routes/search.tsx'),
     route('discover', 'routes/discover.tsx'),
+    route('trending', 'routes/trending.tsx'),
+    route('tonight', 'routes/tonight.tsx'),
     route('following', 'routes/following.tsx'),
     route('me', 'routes/me.tsx'),
     route('history', 'routes/history.tsx'),

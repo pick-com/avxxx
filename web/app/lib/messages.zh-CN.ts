@@ -11,10 +11,12 @@ import {pagesZhCN} from './messages.pages.zh-CN';
 // age gate) come from messages.pages.zh-CN.ts. Admin pages stay zh-CN only.
 
 import {communityZhCN} from './messages.community.zh-CN';
+import {recsZhCN} from './messages.recs.zh-CN';
 
 export const zhCN = {
   ...pagesZhCN,
   ...communityZhCN,
+  ...recsZhCN,
   // app / errors
   'app.loading': '正在加载',
   'error.notFound': '页面不存在',

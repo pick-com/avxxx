@@ -8,6 +8,10 @@ import {useT} from '../lib/i18n';
 // played part brighter. Clicking the curve seeks there (seek method "peak");
 // the three highest peaks get markers unless the viewer blocks spoilers on a
 // first watch. peak_click reports whether the viewer then watched 30 s.
+//
+// kind 'playback' is the 播放波峰 (PRD 14.3 replay_curve, shown when danmaku
+// is off): one marker at its highest point labelled 「最多重看」 instead of
+// the top-3 高能 markers, and peak_click reports curve 'playback'.
 
 const BUCKETS = 200;
 const MIN_GAP = 10; // buckets between two top markers
@@ -33,8 +37,9 @@ function areaPath(curve: number[]): string {
   return `${d} L${BUCKETS} 16 Z`;
 }
 
-export function PeakCurve({curve, video, showMarkers, playId}: {
+export function PeakCurve({curve, kind = 'danmaku', video, showMarkers, playId}: {
   curve: number[];
+  kind?: 'danmaku' | 'playback';
   video: HTMLVideoElement | null;
   showMarkers: boolean;
   /** PlayTracker.playId (peak_click is play-scoped); no event without it. */
@@ -44,17 +49,19 @@ export function PeakCurve({curve, video, showMarkers, playId}: {
   const [progress, setProgress] = useState(0);
   const [duration, setDuration] = useState(0);
   const pending = useRef<{position: number; top3: boolean; watched: number} | null>(null);
+  const kindRef = useRef(kind);
+  kindRef.current = kind;
   const playIdRef = useRef(playId);
   playIdRef.current = playId;
   const clipId = `peak-played-${useId().replace(/[^a-zA-Z0-9_-]/g, '')}`;
   const path = useMemo(() => areaPath(curve), [curve]);
-  const peaks = useMemo(() => topPeaks(curve), [curve]);
+  const peaks = useMemo(() => topPeaks(curve, kind === 'playback' ? 1 : 3), [curve, kind]);
 
   const settle = (watched30: boolean) => {
     const p = pending.current;
     pending.current = null;
     const id = playIdRef.current;
-    if (p && id) track('peak_click', {curve: 'danmaku', position_ms: p.position, top3: p.top3, watched_30s: watched30}, {playId: id});
+    if (p && id) track('peak_click', {curve: kindRef.current, position_ms: p.position, top3: p.top3, watched_30s: watched30}, {playId: id});
   };
   const settleRef = useRef(settle);
   settleRef.current = settle;
@@ -102,10 +109,15 @@ export function PeakCurve({curve, video, showMarkers, playId}: {
   };
 
   const bucketTime = (i: number) => ((i + 0.5) / curve.length) * duration;
-  const markers = showMarkers && duration > 0 ? peaks : [];
+  // The 最多重看 point is not a spoiler marker: it shows whenever the curve does.
+  const markers = (kind === 'playback' || showMarkers) && duration > 0 ? peaks : [];
+  const markerLabel = (n: number, p: number) =>
+    kind === 'playback'
+      ? `${t('peak.mostReplayed')}（${formatClock(bucketTime(p))}）`
+      : t('danmaku.peakJump', {n: n + 1, time: formatClock(bucketTime(p))});
 
   return (
-    <div className="peak">
+    <div className="peak" data-kind={kind}>
       <svg
         className="peak-svg"
         viewBox={`0 0 ${BUCKETS} 16`}
@@ -132,11 +144,16 @@ export function PeakCurve({curve, video, showMarkers, playId}: {
           type="button"
           className="peak-marker"
           style={{left: `${((p + 0.5) / curve.length) * 100}%`}}
-          aria-label={t('danmaku.peakJump', {n: n + 1, time: formatClock(bucketTime(p))})}
-          title={t('danmaku.peakJump', {n: n + 1, time: formatClock(bucketTime(p))})}
+          aria-label={markerLabel(n, p)}
+          title={markerLabel(n, p)}
           onClick={() => seek((p + 0.5) / curve.length, true)}
         >
           <span aria-hidden="true" />
+          {kind === 'playback' && (
+            <span className="peak-tip" aria-hidden="true">
+              {t('peak.mostReplayed')}
+            </span>
+          )}
         </button>
       ))}
     </div>

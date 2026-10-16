@@ -2,16 +2,18 @@ import {Link, useLocation} from 'react-router';
 import {useAuth} from '../lib/auth';
 import {useT} from '../lib/i18n';
 import type {MessageKey} from '../lib/messages.zh-CN';
+import {useRecsAvailable} from '../lib/recs';
 import {useSocial} from '../lib/social';
 import {Avatar} from './Cards';
 import {Icon, type IconName} from './Icon';
 
 type NavItem = {key: string; label: MessageKey; short: MessageKey; to: string; icon: IconName};
 
-// Only destinations with a backend today. Omitted until their APIs exist:
-// TODO(tech plan 3.13 trending_snapshots): 热门.
+// Only destinations with a backend today. 热门 needs GET /api/trending (recs
+// backend) and is dropped once that route is known to be missing.
 const mainItems: NavItem[] = [
   {key: 'home', label: 'nav.home', short: 'nav.home', to: '/', icon: 'home'},
+  {key: 'trending', label: 'nav.trending', short: 'nav.trending', to: '/trending', icon: 'trending'},
   {key: 'new', label: 'nav.new', short: 'nav.new', to: '/discover?tab=new', icon: 'new'},
   {key: 'categories', label: 'nav.categories', short: 'nav.categories', to: '/discover?tab=categories', icon: 'categories'},
   {key: 'actors', label: 'nav.actors', short: 'nav.actors', to: '/discover?tab=actors', icon: 'actors'},
@@ -24,9 +26,10 @@ const mineItems: NavItem[] = [
 
 function activeKey(pathname: string, search: string): string {
   if (pathname === '/') return 'home';
+  if (pathname === '/trending') return 'trending';
   if (pathname === '/discover') {
     const tab = new URLSearchParams(search).get('tab');
-    return tab === 'categories' || tab === 'actors' ? tab : 'new';
+    return tab === 'categories' || tab === 'actors' || tab === 'trending' ? tab : 'new';
   }
   if (pathname === '/history') return 'history';
   if (pathname === '/favorites') return 'favorites';
@@ -45,6 +48,7 @@ export function SideNav({variant}: {variant: NavVariant}) {
   const {status} = useAuth();
   const {follows, available} = useSocial();
   const location = useLocation();
+  const recs = useRecsAvailable(variant !== 'hidden');
   if (variant === 'hidden') return null;
   const current = activeKey(location.pathname, location.search);
   const renderItem = (item: NavItem) => (
@@ -58,7 +62,7 @@ export function SideNav({variant}: {variant: NavVariant}) {
   );
   return (
     <nav className="sidenav" data-variant={variant} aria-label={t('nav.main')}>
-      {mainItems.map(renderItem)}
+      {mainItems.filter(item => item.key !== 'trending' || recs !== 'no').map(renderItem)}
       <div className="nav-divider" />
       <span className="nav-heading">{t('nav.mine')}</span>
       {mineItems.filter(item => item.key !== 'later' || (status === 'user' && available.later !== 'no')).map(renderItem)}

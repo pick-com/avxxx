@@ -7,7 +7,7 @@ type Tab = {key: string; label: MessageKey; to: string; icon: IconName; match: (
 
 const tabs: Tab[] = [
   {key: 'home', label: 'tabs.home', to: '/', icon: 'home', match: p => p === '/'},
-  {key: 'discover', label: 'tabs.discover', to: '/discover', icon: 'discover', match: p => p === '/discover' || p === '/search'},
+  {key: 'discover', label: 'tabs.discover', to: '/discover', icon: 'discover', match: p => p === '/discover' || p === '/search' || p === '/trending' || p === '/tonight'},
   {key: 'following', label: 'tabs.following', to: '/following', icon: 'following', match: p => p === '/following'},
   {key: 'me', label: 'tabs.me', to: '/me', icon: 'me', match: p => ['/me', '/history', '/favorites', '/later', '/reservations', '/settings', '/notifications'].includes(p)},
 ];
