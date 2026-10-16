@@ -26,6 +26,7 @@ const ICONS = {
   i18n: 'M12 21a9 9 0 100-18 9 9 0 000 18zM3 12h18M12 3c3 3 3 15 0 18M12 3c-3 3-3 15 0 18',
   actors: 'M12 12a4 4 0 100-8 4 4 0 000 8zM4 21c1-4 4-6 8-6s7 2 8 6',
   search: 'M11 18a7 7 0 100-14 7 7 0 000 14zM20 20l-4-4',
+  priority: 'M4 6h10M4 12h7M4 18h4M17 4v16M14 17l3 3 3-3',
 };
 
 type Badge = {n: number; tone: 'red' | 'amber' | 'plain'} | null;
@@ -128,6 +129,10 @@ export default function AdminLayout() {
             badge: badge(dash?.issues.open, dash?.issues.by_rule?.['R-AGE'] ? 'red' : 'amber'),
           },
         ],
+      },
+      {
+        title: '数据治理',
+        items: [{to: '/admin/field-policies', label: '字段优先级', icon: 'priority'}],
       },
       {
         title: '社区',
