@@ -37,5 +37,6 @@ export default [
     route('admin/i18n', 'routes/admin-i18n.tsx'),
     route('admin/review', 'routes/admin-review.tsx'),
     route('admin/dedupe', 'routes/admin-dedupe.tsx'),
+    route('admin/search', 'routes/admin-search.tsx'),
   ]),
 ] satisfies RouteConfig;
