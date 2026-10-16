@@ -1,5 +1,6 @@
 import {useState, type FormEvent} from 'react';
-import {Link, useNavigate, useSearchParams} from 'react-router';
+import {useSearchParams} from 'react-router';
+import {Link, useNavigate} from '../lib/nav';
 import {BirthMonthPicker, MIN_REGISTER_AGE, ageFromYearMonth} from '../components/AgeGate';
 import {ThemeToggle} from '../components/TopBar';
 import {ApiError, login, register} from '../lib/api';

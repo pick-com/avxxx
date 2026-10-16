@@ -244,6 +244,7 @@ export type TagRef = {slug: string; name: string};
 export type ReleaseIdentifier = {type: string; value: string};
 /** GET /api/releases/{slug}. tags / director_name / identifiers come only from the catalog-filters backend. */
 export type ReleaseDetail = Release & {
+  synopsis?: string | null;
   director_name?: string | null;
   tags?: TagRef[] | null;
   identifiers?: ReleaseIdentifier[] | null;
@@ -285,6 +286,8 @@ export type PerformerDetail = {
   activity_start?: string | null;
   activity_end?: string | null;
   biography?: string | null;
+  /** True when the birth date is hidden (birth_date is then null). */
+  birth_date_hidden?: boolean | null;
   status: string;
 };
 

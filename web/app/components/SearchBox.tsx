@@ -1,5 +1,5 @@
 import {useEffect, useId, useRef, useState, type FormEvent, type KeyboardEvent} from 'react';
-import {useNavigate} from 'react-router';
+import {useNavigate} from '../lib/nav';
 import {catalogSearch, isAbort} from '../lib/api';
 import {formatDate} from '../lib/format';
 import {useT} from '../lib/i18n';

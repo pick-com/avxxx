@@ -1,5 +1,5 @@
 import type {ReactNode} from 'react';
-import {Link} from 'react-router';
+import {Link} from '../lib/nav';
 import {useT} from '../lib/i18n';
 import {Icon, type IconName} from './Icon';
 

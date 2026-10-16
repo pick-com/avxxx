@@ -1,5 +1,5 @@
 import {useEffect, useId, useRef, useState} from 'react';
-import {useLocation, useNavigate} from 'react-router';
+import {useLocation, useNavigate} from '../lib/nav';
 import {track} from '../lib/analytics';
 import type {NotifyMode} from '../lib/api';
 import {useAuth} from '../lib/auth';

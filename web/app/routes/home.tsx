@@ -1,16 +1,67 @@
-import {Link} from 'react-router';
+import {Link} from '../lib/nav';
+import {data, useLoaderData, type LoaderFunctionArgs, type MetaFunction} from 'react-router';
+import {serverApi} from '../lib/api.server';
+import {routeLang} from '../lib/langs';
+import {compact, pageUrl, rootMeta, seoMeta, type SeoHandle} from '../lib/seo';
 import {ReleaseCard, PerformerChip, SectionHeader} from '../components/Cards';
 import {Icon} from '../components/Icon';
 import {CardGridSkeleton, ErrorBanner} from '../components/States';
-import {getWatchHistory, listPerformerPage, listReleases, listTags} from '../lib/api';
+import {getWatchHistory, listPerformerPage, listReleases, listTags, toPage, type LangCode, type Page, type PerformerListItem, type Release, type Tag} from '../lib/api';
 import {discoverHref} from '../lib/releaseFilter';
 import {useAuth} from '../lib/auth';
-import {t, useT} from '../lib/i18n';
+import {t, useI18n, useT} from '../lib/i18n';
 import {formatDate, formatRuntime} from '../lib/format';
 import {useAsync} from '../lib/useAsync';
 import {getPerformerHeat, getRecs, getTrending, performerName, reasonText, recTitle, useRecsAvailable, type RecItem} from '../lib/recs';
 
-export const meta = () => [{title: t('title.home')}];
+export const handle: SeoHandle = {seo: true};
+
+// Server rendering (PRD 13 SEO): 新上线, the performer shelf and the tag chips
+// come from the loader, so the home page links every new release and
+// performer without JavaScript. Personal shelves load in the browser.
+type HomeLoad = {lang: LangCode; releases?: Release[]; performers?: Page<PerformerListItem>; tags?: Tag[]};
+
+export async function loader({params, request}: LoaderFunctionArgs) {
+  const lang = routeLang(params);
+  if (!lang) return null;
+  const opts = {lang, signal: request.signal};
+  type Items<T> = {items: T[] | null; next_cursor?: string | null};
+  const [releases, performers, tags] = await Promise.all([
+    serverApi<Items<Release>>('releases?limit=10', opts).then(d => d.items ?? [], () => undefined),
+    serverApi<Items<PerformerListItem>>('performers?sort=works&limit=12', opts).then(toPage, () => undefined),
+    serverApi<Items<Tag>>('tags?limit=12', opts).then(d => d.items ?? [], () => undefined),
+  ]);
+  const body: HomeLoad = {lang, releases, performers, tags};
+  // Without the catalog the page still renders; 503 tells crawlers to come back.
+  return data(body, releases ? undefined : {status: 503});
+}
+
+export const clientLoader = () => null;
+
+export const meta: MetaFunction<typeof loader> = ({matches}) => {
+  const {lang, origin} = rootMeta(matches);
+  const url = pageUrl(origin, '/', lang);
+  return seoMeta({
+    matches,
+    path: '/',
+    title: t('title.home'),
+    description: t('seo.homeDescription'),
+    jsonLd: [
+      compact({
+        '@context': 'https://schema.org',
+        '@type': 'WebSite',
+        name: t('seo.siteName'),
+        url,
+        inLanguage: lang,
+        potentialAction: {
+          '@type': 'SearchAction',
+          target: `${pageUrl(origin, '/search', lang)}?q={search_term_string}`,
+          'query-input': 'required name=search_term_string',
+        },
+      }),
+    ],
+  });
+};
 
 // NavHome / NavHomeVisitor / MobileHome.
 //
@@ -28,10 +79,13 @@ export const meta = () => [{title: t('title.home')}];
 export default function Home() {
   const t = useT();
   const {status} = useAuth();
-  const releases = useAsync(signal => listReleases(10, signal), []);
-  const performers = useAsync(signal => listPerformerPage('works', 12, null, undefined, signal), []);
+  const {contentLang} = useI18n();
+  const loaded = useLoaderData<typeof loader>() as HomeLoad | null;
+  const own = loaded?.lang === contentLang ? loaded : null;
+  const releases = useAsync(signal => listReleases(10, signal), [], true, own?.releases);
+  const performers = useAsync(signal => listPerformerPage('works', 12, null, undefined, signal), [], true, own?.performers);
 
-  const tags = useAsync(signal => listTags(12, signal), []);
+  const tags = useAsync(signal => listTags(12, signal), [], true, own?.tags);
   const history = useAsync(signal => getWatchHistory(signal), [status], status === 'user');
   const recs = useAsync(signal => getRecs('home', {limit: 30}, signal), [status], status === 'user');
   const trending = useAsync(signal => getTrending('week', {limit: 10}, signal), [], status === 'anon');
@@ -49,6 +103,7 @@ export default function Home() {
 
   return (
     <div className="page home">
+      <h1 className="sr-only">{t('seo.homeHeading')}</h1>
       {status === 'anon' && (
         <section className="visitor-card">
           <span className="visitor-text">

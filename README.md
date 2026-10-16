@@ -41,6 +41,8 @@ make web
 
 打开 http://127.0.0.1:5173，在数据管理输入 .env 中的 ADMIN_TOKEN，添加 RSS/Atom URL，创建采集任务。刷新任务状态后返回浏览信息。管理密钥仅保存在页面内存中；公开查询接口无需密钥。前端通过 Vite 代理调用本地 API。
 
+前台页面由服务端渲染（React Router SSR）：开发服务器的加载器经 `API_INTERNAL_URL`（默认 `http://127.0.0.1:8080`，与 Vite 代理的 `API_PROXY_TARGET` 一致）取数据。生产方式为 `make web-start`（构建后 `node web/server.mjs`，端口 3000）或 compose 服务 `web`；反向代理、多语种 URL、站点地图和收录健康分见 `docs/PRODUCTION_OPERATIONS.md`。
+
 ```sh
 make test
 make build

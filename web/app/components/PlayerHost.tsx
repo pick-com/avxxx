@@ -1,8 +1,9 @@
 import {createContext, useContext, useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore, type ComponentType} from 'react';
 import {createPortal} from 'react-dom';
-import {useLocation, useNavigate} from 'react-router';
+import {useLocation, useNavigate} from '../lib/nav';
 import {formatClock} from '../lib/format';
 import {useT} from '../lib/i18n';
+import {useHydrated} from '../lib/useHydrated';
 import type {PlayerProps} from './Player';
 import {Icon} from './Icon';
 
@@ -141,7 +142,9 @@ export function HostedPlayer({component: Component, ...props}: {component: Compo
 export function PlayerHostLayer() {
   const store = useContext(HostContext);
   const state = useSyncExternalStore(store?.subscribe ?? noopSubscribe, () => store?.state ?? EMPTY, () => EMPTY);
-  if (!store || !store.el) return null;
+  // Browser-only (portal target, video element): never part of the server HTML.
+  const hydrated = useHydrated();
+  if (!hydrated || !store || !store.el) return null;
   const {Component, props, mode} = state;
   return (
     <>

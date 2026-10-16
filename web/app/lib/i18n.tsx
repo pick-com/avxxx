@@ -1,9 +1,11 @@
-import {createContext, Fragment, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode} from 'react';
+import {createContext, Fragment, useCallback, useContext, useEffect, useMemo, type ReactNode} from 'react';
+import {useLocation, useNavigate} from 'react-router';
 import {setUiLang as setAnalyticsLang} from './analytics';
-import {setContentLang as setApiContentLang, tokens, type LangCode} from './api';
+import {setContentLang as setApiContentLang, type LangCode} from './api';
 import {setFormatLocale} from './format';
-import {LANGS} from './langs';
+import {DEFAULT_LANG, isLang, isPrefixable, localizePath, normalizeLang, splitLangPath, stripLang, writeLangCookie} from './langs';
 import {zhCN, type MessageKey} from './messages.zh-CN';
+import {isServer, renderScope} from './scope';
 import {useSettings} from './settings';
 
 // Multi-language UI (PRD 8; tech plan 3.10). Three independent layers:
@@ -12,54 +14,38 @@ import {useSettings} from './settings';
 //     display_* fields are shown when the backend returns them;
 //   - audio / subtitle languages: settings.subtitle_langs (player).
 //
-// Signed-in users take ui_lang / content_lang from GET /api/me/settings and
-// the TopBar switcher PATCHes ui_lang. Visitors keep one choice in this
-// browser (it sets both layers). The last values are cached so the first
-// render already uses them.
+// URL language prefixes (server-rendered since PRD 13 SEO): every app page
+// has one URL per language (lib/langs.ts: /releases/x is 简体中文, /en/...,
+// /zh-TW/...). The UI language of a page is the language in its URL, so the
+// server, the crawler and the hydrating browser all render the same strings.
+// The root route's loader resolves the language and its UI dictionary and
+// passes both to I18nProvider; links keep the current prefix (lib/nav.tsx).
+//
+// Preferences decide where you land, not what a URL shows:
+//   - the switcher (TopBar, settings) navigates to the same page in the
+//     chosen language, stores it in the `lang` cookie and, signed in,
+//     PATCHes ui_lang;
+//   - an entry URL with a prefix stores its language in the cookie;
+//   - an unprefixed URL with a non-default cookie answers 302 to the
+//     visitor's language on the server (root loader); a signed-in user
+//     without the cookie is sent to settings.ui_lang once settings load.
+//
+// Content language follows the URL as well, except for a signed-in user who
+// picked a content language different from their UI language in settings.
 //
 // UI strings: the bundled zh-CN dictionary (messages.zh-CN.ts) is the source
 // and the fallback for every key. Other languages load GET /api/i18n/ui/{lang}
-// (a flat key → string map of reviewed strings), cached in localStorage with
-// its ETag and revalidated with If-None-Match. A 404 (backend without the
-// i18n routes, or an unsupported language) or a missing key falls back to
-// zh-CN, so the page never shows an empty label.
-//
-// URL language prefixes: /en/... (any supported language) is accepted as an
-// entry URL (routes/lang-prefix.tsx): it switches the UI language and drops
-// the prefix. Keeping the prefix in every link and emitting hreflang
-// alternates waits for SSR (react-router.config.ts ssr: false): in SPA mode
-// every URL is served the same index.html, so crawlers would not see
-// per-language <link rel="alternate" hreflang> or localized markup anyway.
+// (a flat key → string map of reviewed strings): on the server through a
+// short in-memory cache (lib/api.server.ts), in the browser through
+// localStorage with its ETag, revalidated with If-None-Match. A 404 or a
+// missing key falls back to zh-CN, so the page never shows an empty label.
 
 export type Messages = Partial<Record<string, string>>;
 
 const UI_KEY = 'ui_lang';
-const CONTENT_KEY = 'content_lang';
 const DICT_PREFIX = 'i18n_ui_v1_';
 
-export const DEFAULT_LANG: LangCode = 'zh-CN';
-
-export function isLang(v: unknown): v is LangCode {
-  return typeof v === 'string' && (LANGS as string[]).includes(v);
-}
-
-/** Map a tag such as zh-Hant, zh-HK, en-US to a launch language (internal/i18n.Normalize). */
-export function normalizeLang(tag: string | null | undefined): LangCode | null {
-  const t = (tag ?? '').trim().toLowerCase().replace(/_/g, '-');
-  if (!t) return null;
-  const parts = t.split('-');
-  if (parts[0] === 'zh') return parts.slice(1).some(p => ['hant', 'tw', 'hk', 'mo'].includes(p)) ? 'zh-TW' : 'zh-CN';
-  return LANGS.find(l => l.toLowerCase() === parts[0]) ?? null;
-}
-
-function readLocal(key: string): LangCode | null {
-  try {
-    const v = window.localStorage.getItem(key);
-    return isLang(v) ? v : null;
-  } catch {
-    return null;
-  }
-}
+export {DEFAULT_LANG, isLang, normalizeLang};
 
 function writeLocal(key: string, value: LangCode) {
   try {
@@ -69,13 +55,7 @@ function writeLocal(key: string, value: LangCode) {
   }
 }
 
-/** Language picked by a /{lang}/... entry URL before the provider mounted. */
-export function rememberUiLang(lang: LangCode) {
-  writeLocal(UI_KEY, lang);
-  writeLocal(CONTENT_KEY, lang);
-}
-
-// ---- Module state, so non-React helpers can translate too ----
+// ---- Module state (browser), so non-React helpers can translate too ----
 
 let currentDict: Messages = {};
 let currentLang: LangCode = DEFAULT_LANG;
@@ -87,13 +67,14 @@ function format(template: string, vars?: Record<string, string | number>): strin
 
 /** Translate with the current UI language; falls back to zh-CN, then the key. */
 export function t(key: MessageKey, vars?: Record<string, string | number>): string {
-  const value = currentDict[key];
+  const dict = renderScope()?.dict ?? currentDict;
+  const value = dict[key];
   return format(typeof value === 'string' && value ? value : zhCN[key] ?? key, vars);
 }
 
-export const uiLang = () => currentLang;
+export const uiLang = (): LangCode => renderScope()?.lang ?? currentLang;
 
-// ---- Remote dictionary with ETag cache ----
+// ---- Remote dictionary with ETag cache (browser) ----
 
 type Cached = {etag: string; strings: Messages};
 
@@ -116,7 +97,7 @@ function writeDict(lang: LangCode, value: Cached) {
   }
 }
 
-function cleanStrings(data: unknown): Messages {
+export function cleanStrings(data: unknown): Messages {
   const out: Messages = {};
   if (data && typeof data === 'object' && !Array.isArray(data)) {
     for (const [k, v] of Object.entries(data as Record<string, unknown>)) if (typeof v === 'string' && v) out[k] = v;
@@ -127,7 +108,7 @@ function cleanStrings(data: unknown): Messages {
 const missing = new Set<LangCode>();
 
 /** GET /api/i18n/ui/{lang}; null means "use what you have" (304, 404, offline). */
-async function fetchDict(lang: LangCode, cached: Cached | null, signal: AbortSignal): Promise<Cached | null> {
+async function fetchDict(lang: LangCode, cached: Cached | null, signal?: AbortSignal): Promise<Cached | null> {
   if (missing.has(lang)) return null;
   const headers = new Headers({Accept: 'application/json'});
   if (cached?.etag) headers.set('If-None-Match', cached.etag);
@@ -151,15 +132,40 @@ async function fetchDict(lang: LangCode, cached: Cached | null, signal: AbortSig
   return {etag: response.headers.get('ETag') ?? '', strings: cleanStrings(data)};
 }
 
+/**
+ * The UI dictionary for a client-side navigation into `lang` (root
+ * clientLoader). A cached copy answers at once and is revalidated in the
+ * background for the next visit; otherwise the request is awaited.
+ */
+export async function loadUiDict(lang: LangCode): Promise<Messages> {
+  if (lang === DEFAULT_LANG) return {};
+  if (lang === currentLang) return currentDict;
+  const cached = readDict(lang);
+  if (cached) {
+    void fetchDict(lang, cached).then(fresh => fresh && writeDict(lang, fresh));
+    return cached.strings;
+  }
+  const fresh = await fetchDict(lang, null);
+  if (fresh) writeDict(lang, fresh);
+  return fresh?.strings ?? {};
+}
+
+/** Keeps the server-rendered dictionary for the next client-side visit. */
+function rememberDict(lang: LangCode, strings: Messages) {
+  if (lang === DEFAULT_LANG || Object.keys(strings).length === 0) return;
+  const cached = readDict(lang);
+  if (!cached) writeDict(lang, {etag: '', strings});
+}
+
 // ---- Provider ----
 
 type I18nValue = {
   uiLang: LangCode;
   contentLang: LangCode;
-  /** Bumps when strings arrive, so memoized consumers can re-render. */
+  /** Bumps when strings change, so memoized consumers can re-render. */
   version: number;
   t: typeof t;
-  /** TopBar switcher: UI language (visitors: both layers). */
+  /** Switcher (TopBar, settings): same page in `lang`, remembered as the preference. */
   setUiLang: (lang: LangCode) => void;
 };
 
@@ -171,88 +177,93 @@ const I18nContext = createContext<I18nValue>({
   setUiLang: () => {},
 });
 
-function applyGlobals(ui: LangCode, content: LangCode) {
+function applyGlobals(ui: LangCode, content: LangCode, dict: Messages) {
+  if (isServer) return; // the server reads the render scope instead
   currentLang = ui;
+  currentDict = dict;
   setAnalyticsLang(ui);
   setFormatLocale(ui);
   setApiContentLang(content);
-  if (typeof document !== 'undefined') document.documentElement.lang = ui;
+  document.documentElement.lang = ui;
 }
 
-export function I18nProvider({children}: {children: ReactNode}) {
-  const {settings, save, status} = useSettings();
-  // A choice made while a signed-in user's settings are still loading (e.g. a
-  // /ja/... entry URL) is PATCHed once they arrive instead of being overridden.
-  const pendingUi = useRef<LangCode | null>(null);
-  // The SPA never server-renders the app tree (only HydrateFallback), so the
-  // stored choice can be read on the first render. With SSR this would come
-  // from the URL prefix or a cookie instead.
-  const [local, setLocal] = useState<{ui: LangCode; content: LangCode} | null>(() => {
-    if (typeof window === 'undefined') return null;
-    const ui = readLocal(UI_KEY) ?? DEFAULT_LANG;
-    return {ui, content: readLocal(CONTENT_KEY) ?? ui};
-  });
-  const [version, setVersion] = useState(0);
+let dictVersion = 0;
+let lastDict: Messages | null = null;
 
-  const ui: LangCode = (isLang(settings?.ui_lang) ? settings.ui_lang : null) ?? local?.ui ?? DEFAULT_LANG;
-  const content: LangCode = (isLang(settings?.content_lang) ? settings.content_lang : null) ?? local?.content ?? ui;
+/**
+ * Browser: switch the strings and formatting locale before anything renders
+ * with them: the root Layout calls it (its <Meta> runs before I18nProvider),
+ * and so does the root clientLoader before a client-side navigation.
+ */
+export function primeLang(lang: LangCode, dict: Messages) {
+  if (isServer) return;
+  currentLang = lang;
+  currentDict = dict;
+  setFormatLocale(lang);
+}
 
+export type I18nRouteData = {
+  /** The page's language (from the URL; the default for unprefixed and back-office pages). */
+  lang: LangCode;
+  dict: Messages;
+  /** A `lang` cookie was present when the page loaded. */
+  hadChoice: boolean;
+};
+
+export function I18nProvider({route: data, children}: {route: I18nRouteData; children: ReactNode}) {
+  const {settings, save} = useSettings();
+  const navigate = useNavigate();
+  const location = useLocation();
+  const route = {
+    ...data,
+    // The page takes language prefixes at all (false in the back office).
+    localized: isPrefixable(location.pathname),
+    prefixed: splitLangPath(location.pathname).lang !== null,
+  };
+  const ui = route.lang;
+  // A signed-in user's separate content language (settings) wins over the URL.
+  const content: LangCode =
+    settings && isLang(settings.content_lang) && settings.content_lang !== settings.ui_lang ? settings.content_lang : ui;
+
+  if (route.dict !== lastDict) {
+    lastDict = route.dict;
+    dictVersion += 1;
+  }
   // Globals are set during render so children rendered in this pass already
-  // use the right locale and ?lang=.
-  applyGlobals(ui, content);
+  // use the right strings, locale and ?lang=.
+  applyGlobals(ui, content, route.dict);
 
-  // Keep the synced values for the next visit's first render.
+  // An entry URL with a prefix is a language choice.
   useEffect(() => {
-    if (!settings) return;
-    const pending = pendingUi.current;
-    if (pending) {
-      pendingUi.current = null;
-      if (settings.ui_lang !== pending) save('ui_lang', {ui_lang: pending}, s => ({...s, ui_lang: pending}));
-      return;
-    }
-    if (isLang(settings.ui_lang)) writeLocal(UI_KEY, settings.ui_lang);
-    if (isLang(settings.content_lang)) writeLocal(CONTENT_KEY, settings.content_lang);
-  }, [settings]);
+    if (!route.localized || !route.prefixed) return;
+    writeLangCookie(ui);
+    writeLocal(UI_KEY, ui);
+  }, [ui, route.localized, route.prefixed]);
 
+  useEffect(() => rememberDict(ui, route.dict), [ui, route.dict]);
+
+  // Signed in on an unprefixed URL with no cookie yet: follow settings.ui_lang once.
+  const settingsUi = settings?.ui_lang;
   useEffect(() => {
-    if (ui === DEFAULT_LANG) {
-      currentDict = {};
-      setVersion(v => v + 1);
-      return;
-    }
-    const cached = readDict(ui);
-    currentDict = cached?.strings ?? {};
-    setVersion(v => v + 1);
-    const controller = new AbortController();
-    fetchDict(ui, cached, controller.signal).then(fresh => {
-      if (!fresh || controller.signal.aborted) return;
-      writeDict(ui, fresh);
-      currentDict = fresh.strings;
-      setVersion(v => v + 1);
-    });
-    return () => controller.abort();
-  }, [ui]);
+    if (!route.localized || route.prefixed || route.hadChoice || !isLang(settingsUi) || settingsUi === ui) return;
+    navigate(localizePath(stripLang(location.pathname), settingsUi) + location.search + location.hash, {replace: true, state: location.state});
+    // Only when settings arrive.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [settingsUi]);
 
   const setUiLang = useCallback(
     (lang: LangCode) => {
-      if (settings) {
-        save('ui_lang', {ui_lang: lang}, s => ({...s, ui_lang: lang}));
-        writeLocal(UI_KEY, lang);
-        return;
-      }
-      if (status !== 'missing' && status !== 'error' && tokens.user()) {
-        pendingUi.current = lang;
-        writeLocal(UI_KEY, lang);
-        setLocal(prev => ({ui: lang, content: prev?.content ?? lang}));
-        return;
-      }
+      writeLangCookie(lang);
       writeLocal(UI_KEY, lang);
-      writeLocal(CONTENT_KEY, lang);
-      setLocal({ui: lang, content: lang});
+      if (settings && settings.ui_lang !== lang) save('ui_lang', {ui_lang: lang}, s => ({...s, ui_lang: lang}));
+      if (lang === ui) return;
+      const target = route.localized ? localizePath(stripLang(location.pathname), lang) : location.pathname;
+      navigate(target + location.search + location.hash, {state: location.state});
     },
-    [settings, save, status],
+    [settings, save, ui, route.localized, location, navigate],
   );
 
+  const version = dictVersion;
   const value = useMemo(() => ({uiLang: ui, contentLang: content, version, t, setUiLang}), [ui, content, version, setUiLang]);
   return <I18nContext.Provider value={value}>{children}</I18nContext.Provider>;
 }
