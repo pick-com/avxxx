@@ -265,6 +265,8 @@ export type ReleaseDetail = Release & {
   identifiers?: ReleaseIdentifier[] | null;
   /** The release's series (migrations/027_series.sql); display_name with ?lang=. */
   series?: {id: number; slug: string; name: string; display_name?: string} | null;
+  /** When an upcoming release goes live (status 'upcoming'; absent: date not fixed). */
+  scheduled_at?: string | null;
 };
 
 export type Performer = {
@@ -280,10 +282,22 @@ export type Performer = {
   status: string;
   /** Stored portrait; absent when none is stored or it was removed. */
   portrait?: ApiImage | null;
+  /** Release cast only (GET /api/releases/{slug}/performers): 主演 vs 客串, the source's role text and credited name. */
+  lead?: boolean;
+  role?: string;
+  credited_name?: string;
 };
 
 /** GET /api/performers item. works_count / latest_release_date come only from the catalog-filters backend. */
-export type PerformerListItem = Performer & {works_count?: number; latest_release_date?: string | null};
+export type PerformerListItem = Performer & {
+  works_count?: number;
+  latest_release_date?: string | null;
+  /** From the hourly performer stats (0 before its first run). heat is the 30-day heat x 1000. */
+  followers?: number;
+  heat?: number;
+  total_plays?: number;
+  first_work_date?: string | null;
+};
 
 // GET /api/performers/{slug} is row_to_json with text fallbacks from source
 // records, so several numeric fields can arrive as strings.
@@ -309,6 +323,28 @@ export type PerformerDetail = {
   birth_date_hidden?: boolean | null;
   status: string;
   portrait?: ApiImage | null;
+  /** 别名 (stage, birth, romanized, former ...). */
+  aliases?: PerformerAlias[] | null;
+  /** Reviewed name translations (多语言名). */
+  names?: {lang: string; name: string}[] | null;
+  stats?: PerformerStats | null;
+};
+
+export type PerformerAlias = {name: string; language?: string; type: string};
+/**
+ * Actor page stats. works / lead / upcoming / followers are live; total_plays,
+ * heat (30-day heat x 1000) and heat_rank come from the hourly job
+ * (computed_at null before its first run).
+ */
+export type PerformerStats = {
+  works_count: number;
+  lead_count: number;
+  upcoming_count: number;
+  followers: number;
+  total_plays: number;
+  heat: number;
+  heat_rank: number | null;
+  computed_at: string | null;
 };
 
 export type Tag = {slug: string; name: string; count: number};
@@ -389,8 +425,15 @@ export type ReleaseFilter = {
   min_runtime?: number;
   max_runtime?: number;
   sort?: ReleaseSort;
+  /** With performer: 主演 (lead) or 客串 (guest) credits only. */
+  role?: CreditRole;
+  /** Playback-source facets: 清晰度 (min lines), 字幕 ('any' or a language), 语言 (audio). */
+  min_height?: number;
+  subtitle?: string;
+  audio_lang?: string;
 };
-export type PerformerSort = 'name' | 'works' | 'newest_work';
+export type CreditRole = 'lead' | 'guest';
+export type PerformerSort = 'name' | 'works' | 'newest_work' | 'heat' | 'followers' | 'rising';
 
 /** True when the filter asks the server for more than the default newest-first list. */
 export const needsFilterSupport = (f: ReleaseFilter) =>
@@ -425,6 +468,41 @@ export const listReleasePage = (filter: ReleaseFilter, limit: number, cursor?: s
 /** GET /api/performers with sort and cursor (catalog-filters backend). */
 export const listPerformerPage = (sort: PerformerSort, limit: number, cursor?: string | null, q?: string, signal?: AbortSignal) =>
   api<PageBody<PerformerListItem>>(`performers${query({q, sort: sort === 'name' ? undefined : sort, limit, cursor})}`, {signal}).then(toPage);
+
+/** NavActors filters (GET /api/performers): era is a decade's first year. */
+export type PerformerFilter = {era?: number; tag?: string; audio_lang?: string};
+
+/** GET /api/performers with sort, NavActors filters and cursor. */
+export const listPerformersFiltered = (sort: PerformerSort, filter: PerformerFilter, limit: number, cursor?: string | null, signal?: AbortSignal) =>
+  api<PageBody<PerformerListItem>>(`performers${query({...filter, sort: sort === 'name' ? undefined : sort, limit, cursor})}`, {signal}).then(toPage);
+
+/** One 即将上线 row (GET /api/upcoming). date null = 日期待定; reserved only when signed in. */
+export type UpcomingItem = Release & {
+  display_title?: string;
+  scheduled_at?: string | null;
+  date: string | null;
+  reservable: boolean;
+  reserved?: boolean;
+  performers: {id: number; slug: string; name: string}[];
+};
+
+/** GET /api/upcoming: soonest first; followed needs a signed-in user. */
+export const listUpcoming = (opts: {performer?: string; followed?: boolean; limit?: number}, cursor?: string | null, signal?: AbortSignal) =>
+  api<PageBody<UpcomingItem>>(
+    `upcoming${query({performer: opts.performer, followed: opts.followed ? 1 : undefined, limit: opts.limit, cursor})}`,
+    {signal},
+  ).then(toPage);
+
+export type FacetCount = {value: string; count: number};
+/** GET /api/catalog/facets: playback-source facet values that have data. */
+export type CatalogFacets = {audio_langs: FacetCount[]; subtitle_langs: FacetCount[]; heights: FacetCount[]; subtitled: number};
+
+export const getCatalogFacets = (signal?: AbortSignal) => api<CatalogFacets>('catalog/facets', {signal});
+
+// Signed-in recent searches (最近搜索; anonymous ones stay in localStorage).
+export const getSearchHistory = (signal?: AbortSignal) => api<Items<string>>('me/search-history', {signal}).then(items);
+export const recordSearchHistory = (q: string) => api<{saved: boolean}>('me/search-history', {method: 'POST', body: {q}});
+export const clearSearchHistory = () => api<{deleted: number}>('me/search-history', {method: 'DELETE'});
 
 // ---- Playback ----
 
