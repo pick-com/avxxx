@@ -387,6 +387,9 @@ func TestDualApprovalFlow(t *testing.T) {
 	if id == 0 || !created.Approval.Mine || created.Approval.CanApprove || !strings.Contains(created.Approval.Summary, "刷分") {
 		t.Fatalf("approval %+v", created.Approval)
 	}
+	if a := f.audits(); len(a) == 0 || a[len(a)-1].Action != "approval.request" || a[len(a)-1].ApprovalID == nil || *a[len(a)-1].ApprovalID != id {
+		t.Errorf("request audit %+v", a)
+	}
 	path := fmt.Sprintf("/api/admin/approvals/%d/approve", id)
 
 	// The requester cannot approve; neither can an admin without the route's group.

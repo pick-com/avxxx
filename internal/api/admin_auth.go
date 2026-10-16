@@ -326,6 +326,8 @@ func (srv *Server) recordAudit(r *http.Request, p adminPrincipal, action, entity
 		id := p.ApprovalID
 		e.ApprovalID = &id
 		detail["approved_by"] = p.ApprovedBy
+	} else if id, ok := detail["approval_id"].(int64); ok {
+		e.ApprovalID = &id
 	}
 	if err := srv.adminAuth.RecordAdminAudit(context.WithoutCancel(r.Context()), e); err != nil {
 		obs.L(r.Context()).Error("admin audit log write failed", "err", err, "route", r.Pattern)
