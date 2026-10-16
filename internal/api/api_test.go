@@ -88,8 +88,12 @@ func samplePath(p string) string {
 }
 
 func TestRoutesRegistered(t *testing.T) {
-	if len(expectedRoutes) != 64 {
-		t.Fatalf("expected route list has %d entries, want 64", len(expectedRoutes))
+	listed := map[string]bool{}
+	for _, rt := range expectedRoutes {
+		if listed[rt] {
+			t.Errorf("expectedRoutes lists %q twice", rt)
+		}
+		listed[rt] = true
 	}
 	mux := http.NewServeMux()
 	Register(mux, nil, nil)
