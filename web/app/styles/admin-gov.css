@@ -292,6 +292,24 @@ button.adm-seg-item {
   background: var(--adm-blue-fg);
 }
 
+.adm-tooltip {
+  position: absolute;
+  top: 4px;
+  transform: translateX(-50%);
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 6px 10px;
+  border-radius: 8px;
+  border: 1px solid var(--line2);
+  background: var(--surface);
+  color: var(--text);
+  font-size: 12px;
+  pointer-events: none;
+  white-space: nowrap;
+  box-shadow: 0 4px 14px rgb(0 0 0 / 0.18);
+}
+
 .adm-pct {
   display: grid;
   grid-template-columns: minmax(0, 1fr) 52px;

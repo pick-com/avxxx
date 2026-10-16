@@ -52,5 +52,6 @@ export default [
     route('admin/search', 'routes/admin-search.tsx'),
     route('admin/field-policies', 'routes/admin-field-policies.tsx'),
     route('admin/media-links', 'routes/admin-media-links.tsx'),
+    route('admin/reports/completeness', 'routes/admin-completeness.tsx'),
   ]),
 ] satisfies RouteConfig;
