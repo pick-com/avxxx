@@ -1,18 +1,9 @@
 import {useMemo, useState, type FormEvent} from 'react';
 import {ApiError} from '../lib/api';
 import {AdminHeader, AdminNotice, EmptyRow, Pill, fmtNum, fmtTime, statusTone} from '../components/AdminUI';
-import {
-  addIngestSource,
-  enqueueIngestJob,
-  getCrawlPolicies,
-  getIngestJobs,
-  getIngestSources,
-  putCrawlPolicy,
-  type CrawlPolicy,
-  type CrawlPolicyInput,
-  type IngestJob,
-  type IngestSource,
-} from '../lib/adminApi';
+import {GateLine, SourceGovernance} from '../components/AdminSourceGovernance';
+import {addIngestSource, enqueueIngestJob, getCrawlPolicies, putCrawlPolicy, type CrawlPolicy, type CrawlPolicyInput, type IngestSource} from '../lib/adminApi';
+import {PHASE_LABELS, getGovJobs, getGovSources, type GovJob, type GovSource} from '../lib/adminGovApi';
 import {useAdminAction, useAdminLoad} from '../lib/adminContext';
 
 export const meta = () => [{title: 'REEL · 入库流水线'}];
@@ -20,8 +11,9 @@ export const meta = () => [{title: 'REEL · 入库流水线'}];
 // AdminPipeline (PRD 11 A2), scoped to what the backend exposes today:
 // GET admin/sources, admin/crawl-policies, admin/jobs (latest 100);
 // POST admin/sources, admin/sources/{id}/jobs; PUT admin/sources/{id}/crawl-policy.
-// Not shown: blocked_until (no endpoint returns it) and the per-stage flow
-// (发现 → 上线) counts, which have no backend yet.
+// Crawl governance per source (授权与条款, phased jobs, checkpoints) lives in
+// components/AdminSourceGovernance. blocked_until is shown when a backend
+// returns it (none does yet); the per-stage flow (发现 → 上线) has no backend.
 
 const EMPTY_POLICY: CrawlPolicyInput = {
   discovery_interval: '1 day',
@@ -94,17 +86,18 @@ function PolicyForm({source, policy, busy, onSave, onCancel}: {
 
 export default function AdminPipeline() {
   const data = useAdminLoad(async () => {
-    const [sources, policies, jobs] = await Promise.all([getIngestSources(), getCrawlPolicies(), getIngestJobs()]);
+    const [sources, policies, jobs] = await Promise.all([getGovSources(), getCrawlPolicies(), getGovJobs()]);
     return {sources, policies, jobs};
   });
   const act = useAdminAction();
   const [editing, setEditing] = useState<number | null>(null);
   const [selected, setSelected] = useState<number | null>(null);
+  const [governing, setGoverning] = useState<number | null>(null);
   const [name, setName] = useState('');
   const [url, setUrl] = useState('');
 
   const jobsBySource = useMemo(() => {
-    const m = new Map<number, IngestJob[]>();
+    const m = new Map<number, GovJob[]>();
     for (const j of data.data?.jobs ?? []) {
       const list = m.get(j.source_id) ?? [];
       list.push(j);
@@ -114,13 +107,13 @@ export default function AdminPipeline() {
   }, [data.data]);
   const policyBySource = useMemo(() => new Map((data.data?.policies ?? []).map(p => [p.source_id, p])), [data.data]);
 
-  const enqueue = (s: IngestSource) =>
+  const enqueue = (s: GovSource) =>
     act
-      .run(`enqueue-${s.id}`, () => enqueueIngestJob(s.id), `已为「${s.name}」排入抓取任务`)
+      .run(`enqueue-${s.id}`, () => enqueueIngestJob(s.id), `已为「${s.name}」排入增量抓取任务`)
       .then(() => data.reload())
       .catch(cause => {
-        // store.Enqueue: 409 when the source is disabled or already has a pending / running job.
-        if (cause instanceof ApiError && cause.status === 409) act.setError(`「${s.name}」已有排队或运行中的任务，或来源已停用`);
+        // store.Enqueue: 409 when the license gate refuses, the source is disabled or a job of the phase is active.
+        if (cause instanceof ApiError && cause.status === 409) act.setError(`「${s.name}」无法排入：${cause.detail || '已有排队或运行中的任务，或来源已停用'}`);
       });
   const savePolicy = (s: IngestSource, p: CrawlPolicyInput) =>
     act.attempt(`policy-${s.id}`, () => putCrawlPolicy(s.id, p), `已保存「${s.name}」的抓取策略`).then(v => {
@@ -150,7 +143,7 @@ export default function AdminPipeline() {
       <AdminHeader
         eyebrow="ADMIN · PIPELINE"
         title="入库流水线"
-        sub="来源、抓取策略与最近 100 个抓取任务。失败任务在这里重试；抓取被封锁的时间（blocked_until）后端尚未提供接口。"
+        sub="来源、授权与条款、抓取策略与最近 100 个抓取任务。未审核条款的来源只能人工验证；点「授权与抓取」审核条款、按阶段排任务、看断点。"
         actions={
           <button type="button" className="btn btn-secondary btn-sm" disabled={data.busy} onClick={data.reload}>
             {data.busy ? '刷新中…' : '刷新'}
@@ -212,11 +205,9 @@ export default function AdminPipeline() {
                         <Pill>v{s.version}</Pill>
                       </div>
                     </td>
-                    <td>
-                      {s.source_kind || '—'}
-                      <div className="adm-source-meta">
-                        授权 {s.license_status || '—'} · 出口 {s.egress_policy || '—'}
-                      </div>
+                    <td className="wrap">
+                      {s.source_kind || '—'} <span className="adm-source-meta">· 出口 {s.egress_policy || '—'}</span>
+                      <GateLine s={s} />
                     </td>
                     <td>
                       {p ? (
@@ -234,7 +225,8 @@ export default function AdminPipeline() {
                     <td>
                       {last ? (
                         <>
-                          <Pill tone={statusTone(last.status === 'done' ? 'ok' : last.status)}>{last.status}</Pill>{' '}
+                          <Pill tone={statusTone(last.status === 'done' || last.status === 'succeeded' ? 'ok' : last.status)}>{last.status}</Pill>{' '}
+                          {last.phase && <span className="adm-source-meta">{PHASE_LABELS[last.phase] ?? last.phase} · </span>}
                           <span className="adm-source-meta">{fmtTime(last.created_at)}</span>
                           {fails > 0 && <div className="adm-source-meta">失败 {fails} 次</div>}
                         </>
@@ -247,11 +239,19 @@ export default function AdminPipeline() {
                         <button
                           type="button"
                           className="adm-link"
-                          disabled={!s.enabled || act.pending === `enqueue-${s.id}`}
-                          title={s.enabled ? '' : '来源已停用'}
+                          aria-expanded={governing === s.id}
+                          onClick={() => setGoverning(governing === s.id ? null : s.id)}
+                        >
+                          授权与抓取
+                        </button>
+                        <button
+                          type="button"
+                          className="adm-link"
+                          disabled={!s.enabled || s.automatic_allowed === false || act.pending === `enqueue-${s.id}`}
+                          title={!s.enabled ? '来源已停用' : s.automatic_allowed === false ? `授权闸门：${s.gate_reason ?? ''}` : '排入一个增量任务'}
                           onClick={() => void enqueue(s)}
                         >
-                          立即抓取
+                          立即增量
                         </button>
                         <button type="button" className="adm-link" onClick={() => setEditing(editing === s.id ? null : s.id)}>
                           编辑策略
@@ -267,6 +267,14 @@ export default function AdminPipeline() {
             </tbody>
           </table>
         </div>
+        {governing !== null && data.data?.sources.find(s => s.id === governing) && (
+          <SourceGovernance
+            key={governing}
+            s={data.data.sources.find(s => s.id === governing)!}
+            jobs={jobsBySource.get(governing) ?? []}
+            onChanged={data.reload}
+          />
+        )}
         {editing !== null && data.data?.sources.find(s => s.id === editing) && (
           <PolicyForm
             key={editing}
@@ -307,6 +315,7 @@ export default function AdminPipeline() {
               <tr>
                 <th className="num">ID</th>
                 <th>来源</th>
+                <th>阶段</th>
                 <th>状态</th>
                 <th className="num">尝试</th>
                 <th>创建</th>
@@ -315,18 +324,24 @@ export default function AdminPipeline() {
               </tr>
             </thead>
             <tbody>
-              {data.data && shownJobs.length === 0 && <EmptyRow cols={7}>没有任务</EmptyRow>}
+              {data.data && shownJobs.length === 0 && <EmptyRow cols={8}>没有任务</EmptyRow>}
               {shownJobs.map(j => (
                 <tr key={j.id} className={j.status === 'failed' ? 'flag-red' : ''}>
                   <td className="num">{j.id}</td>
                   <td>{sourceName(j.source_id)}</td>
                   <td>
-                    <Pill tone={statusTone(j.status === 'done' ? 'ok' : j.status)}>{j.status}</Pill>
+                    {j.phase ? PHASE_LABELS[j.phase] ?? j.phase : '—'}
+                    {j.page_cap ? <span className="muted"> · {j.page_cap} 页</span> : null}
+                  </td>
+                  <td>
+                    <Pill tone={statusTone(j.status === 'done' || j.status === 'succeeded' ? 'ok' : j.status)}>{j.status}</Pill>
                   </td>
                   <td className="num">{j.attempt}</td>
                   <td>{fmtTime(j.created_at)}</td>
                   <td>{fmtTime(j.lease_until)}</td>
-                  <td className="wrap mono">{j.error || '—'}</td>
+                  <td className="wrap mono">
+                    {j.error_code && <Pill tone="red">{j.error_code}</Pill>} {j.error || (j.error_code ? '' : '—')}
+                  </td>
                 </tr>
               ))}
             </tbody>

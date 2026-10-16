@@ -6,6 +6,7 @@ import {getDashboard, getModerationOverview, getPerformerRequests, type Dashboar
 import {AdminContext} from '../lib/adminContext';
 import '../styles/admin.css';
 import '../styles/admin-intel.css';
+import '../styles/admin-gov.css';
 
 export const meta = () => [{title: 'REEL · 后台'}];
 

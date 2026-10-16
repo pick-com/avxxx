@@ -1,0 +1,327 @@
+/* Governance and data-quality admin pages (授权与抓取, 字段优先级, 片源映射,
+   拆分, 完整性报告, 收录健康详情): imported by admin-layout. */
+
+.adm-gov {
+  margin-top: 12px;
+}
+
+.adm-gov-grid {
+  display: grid;
+  gap: 16px;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  align-items: start;
+}
+
+.adm-gov-block {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--surface);
+  min-width: 0;
+}
+
+.adm-gov-block h3,
+.adm-gov-block h4 {
+  margin: 0;
+}
+
+.adm-gov-block h4 {
+  font-size: 13px;
+  color: var(--muted);
+  margin-top: 6px;
+}
+
+.adm-gov-outcome {
+  margin: 0;
+  padding: 8px 10px;
+  border-radius: 8px;
+  font-size: 13px;
+  background: var(--adm-amber-bg);
+  color: var(--adm-amber-fg);
+}
+
+.adm-gov-outcome.ok {
+  background: var(--adm-green-bg);
+  color: var(--adm-green-fg);
+}
+
+.adm-gov-outcome.bad {
+  background: var(--adm-red-bg);
+  color: var(--adm-red-fg);
+}
+
+.adm-gov-failures {
+  margin: 6px 0 0;
+  padding-left: 18px;
+  font-size: 12px;
+}
+
+.adm-seg {
+  display: inline-flex;
+  border: 1px solid var(--line2);
+  border-radius: 8px;
+  overflow: hidden;
+  align-self: flex-start;
+}
+
+.adm-seg-item {
+  position: relative;
+  padding: 6px 14px;
+  font-size: 13px;
+  cursor: pointer;
+  color: var(--text2);
+  border-right: 1px solid var(--line2);
+}
+
+.adm-seg-item:last-child {
+  border-right: 0;
+}
+
+.adm-seg-item input {
+  position: absolute;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.adm-seg-item.on {
+  background: var(--sel);
+  color: var(--text);
+  font-weight: 600;
+}
+
+.adm-seg-item:focus-within {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+button.adm-seg-item {
+  border: 0;
+  border-right: 1px solid var(--line2);
+  background: transparent;
+  font: inherit;
+  font-size: 13px;
+}
+
+/* ---------- 字段优先级 ---------- */
+
+.adm-order {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.adm-order-item {
+  display: grid;
+  grid-template-columns: 28px 24px minmax(0, 1fr) auto auto;
+  gap: 10px;
+  align-items: center;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--bg);
+  font-size: 13px;
+}
+
+.adm-order-item[draggable='true'] {
+  cursor: grab;
+}
+
+.adm-order-item.dragging {
+  opacity: 0.5;
+}
+
+.adm-order-item.over {
+  border-color: var(--accent);
+}
+
+.adm-order-item:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.adm-order-rank {
+  font-family: var(--font-mono);
+  color: var(--faint);
+  text-align: right;
+}
+
+.adm-order-item input[type='number'] {
+  width: 72px;
+  min-height: 30px;
+  padding: 4px 8px;
+  border-radius: 6px;
+  border: 1px solid var(--line2);
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font-mono);
+}
+
+.adm-order-item.changed {
+  border-color: var(--adm-amber-fg);
+}
+
+/* ---------- 拆分 ---------- */
+
+.adm-split-records {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-height: 340px;
+  overflow: auto;
+}
+
+.adm-split-record {
+  display: grid;
+  grid-template-columns: 22px minmax(0, 1fr);
+  gap: 8px;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.adm-split-record.on {
+  border-color: var(--accent);
+  background: var(--sel);
+}
+
+.adm-split-sides {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 12px;
+}
+
+.adm-split-side {
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 10px 12px;
+  min-width: 0;
+}
+
+.adm-split-side h4 {
+  margin: 0 0 8px;
+}
+
+.adm-split-fields {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+}
+
+.adm-split-fields td {
+  padding: 4px 6px;
+  border-top: 1px solid var(--line);
+  vertical-align: top;
+  overflow-wrap: anywhere;
+}
+
+.adm-split-fields td:first-child {
+  color: var(--muted);
+  font-family: var(--font-mono);
+  white-space: nowrap;
+}
+
+.adm-split-fields tr.changed td {
+  background: var(--adm-amber-bg);
+}
+
+.adm-split-fields .was {
+  color: var(--faint);
+  text-decoration: line-through;
+  display: block;
+}
+
+/* ---------- 完整性报告 ---------- */
+
+.adm-trend {
+  width: 100%;
+  height: auto;
+  display: block;
+}
+
+.adm-trend .grid {
+  stroke: var(--line);
+  stroke-width: 1;
+}
+
+.adm-trend .axis {
+  fill: var(--faint);
+  font-size: 11px;
+  font-family: var(--font-mono);
+}
+
+.adm-trend .line {
+  fill: none;
+  stroke: var(--accent);
+  stroke-width: 2;
+}
+
+.adm-trend .line.alt {
+  stroke: var(--adm-blue-fg);
+  stroke-dasharray: 4 3;
+}
+
+.adm-trend .dot {
+  fill: var(--accent);
+}
+
+.adm-trend-legend {
+  display: flex;
+  gap: 14px;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.adm-trend-legend i {
+  display: inline-block;
+  width: 14px;
+  height: 2px;
+  vertical-align: middle;
+  margin-right: 4px;
+  background: var(--accent);
+}
+
+.adm-trend-legend i.alt {
+  background: var(--adm-blue-fg);
+}
+
+.adm-pct {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 52px;
+  gap: 8px;
+  align-items: center;
+  min-width: 140px;
+}
+
+.adm-missing-list {
+  margin: 0;
+  padding-left: 18px;
+  font-size: 12px;
+}
+
+/* ---------- 收录健康详情 ---------- */
+
+button.adm-kpi {
+  text-align: left;
+  font: inherit;
+  cursor: pointer;
+}
+
+button.adm-kpi:hover {
+  border-color: var(--line2);
+  background: var(--surface2);
+}
+
+@media (max-width: 1100px) {
+  .adm-gov-grid,
+  .adm-split-sides {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
