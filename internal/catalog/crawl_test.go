@@ -483,6 +483,36 @@ func TestAdaptersNextPage(t *testing.T) {
 	}
 }
 
+// An empty listing page (truncated response, redesign) fails the run without
+// moving checkpoints: a baseline must not mark its pass complete and an
+// incremental run must not move its watermark past records it never saw.
+func TestCrawlEmptyListingDoesNotAdvance(t *testing.T) {
+	for _, phase := range []Phase{PhaseBaseline, PhaseIncremental} {
+		t.Run(string(phase), func(t *testing.T) {
+			s := newJAVDatabaseSite(t)
+			cps, sink := newFakeCheckpoints(), &fakeSink{}
+			c := newCrawl(1, s, cps, sink, FetchPolicy{})
+			c.Phase = phase
+			if _, err := c.Run(context.Background()); err != nil {
+				t.Fatal(err)
+			}
+			advances := len(cps.advances)
+			s.setOverride("/movies/", func(w http.ResponseWriter, _ *http.Request) {
+				fmt.Fprint(w, `<html><body><p>Nothing found.</p></body></html>`)
+			})
+			c = newCrawl(1, s, cps, sink, FetchPolicy{})
+			c.Phase = phase
+			_, err := c.Run(context.Background())
+			if !errors.Is(err, ErrEmptyListing) {
+				t.Fatalf("err = %v, want ErrEmptyListing", err)
+			}
+			if len(cps.advances) != advances {
+				t.Errorf("empty listing advanced a checkpoint: %v", cps.advances[advances:])
+			}
+		})
+	}
+}
+
 func TestAllAdaptersPaginate(t *testing.T) {
 	for _, a := range []Adapter{NewJAVDatabaseAdapter(), NewXCITYAdapter(), NewJavGuruAdapter()} {
 		if _, ok := a.(Paginator); !ok {
