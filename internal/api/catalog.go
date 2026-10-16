@@ -25,10 +25,15 @@ func (srv *Server) items(w http.ResponseWriter, r *http.Request) {
 	reply(w, v, e)
 }
 
+// performers lists active performers: ?q=&sort=name|works|newest_work&limit=&cursor=.
 func (srv *Server) performers(w http.ResponseWriter, r *http.Request) {
-	limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
-	v, e := srv.store.Performers(r.Context(), r.URL.Query().Get("q"), limit)
-	reply(w, map[string]any{"items": v}, e)
+	f, err := parsePerformerFilter(r.URL.Query())
+	if err != nil {
+		reply(w, nil, err)
+		return
+	}
+	v, next, e := srv.store.PerformerPage(r.Context(), f)
+	reply(w, page(v, next), e)
 }
 
 func (srv *Server) performerDetail(w http.ResponseWriter, r *http.Request) {
@@ -42,14 +47,20 @@ func (srv *Server) performerReleases(w http.ResponseWriter, r *http.Request) {
 	reply(w, map[string]any{"items": v}, e)
 }
 
+// releases lists published releases: ?q=&tag=&maker=&performer=&year=
+// &min_runtime=&max_runtime=&sort=newest|oldest|runtime&limit=&cursor=.
 func (srv *Server) releases(w http.ResponseWriter, r *http.Request) {
-	limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
-	v, e := srv.store.Releases(r.Context(), r.URL.Query().Get("q"), limit)
-	reply(w, map[string]any{"items": v}, e)
+	f, err := parseReleaseFilter(r.URL.Query())
+	if err != nil {
+		reply(w, nil, err)
+		return
+	}
+	v, next, e := srv.store.ReleasePage(r.Context(), f)
+	reply(w, page(v, next), e)
 }
 
 func (srv *Server) releaseBySlug(w http.ResponseWriter, r *http.Request) {
-	v, e := srv.store.ReleaseBySlug(r.Context(), r.PathValue("slug"))
+	v, e := srv.store.ReleaseDetailBySlug(r.Context(), r.PathValue("slug"))
 	reply(w, v, e)
 }
 
@@ -72,6 +83,6 @@ func (srv *Server) makers(w http.ResponseWriter, r *http.Request) {
 
 func (srv *Server) catalogSearch(w http.ResponseWriter, r *http.Request) {
 	limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
-	v, e := srv.store.CatalogSearch(r.Context(), r.URL.Query().Get("q"), limit)
+	v, e := srv.store.SearchCatalog(r.Context(), r.URL.Query().Get("q"), limit)
 	reply(w, map[string]any{"items": v}, e)
 }

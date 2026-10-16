@@ -64,6 +64,8 @@ func errorStatus(e error) (int, string) {
 		return http.StatusConflict, store.ErrEmailTaken.Error()
 	case errors.Is(e, store.ErrInvalidCredentials):
 		return http.StatusUnauthorized, store.ErrInvalidCredentials.Error()
+	case errors.Is(e, store.ErrInvalidQuery):
+		return http.StatusBadRequest, e.Error()
 	case errors.Is(e, pgx.ErrNoRows):
 		return http.StatusNotFound, statusMessage(http.StatusNotFound)
 	}
