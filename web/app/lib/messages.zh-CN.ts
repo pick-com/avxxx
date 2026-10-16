@@ -122,6 +122,7 @@ export const zhCN = {
   'player.rewind': '后退 {s} 秒',
   'player.forward': '前进 {s} 秒',
   'player.muted': '已静音',
+  'player.volumeTo': '音量 {n}%',
   'player.unmuted': '取消静音',
   'player.pipUnavailable': '画中画暂不可用',
   'player.noCaptions': '这部作品暂无字幕',

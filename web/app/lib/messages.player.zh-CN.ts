@@ -40,7 +40,7 @@ export const playerZhCN = {
   'pc.rateTo': '倍速 {rate}',
   'pc.toStart': '回到开头',
   'pc.toEnd': '跳到结尾',
-  'pc.keysHint': '空格 播放/暂停 · ← → 5 秒 · J L 10 秒 · 0–9 跳转 · , . 逐帧 · < > 倍速 · F 全屏 · M 静音 · C 字幕',
+  'pc.keysHint': '空格/K 播放/暂停 · ← → 5 秒 · J L 10 秒 · ↑ ↓ 音量 · 0–9 跳转 · , . 逐帧 · < > 倍速 · F 全屏 · T 影院模式 · I 画中画 · M 静音 · C 字幕 · Shift+N/P 下一部/上一部',
 
   // mini player (MobileHome M1)
   'mini.label': '迷你播放器',
