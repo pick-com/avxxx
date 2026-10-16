@@ -144,6 +144,36 @@
   }
 }
 
+/* 「登录后观看记录可跨设备同步」 below the player (components/SyncReminder.tsx). */
+.sync-reminder {
+  margin-top: 12px;
+  padding: 6px 6px 6px 14px;
+  border-radius: 12px;
+  border: 1px solid var(--line);
+  background: var(--surface);
+  color: var(--text2);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 14px;
+}
+
+.sync-reminder-text {
+  flex: 1;
+  min-width: 0;
+}
+
+.sync-reminder-close {
+  width: 36px;
+  height: 36px;
+}
+
+@media (max-width: 767px) {
+  .sync-reminder {
+    margin: 8px var(--gutter, 16px) 0;
+  }
+}
+
 /* Settings › 账号 */
 
 .set-input {

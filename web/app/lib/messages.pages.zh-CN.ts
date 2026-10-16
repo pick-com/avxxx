@@ -380,6 +380,7 @@ export const pagesZhCN = {
   'authPrompt.titleReview': '登录后写短评',
   'authPrompt.titleLike': '登录后点赞',
   'authPrompt.titleReport': '登录后举报',
+  'authPrompt.titleSync': '登录后同步观看记录',
   'authPrompt.titleOther': '登录后继续',
   'authPrompt.sub': '视频会继续播放，登录后接着刚才的操作。',
   'authPrompt.skip': '先逛逛',
@@ -638,6 +639,7 @@ export const pagesZhCN = {
 
   // history
   'history.guestNote': '这是本浏览器里的观看记录，保留最近 100 部、90 天。登录后可跨设备同步。',
+  'syncReminder.text': '登录后观看记录可跨设备同步',
   'history.emptyTitle': '还没有观看记录',
   'history.emptyBody': '看过的视频会出现在这里，下次可以从上次的位置接着看。',
   'history.search': '搜索播放记录：片名、演员、番号',
