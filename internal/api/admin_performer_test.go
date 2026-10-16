@@ -1,11 +1,13 @@
 package api
 
 import (
+	"avxxx/internal/clientip"
 	"avxxx/internal/community"
 	"avxxx/internal/recs"
 	"avxxx/internal/store"
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -254,6 +256,55 @@ func TestPublicPerformerRequest(t *testing.T) {
 	// Another address is still allowed.
 	if rec := post(ok, "10.9.9.8:5555"); rec.Code != http.StatusCreated {
 		t.Fatalf("other address: %d", rec.Code)
+	}
+}
+
+// TestPerformerRequestLimitBehindProxy: with TRUSTED_PROXIES the per-address
+// limit keys on the forwarded client, not the proxy, and a client cannot
+// escape it by sending its own X-Forwarded-For entries.
+func TestPerformerRequestLimitBehindProxy(t *testing.T) {
+	ips, err := clientip.Parse("127.0.0.1/32,::1/128")
+	if err != nil {
+		t.Fatal(err)
+	}
+	srv := &Server{adminToken: "secret", performerEd: &stubPerformers{}, limiter: community.NewMemoryLimiter(), clientIP: ips}
+	mux := http.NewServeMux()
+	for _, rt := range srv.routes() {
+		mux.HandleFunc(rt.pattern, rt.handler)
+	}
+	ok := `{"performer":"sena-hashimoto","kind":"other","contact":"tel 123"}`
+	post := func(remote string, xff ...string) int {
+		req := httptest.NewRequest("POST", "/api/performer-requests", strings.NewReader(ok))
+		req.RemoteAddr = remote
+		for _, v := range xff {
+			req.Header.Add("X-Forwarded-For", v)
+		}
+		rec := httptest.NewRecorder()
+		mux.ServeHTTP(rec, req)
+		return rec.Code
+	}
+	// Caddy appends the real client; the client spoofs a new left-most
+	// address on every request and still hits its limit after 5.
+	for i := range performerRequestPerIP {
+		if c := post("127.0.0.1:40000", fmt.Sprintf("192.0.2.%d, 198.51.100.7", i)); c != http.StatusCreated {
+			t.Fatalf("request %d: %d", i, c)
+		}
+	}
+	if c := post("127.0.0.1:40000", "192.0.2.99, 198.51.100.7"); c != http.StatusTooManyRequests {
+		t.Fatalf("spoofed request: %d, want 429", c)
+	}
+	// Another client behind the same proxy has its own budget.
+	if c := post("[::1]:40000", "198.51.100.8"); c != http.StatusCreated {
+		t.Fatalf("other client behind proxy: %d", c)
+	}
+	// An untrusted peer's header is ignored: keyed on the peer itself.
+	for i := range performerRequestPerIP {
+		if c := post("203.0.113.5:1", fmt.Sprintf("198.51.100.%d", 100+i)); c != http.StatusCreated {
+			t.Fatalf("direct request %d: %d", i, c)
+		}
+	}
+	if c := post("203.0.113.5:1", "198.51.100.200"); c != http.StatusTooManyRequests {
+		t.Fatalf("direct client escaped its limit with X-Forwarded-For: %d", c)
 	}
 }
 

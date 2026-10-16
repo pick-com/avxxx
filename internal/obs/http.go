@@ -118,7 +118,18 @@ func methodLabel(m string) string {
 // The line carries request_id, method, route (the matched pattern, never the
 // raw path or query string), status, duration_ms, bytes and client_ip
 // reduced to its /24 (or /48) network. Request headers are never logged.
+// client_ip is the TCP peer; see MiddlewareWithClientIP.
 func Middleware(next http.Handler, logger *slog.Logger) http.Handler {
+	return MiddlewareWithClientIP(next, logger, nil)
+}
+
+// MiddlewareWithClientIP is Middleware with client_ip taken from clientIP
+// (for example a clientip.Resolver trusting the reverse proxy); nil logs the
+// TCP peer.
+func MiddlewareWithClientIP(next http.Handler, logger *slog.Logger, clientIP func(*http.Request) string) http.Handler {
+	if clientIP == nil {
+		clientIP = func(r *http.Request) string { return r.RemoteAddr }
+	}
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		start := time.Now()
 		id := r.Header.Get(RequestIDHeader)
@@ -157,7 +168,7 @@ func Middleware(next http.Handler, logger *slog.Logger) http.Handler {
 			slog.Int("status", rec.status),
 			slog.Float64("duration_ms", float64(d.Microseconds())/1000),
 			slog.Int64("bytes", rec.bytes),
-			slog.String("client_ip", r.RemoteAddr),
+			slog.String("client_ip", clientIP(r)),
 		}
 		if rec.err != nil {
 			attrs = append(attrs, slog.Any("err", rec.err))

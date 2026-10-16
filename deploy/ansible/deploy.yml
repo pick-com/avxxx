@@ -48,6 +48,8 @@
           BACKUP_METRICS_DIR={{ backup_metrics_dir }}
           PUBLIC_BASE_URL={{ public_base_url | default(base_url | default('')) }}
           WEB_API_PROXY={{ web_api_proxy | default('true') }}
+          # Proxies whose X-Forwarded-For the API trusts; empty = TCP peer only.
+          TRUSTED_PROXIES={{ trusted_proxies | default('') }}
           # Catalog image storage (docs/DATA_RETENTION_AND_IMAGES.md); empty = images off.
           S3_ENDPOINT={{ s3_endpoint | default('') }}
           S3_BUCKET={{ s3_bucket | default('avxxx-media') }}

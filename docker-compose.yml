@@ -23,6 +23,8 @@ services:
       DATABASE_URL: ${DATABASE_URL:-postgres://avxxx:avxxx@db:5432/avxxx?sslmode=disable}
       # Listen on all interfaces inside the container so the published port reaches it.
       API_ADDR: 0.0.0.0:8080
+      # Reverse proxies whose X-Forwarded-For is trusted (CIDRs); empty = TCP peer.
+      TRUSTED_PROXIES: ${TRUSTED_PROXIES:-}
       # Empty rejects every /api/admin request.
       ADMIN_TOKEN: ${ADMIN_TOKEN:-}
       # Web Push: public key only; empty disables the subscribe routes.

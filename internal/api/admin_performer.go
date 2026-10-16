@@ -16,7 +16,6 @@ import (
 	"avxxx/internal/store"
 	"context"
 	"encoding/json"
-	"net"
 	"net/http"
 	"slices"
 	"strconv"
@@ -324,16 +323,15 @@ func (srv *Server) createPerformerRequest(w http.ResponseWriter, r *http.Request
 }
 
 // allowPerformerRequest applies the per-address and global intake limits.
-// The address is the TCP peer: forwarding headers are not trusted, so
-// behind a proxy the global limit is what protects the queue.
+// The address is the TCP peer, or with TRUSTED_PROXIES the client address
+// the trusted proxy forwarded (clientip); without it, behind a proxy every
+// request shares the proxy's address and the global limit is what protects
+// the queue.
 func (srv *Server) allowPerformerRequest(r *http.Request) error {
 	if srv.limiter == nil {
 		return nil
 	}
-	ip := r.RemoteAddr
-	if host, _, err := net.SplitHostPort(ip); err == nil {
-		ip = host
-	}
+	ip := srv.clientIP.IP(r)
 	for _, l := range []struct {
 		key   string
 		limit int
