@@ -98,9 +98,9 @@ type site struct {
 func newJAVDatabaseSite(t *testing.T) *site {
 	t.Helper()
 	pages := map[string]string{
-		"/movies/":        fixture(t, "javdatabase_movies_page1.html"),
-		"/movies/page/2/": fixture(t, "javdatabase_movies_page2.html"),
-		"/movies/page/3/": fixture(t, "javdatabase_movies_page3.html"),
+		"/movies/":        fixture(t, "javdatabase/discovery/movies_page1.html"),
+		"/movies/page/2/": fixture(t, "javdatabase/discovery/movies_page2.html"),
+		"/movies/page/3/": fixture(t, "javdatabase/discovery/movies_page3.html"),
 	}
 	s := &site{override: map[string]http.HandlerFunc{}}
 	s.Server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -432,7 +432,7 @@ func TestBlockDetection(t *testing.T) {
 		{"503 challenge", 503, nil, `<form id="challenge-form"></form>`, true, "challenge", DefaultBlockBackoff},
 		{"503 retry-after", 503, map[string]string{"Retry-After": "60"}, "maintenance", true, "unavailable", time.Minute},
 		{"bare 503 is an outage", 503, nil, "maintenance", false, "", 0},
-		{"captcha comment form is not a block", 200, nil, fixture(t, "javguru_page1.html"), false, "", 0},
+		{"captcha comment form is not a block", 200, nil, fixture(t, "javguru/discovery/page1.html"), false, "", 0},
 		{"404", 404, nil, "", false, "", 0},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -467,12 +467,12 @@ func TestAdaptersNextPage(t *testing.T) {
 		file    string
 		want    string
 	}{
-		{"javdatabase page 1", JAVDatabaseAdapter{}, "https://www.javdatabase.com/movies/", "javdatabase_movies_page1.html", "https://www.javdatabase.com/movies/page/2/"},
-		{"javdatabase page 2", JAVDatabaseAdapter{}, "https://www.javdatabase.com/movies/page/2/", "javdatabase_movies_page2.html", "https://www.javdatabase.com/movies/page/3/"},
-		{"javdatabase last page", JAVDatabaseAdapter{}, "https://www.javdatabase.com/movies/page/3/", "javdatabase_movies_page3.html", ""},
-		{"xcity", XCITYAdapter{}, "https://xxx.xcity.jp/idol/", "xcity_idol_list.html", "https://xxx.xcity.jp/idol/?page=2"},
-		{"javguru", JavGuruAdapter{}, "https://jav.guru/", "javguru_page1.html", "https://jav.guru/page/2/"},
-		{"cross-host next rejected", JavGuruAdapter{}, "https://mirror.example/", "javguru_page1.html", ""},
+		{"javdatabase page 1", JAVDatabaseAdapter{}, "https://www.javdatabase.com/movies/", "javdatabase/discovery/movies_page1.html", "https://www.javdatabase.com/movies/page/2/"},
+		{"javdatabase page 2", JAVDatabaseAdapter{}, "https://www.javdatabase.com/movies/page/2/", "javdatabase/discovery/movies_page2.html", "https://www.javdatabase.com/movies/page/3/"},
+		{"javdatabase last page", JAVDatabaseAdapter{}, "https://www.javdatabase.com/movies/page/3/", "javdatabase/discovery/movies_page3.html", ""},
+		{"xcity", XCITYAdapter{}, "https://xxx.xcity.jp/idol/", "xcity/discovery/idol_list.html", "https://xxx.xcity.jp/idol/?page=2"},
+		{"javguru", JavGuruAdapter{}, "https://jav.guru/", "javguru/discovery/page1.html", "https://jav.guru/page/2/"},
+		{"cross-host next rejected", JavGuruAdapter{}, "https://mirror.example/", "javguru/discovery/page1.html", ""},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			got := tc.adapter.NextPage(Document{FinalURL: tc.url, Body: []byte(fixture(t, tc.file))})

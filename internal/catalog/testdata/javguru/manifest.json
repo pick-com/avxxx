@@ -1,0 +1,6 @@
+{
+  "source": "javguru",
+  "fixtures": [
+    {"file": "discovery/page1.html", "url": "https://jav.guru/", "entity": "discovery", "origin": "synthetic"}
+  ]
+}

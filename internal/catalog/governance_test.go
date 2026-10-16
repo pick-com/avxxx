@@ -299,7 +299,7 @@ func TestIncrementalStopsAtWatermark(t *testing.T) {
 
 	// A new release appears at the head of the newest-first listing.
 	s.setOverride("/movies/", func(w http.ResponseWriter, _ *http.Request) {
-		fmt.Fprint(w, strings.Replace(fixture(t, "javdatabase_movies_page1.html"), `<div class="movie-card"><a href="/movies/abc-001/">`,
+		fmt.Fprint(w, strings.Replace(fixture(t, "javdatabase/discovery/movies_page1.html"), `<div class="movie-card"><a href="/movies/abc-001/">`,
 			`<div class="movie-card"><a href="/movies/abc-000/">ABC-000</a></div><div class="movie-card"><a href="/movies/abc-001/">`, 1))
 	})
 	s.mu.Lock()

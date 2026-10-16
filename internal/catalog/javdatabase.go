@@ -139,31 +139,44 @@ func number(v string) any {
 	m := re.FindString(v)
 	return m
 }
-func linkedLabel(d *goquery.Document, label string) string {
-	var out string
+
+// labelAnchors finds the value anchors of a "Label:" in either markup shape:
+// a label element followed by sibling anchors (<b>Studio:</b> <a>X</a>), or an
+// element whose own text starts with the label and holds the anchors
+// (<p>Studio: <a>X</a></p>). Returns nil when the label is absent.
+func labelAnchors(d *goquery.Document, label string) *goquery.Selection {
+	var out *goquery.Selection
 	d.Find("body *").EachWithBreak(func(_ int, s *goquery.Selection) bool {
-		if strings.TrimSpace(s.Text()) == label {
-			out = strings.TrimSpace(s.Next().Text())
-			return false
+		text := strings.TrimSpace(s.Text())
+		switch {
+		case text == label:
+			sib := s.NextAll()
+			out = sib.Filter("a").AddSelection(sib.Find("a"))
+		case strings.HasPrefix(text, label) && s.ChildrenFiltered("a").Length() > 0:
+			out = s.ChildrenFiltered("a")
+		default:
+			return true
 		}
-		return true
+		return false
 	})
 	return out
 }
+
+func linkedLabel(d *goquery.Document, label string) string {
+	if a := labelAnchors(d, label); a != nil {
+		return strings.TrimSpace(a.First().Text())
+	}
+	return ""
+}
 func linksAfter(d *goquery.Document, label string) []string {
 	out := []string{}
-	d.Find("body *").EachWithBreak(func(_ int, s *goquery.Selection) bool {
-		if strings.TrimSpace(s.Text()) == label {
-			s.NextAll().Find("a").Each(func(_ int, a *goquery.Selection) {
-				v := strings.TrimSpace(a.Text())
-				if v != "" {
-					out = append(out, v)
-				}
-			})
-			return false
-		}
-		return true
-	})
+	if a := labelAnchors(d, label); a != nil {
+		a.Each(func(_ int, a *goquery.Selection) {
+			if v := strings.TrimSpace(a.Text()); v != "" {
+				out = append(out, v)
+			}
+		})
+	}
 	return out
 }
 func movieRefs(d *goquery.Document) []string {

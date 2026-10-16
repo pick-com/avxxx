@@ -1,0 +1,6 @@
+{
+  "source": "xcity",
+  "fixtures": [
+    {"file": "discovery/idol_list.html", "url": "https://xxx.xcity.jp/idol/", "entity": "discovery", "origin": "synthetic"}
+  ]
+}

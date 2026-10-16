@@ -25,14 +25,10 @@ func main() {
 	}
 	defer s.Close()
 	registry := catalog.NewRegistry()
-	if e := registry.Register(catalog.NewJAVDatabaseAdapter()); e != nil {
-		log.Fatal(e)
-	}
-	if e := registry.Register(catalog.NewXCITYAdapter()); e != nil {
-		log.Fatal(e)
-	}
-	if e := registry.Register(catalog.NewJavGuruAdapter()); e != nil {
-		log.Fatal(e)
+	for _, a := range catalog.Adapters() {
+		if e := registry.Register(a); e != nil {
+			log.Fatal(e)
+		}
 	}
 	// The crawler identifies itself honestly, with a contact operators can
 	// use (CATALOG_CONTACT or CATALOG_USER_AGENT). Without one, catalog jobs

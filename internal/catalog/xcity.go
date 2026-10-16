@@ -94,12 +94,28 @@ func xcityClassify(raw string) (EntityType, string) {
 	u, _ := url.Parse(raw)
 	parts := strings.Split(strings.Trim(u.Path, "/"), "/")
 	for i, p := range parts {
-		if p == "idol" && i+1 < len(parts) && parts[i+1] != "" {
-			return Performer, parts[i+1]
+		if p != "idol" && p != "title" {
+			continue
 		}
-		if p == "title" && i+1 < len(parts) && parts[i+1] != "" {
-			return Release, parts[i+1]
+		key := ""
+		if i+1 < len(parts) {
+			key = parts[i+1]
 		}
+		// Detail pages are /idol/detail/<id>/ and /title/detail/<id>/: the
+		// id, not the literal "detail", is the source key.
+		if key == "detail" {
+			key = ""
+			if i+2 < len(parts) {
+				key = parts[i+2]
+			}
+		}
+		if key == "" {
+			continue
+		}
+		if p == "idol" {
+			return Performer, key
+		}
+		return Release, key
 	}
 	return "", ""
 }
