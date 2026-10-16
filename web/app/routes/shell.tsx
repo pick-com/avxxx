@@ -1,5 +1,8 @@
 import {useEffect, useState} from 'react';
-import {Outlet, useLocation, useMatches, useNavigate} from 'react-router';
+import {Outlet, useMatches, useRouteLoaderData} from 'react-router';
+import type {RootData} from '../root';
+import NotFound from './not-found';
+import {useLocation, useNavigate} from '../lib/nav';
 import {BottomTabs} from '../components/BottomTabs';
 import {Footer} from '../components/Footer';
 import {NetworkBanner} from '../components/NetworkBanner';
@@ -35,7 +38,8 @@ function ShellFrame() {
   const t = useT();
   const mini = useMiniActive();
   const matches = useMatches();
-  const immersive = matches.some(m => (m.handle as ShellHandle | undefined)?.immersive);
+  const root = useRouteLoaderData<RootData>('root');
+  const immersive = !root?.notFound && matches.some(m => (m.handle as ShellHandle | undefined)?.immersive);
   const location = useLocation();
   const wide = useMediaQuery('(min-width: 1200px)');
   const mobile = useMediaQuery('(max-width: 767px)');
@@ -87,7 +91,8 @@ function ShellFrame() {
         <SideNav variant={variant} />
         {variant === 'overlay' && <button type="button" className="nav-backdrop" aria-label={t('nav.closeOverlay')} onClick={() => setMode('auto')} />}
         <main id="main" className="shell-main" tabIndex={-1}>
-          <Outlet />
+          {/* /foo/... where foo is not a language: 404 from the root loader. */}
+          {root?.notFound ? <NotFound /> : <Outlet />}
           {!immersive && <Footer />}
         </main>
       </div>

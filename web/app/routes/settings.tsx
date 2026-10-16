@@ -1,5 +1,6 @@
 import {useEffect, useState, type ReactNode} from 'react';
-import {Link, useLocation, useNavigate, useSearchParams} from 'react-router';
+import {useSearchParams} from 'react-router';
+import {Link, useLocation, useNavigate} from '../lib/nav';
 import {Icon, type IconName} from '../components/Icon';
 import {EmptyState, ErrorBanner, BlockSkeleton} from '../components/States';
 import {PushDeviceRow} from '../components/PushOptIn';

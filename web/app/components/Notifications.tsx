@@ -1,5 +1,5 @@
 import {useCallback, useEffect, useId, useRef, useState} from 'react';
-import {Link, useLocation} from 'react-router';
+import {Link, useLocation} from '../lib/nav';
 import {getNotifications, getUnreadCount, isAbort, isMissingEndpoint, markNotificationsRead, type NotificationItem, type NotificationRelease} from '../lib/api';
 import {useAuth} from '../lib/auth';
 import {timeAgo} from '../lib/format';

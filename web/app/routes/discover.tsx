@@ -1,23 +1,129 @@
-import {Link, useSearchParams} from 'react-router';
+import {data, useLoaderData, useSearchParams, type LoaderFunctionArgs, type MetaFunction} from 'react-router';
+import {serverApi} from '../lib/api.server';
+import {routeLang} from '../lib/langs';
+import {breadcrumbs, seoMeta, type SeoHandle} from '../lib/seo';
+import {Link} from '../lib/nav';
 import {PerformerChip, SectionHeader} from '../components/Cards';
 import {RecommendedPerformers} from '../components/PerformerRecs';
 import {parsePeriod, PeriodTabs, TrendingBoard} from '../components/Trending';
 import {Icon} from '../components/Icon';
 import {LoadMore} from '../components/Paging';
-import {FilterBar, ReleaseResults} from '../components/ReleaseFilters';
+import {FilterBar, RELEASE_PAGE_SIZE, ReleaseResults} from '../components/ReleaseFilters';
 import {CardGridSkeleton, EmptyState, ErrorBanner} from '../components/States';
-import {listMakers, listPerformerPage, listTags, type PerformerListItem, type PerformerSort, type ReleaseFilter} from '../lib/api';
+import {listMakers, listPerformerPage, listTags, query, toPage, type LangCode, type Maker, type Page, type PerformerListItem, type PerformerSort, type Release, type ReleaseFilter, type Tag} from '../lib/api';
 import {formatCount, formatYear} from '../lib/format';
-import {t, useT} from '../lib/i18n';
+import {t, useI18n, useT} from '../lib/i18n';
 import type {MessageKey} from '../lib/messages.zh-CN';
 import {DURATION_BUCKETS, RELEASE_SORTS, discoverHref, durationLabel, parseReleaseFilter, withFilter, yearOptions} from '../lib/releaseFilter';
 import {useRecsAvailable} from '../lib/recs';
 import {useAsync} from '../lib/useAsync';
 import {usePaged} from '../lib/usePaged';
 
-export const meta = () => [{title: t('title.discover')}];
+export const handle: SeoHandle = {seo: true};
 
 type Tab = 'trending' | 'new' | 'categories' | 'actors';
+
+// Server rendering (PRD 13 SEO): the category pages. The loader fetches what
+// the requested tab shows first (新上线 / a tag or maker list, 分类 facets,
+// 演员库), keyed by the query string so the page only uses it for that URL.
+type DiscoverLoad = {
+  lang: LangCode;
+  search: string;
+  releases?: Page<Release>;
+  tags?: Tag[];
+  makers?: Maker[];
+  performers?: Page<PerformerListItem>;
+};
+
+const rawTab = (params: URLSearchParams): Tab => {
+  const raw = params.get('tab');
+  return raw === 'categories' || raw === 'actors' || raw === 'trending' ? raw : 'new';
+};
+const actorSort = (params: URLSearchParams): PerformerSort => {
+  const raw = params.get('sort');
+  return raw === 'name' || raw === 'newest_work' ? raw : 'works';
+};
+
+export async function loader({params, request}: LoaderFunctionArgs) {
+  const lang = routeLang(params);
+  if (!lang) return null;
+  const url = new URL(request.url);
+  const opts = {lang, signal: request.signal};
+  type Items<T> = {items: T[] | null; next_cursor?: string | null};
+  const body: DiscoverLoad = {lang, search: url.searchParams.toString()};
+  const tab = rawTab(url.searchParams);
+  const fail = () => undefined;
+  if (tab === 'new') {
+    const filter = parseReleaseFilter(url.searchParams);
+    const q = query({...filter, sort: filter.sort && filter.sort !== 'newest' ? filter.sort : undefined, limit: RELEASE_PAGE_SIZE});
+    [body.releases, body.tags] = await Promise.all([
+      serverApi<Items<Release>>(`releases${q}`, opts).then(toPage, fail),
+      filter.tag ? serverApi<Items<Tag>>('tags?limit=200', opts).then(d => d.items ?? [], fail) : undefined,
+    ]);
+    if (!body.releases) return data(body, {status: 503});
+  } else if (tab === 'categories') {
+    [body.tags, body.makers] = await Promise.all([
+      serverApi<Items<Tag>>('tags?limit=100', opts).then(d => d.items ?? [], fail),
+      serverApi<Items<Maker>>('makers?limit=50', opts).then(d => d.items ?? [], fail),
+    ]);
+  } else if (tab === 'actors') {
+    const sort = actorSort(url.searchParams);
+    body.performers = await serverApi<Items<PerformerListItem>>(`performers${query({sort: sort === 'name' ? undefined : sort, limit: 60})}`, opts).then(toPage, fail);
+  }
+  return body;
+}
+
+export const clientLoader = () => null;
+
+/** This URL's loader data, when it was fetched for the current query and content language. */
+function useDiscoverLoad(): DiscoverLoad | null {
+  const loaded = useLoaderData<typeof loader>() as DiscoverLoad | null;
+  const [params] = useSearchParams();
+  const {contentLang} = useI18n();
+  if (!loaded || loaded.lang !== contentLang) return null;
+  return loaded.search === params.toString() ? loaded : null;
+}
+
+/**
+ * Canonical discover URLs: one per tab, tag or maker. Other combinations
+ * (year, duration, sort, several facets) are noindex and point at their
+ * canonical list through links only.
+ */
+export const meta: MetaFunction<typeof loader> = ({location, matches, data: d}) => {
+  const params = new URLSearchParams(location.search);
+  const tab = rawTab(params);
+  const filter = parseReleaseFilter(params);
+  const load = d as DiscoverLoad | null | undefined;
+  const facets = [filter.tag, filter.maker, filter.performer, filter.year, filter.min_runtime, filter.max_runtime].filter(v => v !== undefined).length;
+  const crumbs = (name: string, path: string) =>
+    breadcrumbs(matches, [
+      [t('seo.breadcrumbHome'), '/'],
+      [t('seo.breadcrumbDiscover'), '/discover'],
+      [name, path],
+    ]);
+  if (tab === 'categories') {
+    const path = '/discover?tab=categories';
+    return seoMeta({matches, path, title: t('title.named', {name: t('seo.discoverCategoriesTitle')}), description: t('seo.discoverCategoriesDescription'), jsonLd: [crumbs(t('seo.discoverCategoriesTitle'), path)]});
+  }
+  if (tab === 'actors') {
+    const path = '/discover?tab=actors';
+    return seoMeta({matches, path, title: t('title.named', {name: t('seo.discoverActorsTitle')}), description: t('seo.discoverActorsDescription'), noindex: params.has('sort'), jsonLd: [crumbs(t('seo.discoverActorsTitle'), path)]});
+  }
+  if (tab === 'trending') return seoMeta({matches, path: '/discover?tab=trending', title: t('title.trending'), noindex: true});
+  const extra = facets > 1 || !!filter.sort || params.has('cursor');
+  if (filter.tag && facets === 1) {
+    const name = load?.tags?.find(tag => tag.slug === filter.tag)?.name ?? filter.tag;
+    const path = `/discover?tag=${encodeURIComponent(filter.tag)}`;
+    const title = t('seo.discoverTagTitle', {tag: name});
+    return seoMeta({matches, path, title: t('title.named', {name: title}), description: t('seo.discoverTagDescription', {tag: name}), noindex: extra || (load?.releases && load.releases.items.length === 0), jsonLd: [crumbs(title, path)]});
+  }
+  if (filter.maker && facets === 1) {
+    const path = `/discover?maker=${encodeURIComponent(filter.maker)}`;
+    const title = t('seo.discoverMakerTitle', {maker: filter.maker});
+    return seoMeta({matches, path, title: t('title.named', {name: title}), description: t('seo.discoverMakerDescription', {maker: filter.maker}), noindex: extra || (load?.releases && load.releases.items.length === 0), jsonLd: [crumbs(title, path)]});
+  }
+  return seoMeta({matches, path: '/discover', title: t('title.discover'), description: t('seo.discoverDescription'), noindex: facets > 0 || extra});
+};
 const tabs: {key: Tab; label: MessageKey}[] = [
   {key: 'trending', label: 'nav.trending'},
   {key: 'new', label: 'nav.new'},
@@ -38,9 +144,11 @@ export default function Discover() {
   const raw = params.get('tab');
   const recs = useRecsAvailable(true);
   const tab: Tab = raw === 'categories' || raw === 'actors' || (raw === 'trending' && recs !== 'no') ? raw : 'new';
+  const heading = t(tabs.find(x => x.key === tab)?.label ?? 'nav.new');
 
   return (
     <div className="page discover">
+      <h1 className="sr-only">{heading}</h1>
       <Link to="/search" className="fake-search show-mobile">
         <Icon name="search" size={16} />
         {t('discover.searchHint')}
@@ -104,8 +212,9 @@ function BrowseReleases() {
   const t = useT();
   const [params, setParams] = useSearchParams();
   const filter = parseReleaseFilter(params);
+  const load = useDiscoverLoad();
   // Tag names for the active-filter chip; the URL carries the tag slug.
-  const tags = useAsync(signal => listTags(200, signal), [], !!filter.tag);
+  const tags = useAsync(signal => listTags(200, signal), [], !!filter.tag, load?.tags);
   const tagName = tags.data?.find(tag => tag.slug === filter.tag)?.name;
   const filtered = !!(filter.tag || filter.maker || filter.performer || filter.year || filter.min_runtime || filter.max_runtime);
 
@@ -144,6 +253,7 @@ function BrowseReleases() {
       />
       <ReleaseResults
         filter={filter}
+        initial={load?.releases}
         onClear={clear}
         empty={
           <EmptyState
@@ -167,8 +277,9 @@ function BrowseReleases() {
 
 function Categories() {
   const t = useT();
-  const tags = useAsync(signal => listTags(100, signal), []);
-  const makers = useAsync(signal => listMakers(50, signal), []);
+  const load = useDiscoverLoad();
+  const tags = useAsync(signal => listTags(100, signal), [], true, load?.tags);
+  const makers = useAsync(signal => listMakers(50, signal), [], true, load?.makers);
   const maxTag = Math.max(1, ...(tags.data ?? []).map(tag => tag.count));
   return (
     <>
@@ -247,7 +358,8 @@ function Actors() {
   const [params, setParams] = useSearchParams();
   const raw = params.get('sort');
   const sort: PerformerSort = raw === 'name' || raw === 'newest_work' ? raw : 'works';
-  const list = usePaged((cursor, signal) => listPerformerPage(sort, 60, cursor, undefined, signal), [sort]);
+  const load = useDiscoverLoad();
+  const list = usePaged((cursor, signal) => listPerformerPage(sort, 60, cursor, undefined, signal), [sort], true, load?.performers);
   // A backend without cursor pagination ignores sort and answers by name.
   const sortable = list.paged !== false;
   const shown = sortable ? sort : 'name';

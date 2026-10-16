@@ -1,5 +1,5 @@
 import {useEffect, useRef, useState, type KeyboardEvent, type PointerEvent as ReactPointerEvent} from 'react';
-import {Link, useNavigate} from 'react-router';
+import {Link, useNavigate} from '../lib/nav';
 import {Thumb} from '../components/Cards';
 import {Icon} from '../components/Icon';
 import {CardGridSkeleton, EmptyState, ErrorBanner} from '../components/States';

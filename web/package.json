@@ -7,7 +7,8 @@
     "dev": "react-router dev --host 127.0.0.1",
     "build": "tsc --noEmit && react-router build",
     "typecheck": "tsc --noEmit",
-    "preview": "vite preview --outDir dist/client --host 127.0.0.1"
+    "start": "node server.mjs",
+    "seo:check": "node scripts/seo-check.mjs"
   },
   "dependencies": {
     "@react-router/node": "7.18.4",
@@ -19,6 +20,7 @@
   },
   "devDependencies": {
     "@react-router/dev": "7.18.4",
+    "@types/node": "24.19.2",
     "@types/react": "19.2.2",
     "@types/react-dom": "19.2.2",
     "typescript": "5.9.3",

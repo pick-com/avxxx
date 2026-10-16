@@ -1,5 +1,5 @@
 import {useEffect} from 'react';
-import {useLocation, useNavigate} from 'react-router';
+import {useLocation, useNavigate} from './nav';
 
 /**
  * Merged entities: the API answers an old slug with 301 to the surviving

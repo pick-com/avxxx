@@ -1,5 +1,6 @@
 import {useEffect, useState} from 'react';
-import {Link, useNavigate, useSearchParams} from 'react-router';
+import {useSearchParams} from 'react-router';
+import {Link, useNavigate} from '../lib/nav';
 import {Avatar} from '../components/Cards';
 import {Icon} from '../components/Icon';
 import {CardGridSkeleton, ErrorBanner} from '../components/States';

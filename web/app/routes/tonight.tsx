@@ -1,5 +1,5 @@
 import {useCallback, useEffect, useMemo, useRef, useState} from 'react';
-import {useLocation, useNavigate} from 'react-router';
+import {useLocation, useNavigate} from '../lib/nav';
 import {Thumb} from '../components/Cards';
 import {Icon} from '../components/Icon';
 import {BlockSkeleton, EmptyState, ErrorBanner} from '../components/States';

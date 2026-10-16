@@ -1,11 +1,26 @@
 import {useEffect} from 'react';
-import {Link, useParams} from 'react-router';
+import {data, useParams, type LoaderFunctionArgs, type MetaFunction} from 'react-router';
+import {Link} from '../lib/nav';
 import {PerformerRequestForm} from '../components/PerformerRequestForm';
 import {EmptyState} from '../components/States';
 import {t, useT} from '../lib/i18n';
 import {LEGAL_DOCS, legalDoc} from '../lib/legal';
+import {seoMeta, type SeoHandle} from '../lib/seo';
 
-export const meta = () => [{title: t('title.legal')}];
+export const handle: SeoHandle = {seo: true};
+
+// Static documents: the loader only sets 404 for an unknown document.
+export function loader({params}: LoaderFunctionArgs) {
+  return legalDoc(params.doc ?? '') ? null : data(null, {status: 404});
+}
+export const clientLoader = () => null;
+
+export const meta: MetaFunction = ({params, matches}) => {
+  const doc = legalDoc(params.doc ?? '');
+  const path = `/legal/${encodeURIComponent(params.doc ?? '')}`;
+  if (!doc) return seoMeta({matches, path, title: t('title.legal'), noindex: true});
+  return seoMeta({matches, path, title: t('title.named', {name: doc.title}), description: doc.summary.join(' ') || t('seo.legalDescription', {title: doc.title}), ogType: 'article'});
+};
 
 // LegalPage template: document list, 简要版, sections with a table of contents.
 // All text is placeholder until counsel signs off (PRD 15).

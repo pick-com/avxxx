@@ -1,5 +1,5 @@
 import {useEffect, useMemo, useRef, useState} from 'react';
-import {Link} from 'react-router';
+import {Link} from '../lib/nav';
 import {Avatar, ReleaseRow, Thumb} from '../components/Cards';
 import {LoadMore} from '../components/Paging';
 import {LaterButton, ReserveButton} from '../components/SocialButtons';

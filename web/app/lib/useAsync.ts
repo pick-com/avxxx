@@ -1,4 +1,4 @@
-import {useCallback, useEffect, useState} from 'react';
+import {useCallback, useEffect, useRef, useState} from 'react';
 import {isAbort} from './api';
 
 export type AsyncState<T> = {
@@ -15,15 +15,27 @@ const SKELETON_DELAY_MS = 300;
 /**
  * Runs `load` whenever `deps` change (and on reload()). Stale responses are
  * dropped via AbortController. Pass enabled=false to skip loading entirely.
+ *
+ * `initial` is data a route loader already fetched for these deps (server
+ * rendering): the first render shows it, so the hydrating client matches the
+ * server HTML, and no request is made until deps change or reload() runs.
  */
 const sameDeps = (a: unknown[] | undefined, b: unknown[]) => !!a && a.length === b.length && a.every((v, i) => Object.is(v, b[i]));
 
-export function useAsync<T>(load: (signal: AbortSignal) => Promise<T>, deps: unknown[], enabled = true): AsyncState<T> {
-  const [state, setState] = useState<{data?: T; error?: Error; loading: boolean; deps?: unknown[]}>({loading: enabled});
+export function useAsync<T>(load: (signal: AbortSignal) => Promise<T>, deps: unknown[], enabled = true, initial?: T): AsyncState<T> {
+  const seeded = initial !== undefined && enabled;
+  const [state, setState] = useState<{data?: T; error?: Error; loading: boolean; deps?: unknown[]}>(() =>
+    seeded ? {data: initial, loading: false, deps: [...deps, enabled]} : {loading: enabled},
+  );
+  const seedDeps = useRef<unknown[] | null>(seeded ? [...deps, enabled] : null);
   const [slow, setSlow] = useState(false);
   const [nonce, setNonce] = useState(0);
 
   useEffect(() => {
+    if (seedDeps.current) {
+      if (nonce === 0 && sameDeps(seedDeps.current, [...deps, enabled])) return;
+      seedDeps.current = null;
+    }
     if (!enabled) {
       setState({loading: false});
       setSlow(false);

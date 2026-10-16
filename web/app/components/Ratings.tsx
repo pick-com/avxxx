@@ -1,5 +1,5 @@
 import {useEffect, useId, useState} from 'react';
-import {Link, useLocation} from 'react-router';
+import {Link, useLocation} from '../lib/nav';
 import {isAbort} from '../lib/api';
 import {track} from '../lib/analytics';
 import {useAuth} from '../lib/auth';

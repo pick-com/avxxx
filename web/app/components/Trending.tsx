@@ -1,5 +1,5 @@
 import {useRef, useState} from 'react';
-import {Link} from 'react-router';
+import {Link} from '../lib/nav';
 import {formatCompact, formatDate, formatRuntime} from '../lib/format';
 import {useT} from '../lib/i18n';
 import {getTrending, movementLabel, PERIODS, performerName, reasonText, recTitle, recsMissing, type HeatItem, type Movement, type Period, type TrendingItem} from '../lib/recs';

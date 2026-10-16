@@ -8,33 +8,37 @@
 // a day in negative-offset time zones.
 
 import {t} from './i18n';
+import {renderScope} from './scope';
 
-let locale = 'zh-CN';
-const isZh = () => locale === 'zh-CN' || locale === 'zh-TW';
+let browserLocale = 'zh-CN';
+// The server render's language comes from its request scope (lib/scope.ts).
+const current = () => renderScope()?.lang ?? browserLocale;
+const isZh = () => current() === 'zh-CN' || current() === 'zh-TW';
 
 export function setFormatLocale(next: string) {
-  locale = next || 'zh-CN';
+  browserLocale = next || 'zh-CN';
 }
 
 const cache = new Map<string, unknown>();
-function cached<T>(key: string, make: () => T): T {
+function cached<T>(key: string, make: (locale: string) => T): T {
+  const locale = current();
   const k = `${locale}|${key}`;
   let v = cache.get(k) as T | undefined;
   if (!v) {
-    v = make();
+    v = make(locale);
     cache.set(k, v);
   }
   return v;
 }
 
 const dateFormat = () =>
-  cached('date', () => new Intl.DateTimeFormat(locale, {year: 'numeric', month: '2-digit', day: '2-digit', timeZone: 'UTC'}));
-const localDateFormat = () => cached('localDate', () => new Intl.DateTimeFormat(locale, {year: 'numeric', month: '2-digit', day: '2-digit'}));
-const numberFormat = () => cached('number', () => new Intl.NumberFormat(locale));
-const compactFormat = () => cached('compact', () => new Intl.NumberFormat(locale, {notation: 'compact', maximumFractionDigits: 1}));
-const relativeFormat = () => cached('relative', () => new Intl.RelativeTimeFormat(locale, {numeric: 'auto'}));
-const scheduleFormat = () => cached('schedule', () => new Intl.DateTimeFormat(locale, {month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit'}));
-const minutesFormat = () => cached('minutes', () => new Intl.NumberFormat(locale, {style: 'unit', unit: 'minute', unitDisplay: 'long'}));
+  cached('date', locale => new Intl.DateTimeFormat(locale, {year: 'numeric', month: '2-digit', day: '2-digit', timeZone: 'UTC'}));
+const localDateFormat = () => cached('localDate', locale => new Intl.DateTimeFormat(locale, {year: 'numeric', month: '2-digit', day: '2-digit'}));
+const numberFormat = () => cached('number', locale => new Intl.NumberFormat(locale));
+const compactFormat = () => cached('compact', locale => new Intl.NumberFormat(locale, {notation: 'compact', maximumFractionDigits: 1}));
+const relativeFormat = () => cached('relative', locale => new Intl.RelativeTimeFormat(locale, {numeric: 'auto'}));
+const scheduleFormat = () => cached('schedule', locale => new Intl.DateTimeFormat(locale, {month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit'}));
+const minutesFormat = () => cached('minutes', locale => new Intl.NumberFormat(locale, {style: 'unit', unit: 'minute', unitDisplay: 'long'}));
 
 // zh-CN keeps the design's YYYY-MM-DD; other locales use their own order.
 const dashed = (text: string) => (isZh() ? text.replace(/\//g, '-') : text);
@@ -70,7 +74,7 @@ export function ageAt(birth: string | null | undefined, at: string | null | unde
 /** 120 分钟 / 120 minutes. */
 export function formatRuntime(minutes: number | null | undefined): string {
   if (!minutes || minutes <= 0) return '';
-  return locale === 'zh-CN' ? `${minutes} 分钟` : minutesFormat().format(minutes);
+  return current() === 'zh-CN' ? `${minutes} 分钟` : minutesFormat().format(minutes);
 }
 
 export function formatClock(totalSeconds: number): string {

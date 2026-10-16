@@ -1,5 +1,5 @@
 import {useEffect, useState} from 'react';
-import {Link} from 'react-router';
+import {Link} from '../lib/nav';
 import {useAuth} from '../lib/auth';
 import {useT} from '../lib/i18n';
 import {getPerformerRecs, performerName, reasonText, type PerformerRecItem} from '../lib/recs';
