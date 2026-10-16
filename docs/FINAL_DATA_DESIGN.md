@@ -519,7 +519,7 @@ GET /api/series
 - SOD、IDEA POCKET、MOODYZ、S1、Madonna、Prestige 等厂商目录：厂商专属演员、系列和新品信息。IDEA POCKET 的官方演员目录按假名列出日文名、罗马字名和新品状态，可作为厂商 adapter 的参考结构。
 - JavDB：作品交叉验证和标签补充。
 - ThePornDB：演员、作品/场景、厂商、导演和标签的 API 补充，但需要 token 和独立授权评估。
-- javinfo：统一查询 DMM/FANZA、JAV Database、JAVLibrary 等来源，适合批量查询和 fallback，不作为本站唯一事实源。
+- javinfo：统一查询 DMM/FANZA、JAV Database、JAVLibrary 等来源，适合批量查询和 fallback，不作为本站唯一事实源。（2026-10-16 评估结论：拒绝，不接入，见 `docs/SOURCE_EVALUATIONS.md`。）
 - IAFD：演员职业履历和历史作品交叉验证，需单独确认商业授权。
 
 官方来源决定作品身份的优先级；聚合站用于发现、补充和校验；第三方 API 用于减少 HTML 适配器维护。所有来源仍需记录条款、授权、配额和抓取方式。

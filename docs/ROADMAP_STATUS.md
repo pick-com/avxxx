@@ -1,8 +1,8 @@
 # AVXXX Roadmap 状态
 
-> 状态更新时间：2026-10-16（#92 之后）
+> 状态更新时间：2026-10-16（#92 之后；厂商目录 adapter、javinfo 评估）
 >
-> 当前完成度约为 **90%**（按本页勾选项计算：84 项中 74 项已完成；DMM、ThePornDB 两项代码已完成、只差凭据实测，计入后 76/84 ≈ 90%）。基础架构、目录采集、调度、WebApp 浏览、Javtiful 播放映射、审核后台（含 checkpoint 页面，#88）、图片存储（#91）、部署/备份/恢复手册与恢复演练、全量验收套件（#92）已经完成。剩余项基本都需要外部输入：来源凭据（DMM、ThePornDB）、VPN/授权确认（XSList、JAVLibrary）、条款/法务结论（JavDB、IAFD、DMM 图片转存）、从线上保存的真实页面（每来源 20 演员 / 100 作品 fixture）和生产值班通道配置；真正还需开发的只有厂商目录 adapter 和 javinfo 评估。
+> 当前完成度约为 **93%**（按本页勾选项计算：84 项中 75 项已完成；DMM、ThePornDB 两项代码已完成、只差凭据实测，厂商目录 adapter 代码已完成、只差真实页面与条款审核，计入后 78/84 ≈ 93%）。基础架构、目录采集、调度、WebApp 浏览、Javtiful 播放映射、审核后台（含 checkpoint 页面，#88）、图片存储（#91）、部署/备份/恢复手册与恢复演练、全量验收套件（#92）已经完成。剩余项基本都需要外部输入：来源凭据（DMM、ThePornDB）、VPN/授权确认（XSList、JAVLibrary）、条款/法务结论（JavDB、IAFD、DMM 图片转存）、从线上保存的真实页面（每来源 20 演员 / 100 作品 fixture）和生产值班通道配置；不再有不依赖外部输入的开发项（厂商目录 adapter 已实现，javinfo 已评估为拒绝）。
 >
 > 注意：门禁上线后，`license_status` 未审核（`review_required` / `manual_only`）或缺少 `terms_reviewed_at` / `terms_url` 的目录来源不再自动抓取，只能手动创建 verify 任务；需管理员通过 `PUT /api/admin/sources/{id}/license` 记录条款审核后才恢复增量。爬虫必须配置 `CATALOG_CONTACT`（User-Agent 联系方式），否则目录任务以 `config_error` 失败。
 
@@ -60,11 +60,11 @@
 - [ ] XSList（VPN/授权条件确认后启用）
 - [ ] JAVLibrary（VPN/授权条件确认后启用）
 - [ ] DMM/FANZA 官方目录或 Affiliate API — **已实现，待凭据实测**：`dmm` adapter（ItemList digital/videoa + ActressSearch `sort=-id`）已接入 baseline/增量/verify 阶段（增量用增量 checkpoint 水位推导 `gte_date` 并按头部记录停止，baseline 独立游标），走 robots/许可门禁；官方目录（优先级 10）按字段策略胜出作品身份字段。来源以 `official_api` 默认停用、`terms_reviewed_at` 为空：配置 `DMM_API_ID`/`DMM_AFFILIATE_ID`/`CATALOG_CONTACT` 后先跑 `go run ./cmd/scraper -dry-run -adapter dmm` 用真实响应核对字段（含 `sort=date`/`sort=-id` 排序方向），再记录条款审核并启用
-- [ ] 厂商目录 adapter
+- [ ] 厂商目录 adapter — **已实现，待真实页面与条款审核**：一个配置驱动的 `maker:<slug>` adapter（`internal/catalog/maker.go`），每个厂商一份 profile（`maker_profiles.json`，可用 `MAKER_PROFILES_FILE` 覆盖/新增）：列表/详情/演员 URL 正则、CSS 选择器（`@attr` 取属性）、日期格式、品番前缀 `code_pattern`（只收本厂商作品，外厂商作品在发现阶段丢弃/解析时跳过）。走通用 baseline/增量（新到旧列表、头部水位）/verify、robots、联系 UA、按来源限速与许可门禁；`official_maker` 层级（优先级 20）在本厂商作品上胜过 JAV Database 和聚合站；作用域恒为 `maker:<slug>`。已附 S1、IDEA POCKET 两个 profile，选择器只按合成 fixture 编写（`testdata/maker-*/README.md`）；migration 034 以 `review_required`、`terms_reviewed_at`/`terms_url` 为空、停用状态播种。启用步骤见 `docs/MAKER_CATALOG.md`（保存真实页面 → 调整 profile → `-dry-run -adapter maker:<slug>` → verify → 记录条款审核 → 启用）
 - [ ] JavDB、IAFD、ThePornDB、javinfo 交叉验证 adapter
   - [ ] ThePornDB — **已实现，待凭据实测**：`theporndb` adapter 按官方 OpenAPI（`https://api.theporndb.net/specs?openapi.json`，文档 `https://api.theporndb.net/docs`）映射 `GET /jav`、`/jav/{id}`、`/performers`、`/performers/{id}`，`THEPORNDB_API_TOKEN` 只以 Bearer 头发往 API 主机并全程脱敏。主模式是 `crosscheck` 任务（cmd/scheduler 每 `CROSSCHECK_EVERY` 入队、cmd/audit 执行）：对缺发售日/厂商/演员/封面证据或有待审字段冲突的作品按品番查询，唯一精确品番匹配才保存为证据，尝试记录在 `crosscheck_attempts`（未找到 14 天、3 次后 60 天重试；错误指数退避）；次要模式是 `GET /jav`（按发售日倒序）的 baseline/增量/verify 抓取。`third_party_api` 层级（优先级 50）只附着到已有作品/演员、只补缺字段、不单独开字段冲突、不新建演员，作品已有他源署名时不加署名；ThePornDB 演员 UUID 写入 `performer_external_ids(namespace='theporndb_performer')`。来源（migration 032）以 `official_api` 默认停用、`terms_reviewed_at` 为空，API 文档未给出条款/署名要求，审核时需确认。配置 token 与 `CATALOG_CONTACT` 后先跑 `go run ./cmd/scraper -dry-run -adapter theporndb` 核对 JAV 品番所在字段（`sku`/`external_id`）、`duration` 单位和 `meta.last` 含义，再记录条款审核并启用
   - [ ] JavDB、IAFD：没有官方 API，条款未确认前保持在许可门禁后，只能人工 verify，不实现自动抓取
-  - [ ] javinfo：待评估
+  - [x] javinfo：已评估，**拒绝**（付费的实时抓取转售 API，无服务条款与数据许可，上游含 DMM/JAV Database（已直接接入）、JavDB/JAVLibrary（自身待审核）与 MissAV 等盗版源，会丢失字段来源；详见 `docs/SOURCE_EVALUATIONS.md`）
 
 ### 增量调度
 
@@ -137,12 +137,12 @@ JAV Database adapter 已接入 scraper，可完成发现、详情抓取、解析
 
 ## 下一步执行顺序
 
-以下各项都在等外部输入，只有第 4 项是纯开发工作：
+以下各项都在等外部输入：
 
 1. 管理员为现有目录来源完成条款审核（`PUT /api/admin/sources/{id}/license`）并配置 `CATALOG_CONTACT`，否则目录来源只能运行 verify 任务。
 2. 为 JAV Database、XCITY、Jav.Guru 各保存 20 个演员、100 个作品页面作为 recorded fixture；`make fixturecheck` 达标后在 CI 中加 `-strict`。
 3. 拿到凭据后实测 DMM（`DMM_API_ID`/`DMM_AFFILIATE_ID`）和 ThePornDB（`THEPORNDB_API_TOKEN`）：dry-run → 条款审核 → 启用；DMM 图片转存等法务确认。
-4. 实现厂商目录 adapter（官方来源字段优先级最高）；评估 javinfo。
+4. 厂商目录（S1、IDEA POCKET）：按 `docs/MAKER_CATALOG.md` 保存真实页面、校准 profile、dry-run/verify、记录条款审核后启用；其他厂商按需新增 profile。
 5. XSList、JAVLibrary 等 VPN/授权条件确认后启用；JavDB、IAFD 等条款确认前保持人工 verify。
 6. 在生产主机配置值班通道（`ALERT_*`、`monitoring_enabled`、`backup_cron_enabled`），跑 `npm run seo:check`（带 `ADMIN_TOKEN`）让 R-SEO 拿到页面检查结果，并完成正式环境验收。
 
