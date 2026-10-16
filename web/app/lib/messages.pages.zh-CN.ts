@@ -608,13 +608,24 @@ export const pagesZhCN = {
   'playlists.by': '来自 {name}',
   'playlists.addedOn': '收藏于 {date}',
 
-  // legal page chrome (document bodies stay in lib/legal.ts)
+  // legal page chrome (document bodies are legal_documents rows, GET /api/legal/{kind})
   'legal.notFound': '没有找到这份文件',
   'legal.notFoundBody': '链接可能有误。',
   'legal.viewPrivacy': '查看隐私政策',
   'legal.docs': '法律文件',
   'legal.draft': '[待律师审阅] 本页为模板，正文尚未定稿，不构成正式条款。',
-  'legal.dates': '生效日期 [待定] · 上次更新 [待定]',
+  'legal.dates': '第 {version} 版 · {date} 起生效',
+  'legal.version': '版本',
+  'legal.versionOption': '第 {version} 版（{date}）',
+  'legal.versionCurrent': '· 当前',
+  'legal.oldVersion': '你正在查看历史版本（第 {version} 版），它已不再生效。',
+  'legal.upcomingVersion': '这是新版本，将于 {date} 起生效；在此之前仍以当前版本为准。',
+  'legal.viewCurrent': '查看当前版本',
+  'legal.fallback': '这份文件还没有{lang}版本，下面显示的是{served}版本。',
+  'legal.unavailable': '法律文件暂时无法加载，请稍后重试。',
+  'legal.copyrightCta': '提交版权投诉',
+  'legal.copyrightCtaBody': '权利人或其代理人可以提交侵权通知；内容被下架的一方可以提交反通知。提交后会得到一个编号，用来查询处理进度。',
+  'legal.copyrightCtaLink': '前往版权投诉页',
   'legal.tldr': '简要版',
   'legal.toc': '本页目录',
 } as const;

@@ -59,5 +59,6 @@ export default [
     route('admin/media-links', 'routes/admin-media-links.tsx'),
     route('admin/reports/completeness', 'routes/admin-completeness.tsx'),
     route('admin/ops', 'routes/admin-ops.tsx'),
+    route('admin/legal', 'routes/admin-legal.tsx'),
   ]),
 ] satisfies RouteConfig;

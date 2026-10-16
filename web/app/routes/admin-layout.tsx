@@ -30,6 +30,7 @@ const ICONS = {
   completeness: 'M4 20V10M10 20V4M16 20v-7M22 20H2',
   links: 'M10 14a4 4 0 005.7 0l3-3a4 4 0 00-5.7-5.7l-1 1M14 10a4 4 0 00-5.7 0l-3 3a4 4 0 005.7 5.7l1-1',
   ops: 'M4 5h16v14H4zM4 9h16M9 13h6M9 16h4',
+  legal: 'M7 3h7l5 5v13H7zM14 3v5h5M10 13h6M10 17h6',
 };
 
 type Badge = {n: number; tone: 'red' | 'amber' | 'plain'} | null;
@@ -155,6 +156,10 @@ export default function AdminLayout() {
           {to: '/admin/search', label: '搜索词情报', icon: 'search'},
           {to: '/admin/i18n', label: '翻译管理', icon: 'i18n'},
         ],
+      },
+      {
+        title: '合规',
+        items: [{to: '/admin/legal', label: '法律文本', icon: 'legal'}],
       },
     ];
     return g;

@@ -1,0 +1,142 @@
+/* Compliance pages (PRD 15): LegalPage versions, the copyright notice /
+   counter-notice / lookup page, the feedback form and help page. Forms reuse
+   the .perf-req styles from requests.css. */
+
+.legal-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 16px;
+}
+
+.legal-version {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.legal-version .input {
+  min-height: 44px;
+  padding: 8px 12px;
+  border-radius: 10px;
+  border: 1px solid var(--line2);
+  background: var(--bg);
+  color: var(--text);
+  font: inherit;
+  font-size: 14px;
+}
+
+.legal-notice {
+  margin: 0;
+  padding: 10px 14px;
+  border-radius: 10px;
+  background: var(--surface2);
+  color: var(--text2);
+}
+
+.legal-md {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.legal-md .legal-h2 {
+  margin: 12px 0 0;
+  font-size: 17px;
+  scroll-margin-top: calc(var(--topbar-h) + 16px);
+}
+
+.legal-md .legal-h3 {
+  margin: 4px 0 0;
+  font-size: 15px;
+  scroll-margin-top: calc(var(--topbar-h) + 16px);
+}
+
+.legal-md .legal-p,
+.legal-md .legal-list {
+  margin: 0;
+  color: var(--text2);
+}
+
+.legal-md .legal-list {
+  padding-left: 20px;
+}
+
+/* Copyright / feedback / help pages */
+
+.support-page {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  max-width: 760px;
+}
+
+.support-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.support-tabs .chip[aria-selected='true'] {
+  background: var(--sel);
+  color: var(--text);
+  font-weight: 700;
+}
+
+.support-check {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  color: var(--text);
+  font-size: 14px;
+  line-height: 1.6;
+}
+
+.support-check input {
+  margin-top: 4px;
+  accent-color: var(--accent);
+  flex: none;
+}
+
+.support-ticket {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 18px;
+  letter-spacing: 0.04em;
+  user-select: all;
+}
+
+.support-links {
+  display: grid;
+  gap: 8px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.support-link {
+  min-height: 44px;
+  padding: 12px 14px;
+  border-radius: 12px;
+  border: 1px solid var(--line);
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  color: var(--text);
+}
+
+.support-link:hover {
+  background: var(--surface2);
+}
+
+.support-link .muted {
+  font-size: 13px;
+}
+
+/* 451: taken down for legal reasons */
+.legal-unavailable {
+  max-width: 560px;
+}
+
+@media (max-width: 640px) {
+  .support-links {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
