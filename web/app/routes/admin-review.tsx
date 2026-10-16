@@ -3,6 +3,7 @@ import {Link} from 'react-router';
 import {ErrorBanner} from '../components/States';
 import {adminConflicts, adminIdentityCandidates, adminResolveConflict, type Conflict, type IdentityCandidate} from '../lib/api';
 import {useAdmin} from '../lib/adminContext';
+import {adminErrorText} from '../lib/adminApi';
 
 export const meta = () => [{title: 'REEL · 字段冲突'}];
 
@@ -26,7 +27,7 @@ export default function AdminReview() {
       setCandidates(i);
       setLoaded(true);
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : String(cause));
+      setError(adminErrorText(cause));
     } finally {
       setBusy(false);
     }
@@ -43,7 +44,7 @@ export default function AdminReview() {
       await adminResolveConflict(id, value, 'Resolved from admin review');
       await load();
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : String(cause));
+      setError(adminErrorText(cause));
     }
   };
 
@@ -57,12 +58,12 @@ export default function AdminReview() {
             {busy ? '加载中…' : '刷新'}
           </button>
         </div>
-        {error && <ErrorBanner error={error.includes('需要登录') ? '管理员令牌无效或未设置' : error} onRetry={load} />}
+        {error && <ErrorBanner error={error} onRetry={load} />}
 
         <section className="admin-card">
           <h2>待处理字段冲突（{conflicts.length}）</h2>
           {conflicts.length === 0 ? (
-            <p className="muted">{loaded ? '暂无待处理冲突。' : '请先输入管理员令牌。'}</p>
+            <p className="muted">{loaded ? '暂无待处理冲突。' : busy ? '加载中…' : ''}</p>
           ) : (
             <div className="review-list">
               {conflicts.map(item => (
@@ -99,7 +100,7 @@ export default function AdminReview() {
             </Link>
           </div>
           {candidates.length === 0 ? (
-            <p className="muted">{loaded ? '暂无身份候选。' : '请先输入管理员令牌。'}</p>
+            <p className="muted">{loaded ? '暂无身份候选。' : busy ? '加载中…' : ''}</p>
           ) : (
             <div className="review-list">
               {candidates.map(item => (
