@@ -13,7 +13,9 @@ import (
 	"slices"
 	"strings"
 	"time"
-	_ "time/tzdata" // the runtime image (debian slim) has no zoneinfo; settings.timezone needs it
+	_ "time/tzdata"
+	"unicode"
+	"unicode/utf8" // the runtime image (debian slim) has no zoneinfo; settings.timezone needs it
 
 	"github.com/jackc/pgx/v5"
 )
@@ -96,7 +98,16 @@ type UserSettings struct {
 	NotifyDailyCap    int    `json:"notify_daily_cap"`
 	ReservationTiming string `json:"reservation_timing"`
 	PersonalizeRecs   bool   `json:"personalize_recs"`
+	// DanmakuBlockWords is the viewer's 屏蔽词 list (migration 045), applied
+	// in the player only.
+	DanmakuBlockWords []string `json:"danmaku_block_words"`
 }
+
+// Danmaku block word limits (migration 045 caps the count too).
+const (
+	MaxDanmakuBlockWords     = 100
+	MaxDanmakuBlockWordRunes = 20
+)
 
 // defaultNotifyPrefs: in-app for everything; push on by default only for the
 // first two kinds (PRD 7); email opt-in.
@@ -118,6 +129,7 @@ func DefaultSettings() UserSettings {
 		NotifyPrefs:    defaultNotifyPrefs(),
 		QuietHours:     &QuietHours{Start: "22:00", End: "08:00"},
 		NotifyDailyCap: 1, ReservationTiming: "go_live", PersonalizeRecs: true,
+		DanmakuBlockWords: []string{},
 	}
 }
 
@@ -137,6 +149,9 @@ func (u *UserSettings) normalize() {
 	u.NotifyPrefs = full
 	if u.SubtitleLangs == nil {
 		u.SubtitleLangs = []string{}
+	}
+	if u.DanmakuBlockWords == nil {
+		u.DanmakuBlockWords = []string{}
 	}
 }
 
@@ -177,6 +192,38 @@ func decodeBool(key string, raw json.RawMessage) (bool, error) {
 	return *v, nil
 }
 
+// decodeBlockWords validates a danmaku_block_words list: an array of at
+// most MaxDanmakuBlockWords words of 1-MaxDanmakuBlockWordRunes characters
+// (trimmed, no control characters), deduplicated case-insensitively in
+// order. The whole list is replaced.
+func decodeBlockWords(raw json.RawMessage) ([]string, error) {
+	var words []string
+	if json.Unmarshal(raw, &words) != nil || words == nil {
+		return nil, invalidSettings("danmaku_block_words must be an array of strings")
+	}
+	out := []string{}
+	seen := map[string]bool{}
+	for _, w := range words {
+		w = strings.TrimSpace(w)
+		if n := utf8.RuneCountInString(w); n == 0 || n > MaxDanmakuBlockWordRunes || !utf8.ValidString(w) {
+			return nil, invalidSettings("danmaku_block_words: each word must be 1-%d characters", MaxDanmakuBlockWordRunes)
+		}
+		if strings.IndexFunc(w, unicode.IsControl) >= 0 {
+			return nil, invalidSettings("danmaku_block_words: control characters are not allowed")
+		}
+		k := strings.ToLower(w)
+		if seen[k] {
+			continue
+		}
+		seen[k] = true
+		out = append(out, w)
+	}
+	if len(out) > MaxDanmakuBlockWords {
+		return nil, invalidSettings("danmaku_block_words: at most %d words", MaxDanmakuBlockWords)
+	}
+	return out, nil
+}
+
 // ApplySettingsPatch applies a JSON object of setting changes to cur. Unknown
 // keys, bad types and out-of-range enum values are ErrInvalidSettings.
 // notify_prefs is merged per kind and channel; quiet_hours null disables it.
@@ -187,6 +234,7 @@ func ApplySettingsPatch(cur UserSettings, body []byte) (UserSettings, error) {
 	}
 	out := cur
 	out.SubtitleLangs = slices.Clone(cur.SubtitleLangs)
+	out.DanmakuBlockWords = slices.Clone(cur.DanmakuBlockWords)
 	out.normalize() // deep-copies NotifyPrefs
 	var err error
 	// Sorted keys give deterministic error messages.
@@ -241,6 +289,10 @@ func ApplySettingsPatch(cur UserSettings, body []byte) (UserSettings, error) {
 					seen[l] = true
 					out.SubtitleLangs = append(out.SubtitleLangs, l)
 				}
+			}
+		case "danmaku_block_words":
+			if out.DanmakuBlockWords, err = decodeBlockWords(raw); err != nil {
+				return cur, err
 			}
 		case "timezone":
 			var tz string
@@ -314,7 +366,7 @@ func ApplySettingsPatch(cur UserSettings, body []byte) (UserSettings, error) {
 	return out, nil
 }
 
-const settingsColumns = `ui_lang,content_lang,subtitle_langs,quality_pref,data_saver,autoplay,remember_rate,history_paused,theme,timezone,notify_prefs,quiet_hours,later_auto_remove,notify_daily_cap,reservation_timing,personalize_recs`
+const settingsColumns = `ui_lang,content_lang,subtitle_langs,quality_pref,data_saver,autoplay,remember_rate,history_paused,theme,timezone,notify_prefs,quiet_hours,later_auto_remove,notify_daily_cap,reservation_timing,personalize_recs,danmaku_block_words`
 
 type rowScanner interface{ Scan(dest ...any) error }
 
@@ -324,7 +376,7 @@ func scanSettings(row rowScanner) (UserSettings, error) {
 	var dailyCap int16
 	err := row.Scan(&u.UILang, &u.ContentLang, &u.SubtitleLangs, &u.QualityPref, &u.DataSaver, &u.Autoplay,
 		&u.RememberRate, &u.HistoryPaused, &u.Theme, &u.Timezone, &prefs, &quiet, &u.LaterAutoRemove,
-		&dailyCap, &u.ReservationTiming, &u.PersonalizeRecs)
+		&dailyCap, &u.ReservationTiming, &u.PersonalizeRecs, &u.DanmakuBlockWords)
 	u.NotifyDailyCap = int(dailyCap)
 	if err != nil {
 		return u, err
@@ -378,16 +430,17 @@ func (s *Store) PatchSettings(ctx context.Context, userID int64, body []byte) (U
 		quiet, _ = json.Marshal(next.QuietHours)
 	}
 	_, err = tx.Exec(ctx, `INSERT INTO user_settings(user_id,`+settingsColumns+`,updated_at)
-		VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,now())
+		VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,now())
 		ON CONFLICT(user_id) DO UPDATE SET ui_lang=EXCLUDED.ui_lang,content_lang=EXCLUDED.content_lang,
 		subtitle_langs=EXCLUDED.subtitle_langs,quality_pref=EXCLUDED.quality_pref,data_saver=EXCLUDED.data_saver,
 		autoplay=EXCLUDED.autoplay,remember_rate=EXCLUDED.remember_rate,history_paused=EXCLUDED.history_paused,
 		theme=EXCLUDED.theme,timezone=EXCLUDED.timezone,notify_prefs=EXCLUDED.notify_prefs,
 		quiet_hours=EXCLUDED.quiet_hours,later_auto_remove=EXCLUDED.later_auto_remove,notify_daily_cap=EXCLUDED.notify_daily_cap,
-		reservation_timing=EXCLUDED.reservation_timing,personalize_recs=EXCLUDED.personalize_recs,updated_at=now()`,
+		reservation_timing=EXCLUDED.reservation_timing,personalize_recs=EXCLUDED.personalize_recs,
+		danmaku_block_words=EXCLUDED.danmaku_block_words,updated_at=now()`,
 		userID, next.UILang, next.ContentLang, next.SubtitleLangs, next.QualityPref, next.DataSaver, next.Autoplay,
 		next.RememberRate, next.HistoryPaused, next.Theme, next.Timezone, prefs, quiet, next.LaterAutoRemove,
-		next.NotifyDailyCap, next.ReservationTiming, next.PersonalizeRecs)
+		next.NotifyDailyCap, next.ReservationTiming, next.PersonalizeRecs, next.DanmakuBlockWords)
 	if err != nil {
 		return UserSettings{}, err
 	}

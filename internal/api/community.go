@@ -325,7 +325,7 @@ func (srv *Server) postDanmaku(w http.ResponseWriter, r *http.Request, uid int64
 		return
 	}
 	d, err := srv.community.CreateDanmaku(ctx, store.NewDanmaku{ReleaseID: tl.ReleaseID, VersionKey: tl.VersionKey, TMs: *in.TMs,
-		Body: in.Body, Color: in.Color, Mode: in.Mode, Lang: in.Lang, UserID: uid, Status: status})
+		Body: in.Body, Color: in.Color, Mode: in.Mode, Lang: community.DetectLang(in.Body, in.Lang), UserID: uid, Status: status})
 	if err != nil {
 		reply(w, nil, err)
 		return

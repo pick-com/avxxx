@@ -799,6 +799,8 @@ export type UserSettings = {
   notify_daily_cap?: number;
   reservation_timing?: 'go_live' | 'day_before' | 'both';
   personalize_recs?: boolean;
+  /** 弹幕个人屏蔽词 (migration 045); absent on older backends. */
+  danmaku_block_words?: string[];
 };
 
 /** One release inside a (possibly merged, one-per-day) notification. */

@@ -321,6 +321,82 @@ span.dm-form {
     0 0 0 4px var(--accent);
 }
 
+/* 屏蔽词 (personal block words) */
+
+.dm-word-form {
+  display: flex;
+  gap: 8px;
+}
+
+.dm-word-input {
+  flex: 1;
+  min-width: 0;
+  height: 44px;
+  padding: 0 12px;
+  border: 1px solid var(--line2);
+  border-radius: 8px;
+  background: var(--surface2);
+  color: inherit;
+  font-size: 14px;
+}
+
+.dm-word-input:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.dm-word-form .btn {
+  min-height: 44px;
+}
+
+.dm-settings .dm-error {
+  padding: 0;
+  color: var(--badge);
+}
+
+.dm-words {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.dm-word {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding-left: 12px;
+  border-radius: 99px;
+  background: var(--surface2);
+  font-size: 13px;
+  max-width: 100%;
+}
+
+.dm-word > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dm-word button {
+  width: 36px;
+  height: 36px;
+  border: 0;
+  border-radius: 50%;
+  background: none;
+  color: var(--faint);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+}
+
+.dm-word button:hover {
+  color: inherit;
+}
+
 /* ---- 高能波峰 ---- */
 
 .peak {

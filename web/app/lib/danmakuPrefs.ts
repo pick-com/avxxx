@@ -2,11 +2,17 @@ import {useSyncExternalStore} from 'react';
 import {track} from './analytics';
 
 // Danmaku display settings (PRD 5.5 设置项, 5.5.1 显示高能波峰). Kept in this
-// browser: the settings API has no danmaku fields yet.
+// browser; only the personal block words sync with the account
+// (danmakuBlockWords.ts).
 
 export type DanmakuSpeed = 'slow' | 'normal' | 'fast';
 export type DanmakuSize = 'small' | 'normal' | 'large';
 export type DanmakuArea = 0.25 | 0.5 | 1;
+/** 弹幕密度: the share of danmaku drawn (稀疏 / 适中 / 全部). */
+export type DanmakuDensity = 'low' | 'medium' | 'high';
+/** danmaku.lang values (community.DanmakuLangs); 'und' is "other" (no letters, or unknown). */
+export const DANMAKU_LANGS = ['zh', 'ja', 'ko', 'en', 'es', 'vi', 'th', 'und'] as const;
+export type DanmakuLang = (typeof DANMAKU_LANGS)[number];
 
 export type DanmakuPrefs = {
   enabled: boolean;
@@ -16,6 +22,9 @@ export type DanmakuPrefs = {
   speed: DanmakuSpeed;
   /** 显示区域: 1/4, 半屏, 满屏 */
   area: DanmakuArea;
+  density: DanmakuDensity;
+  /** 语言过滤: show only these languages; empty shows all. */
+  langs: DanmakuLang[];
   blockTop: boolean;
   blockBottom: boolean;
   blockScroll: boolean;
@@ -43,6 +52,8 @@ export const DEFAULT_DANMAKU_PREFS: DanmakuPrefs = {
   size: 'normal',
   speed: 'normal',
   area: 0.5,
+  density: 'high',
+  langs: [],
   blockTop: false,
   blockBottom: false,
   blockScroll: false,
@@ -76,6 +87,8 @@ function read(): DanmakuPrefs {
     size: stored.size === 'small' || stored.size === 'large' || stored.size === 'normal' ? stored.size : d.size,
     speed: stored.speed === 'slow' || stored.speed === 'fast' || stored.speed === 'normal' ? stored.speed : d.speed,
     area: stored.area === 0.25 || stored.area === 1 || stored.area === 0.5 ? stored.area : d.area,
+    density: stored.density === 'low' || stored.density === 'medium' || stored.density === 'high' ? stored.density : d.density,
+    langs: Array.isArray(stored.langs) ? DANMAKU_LANGS.filter(l => stored.langs?.includes(l)) : d.langs,
     blockTop: bool('blockTop'),
     blockBottom: bool('blockBottom'),
     blockScroll: bool('blockScroll'),
@@ -96,6 +109,8 @@ const SETTING_NAMES: Record<keyof DanmakuPrefs, string> = {
   size: 'size',
   speed: 'speed',
   area: 'area',
+  density: 'density',
+  langs: 'langs',
   blockTop: 'block_top',
   blockBottom: 'block_bottom',
   blockScroll: 'block_scroll',
@@ -130,6 +145,22 @@ function subscribe(fn: () => void) {
 
 export function useDanmakuPrefs(): DanmakuPrefs {
   return useSyncExternalStore(subscribe, read, () => DEFAULT_DANMAKU_PREFS);
+}
+
+/** Percent of danmaku drawn per density (the viewer's own always show). */
+export const DENSITY_PERCENT: Record<DanmakuDensity, number> = {low: 35, medium: 70, high: 100};
+
+/** Whether a danmaku's language passes the filter (unknown values count as 'und'). */
+export function langAllowed(lang: string, langs: readonly DanmakuLang[]): boolean {
+  if (langs.length === 0) return true;
+  const l = (DANMAKU_LANGS as readonly string[]).includes(lang) ? (lang as DanmakuLang) : 'und';
+  return langs.includes(l);
+}
+
+/** Stable per-danmaku sampling for the density setting. */
+export function keptByDensity(id: number, density: DanmakuDensity): boolean {
+  const pct = DENSITY_PERCENT[density];
+  return pct >= 100 || Math.imul(id, 2654435761) >>> 0 < (pct / 100) * 2 ** 32;
 }
 
 export const FONT_PX: Record<DanmakuSize, number> = {small: 18, normal: 22, large: 28};
