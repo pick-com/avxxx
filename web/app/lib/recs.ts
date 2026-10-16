@@ -17,7 +17,8 @@ import type {MessageKey} from './messages.zh-CN';
 
 // ---- Types (mirror internal/api/recs.go) ----
 
-export type RecReason = {code: string; text: string};
+/** name: the performer the reason is about (same_performer, followed_new); not always item.performer. */
+export type RecReason = {code: string; text: string; name?: string};
 
 export type RecPerformer = {id: number; slug: string; name: string; display_name?: string};
 
@@ -210,6 +211,12 @@ export const getPerformerHeat = (period: Period, opts: {limit?: number; cursor?:
 export const recTitle = (it: {title: string; display_title?: string}) => it.display_title || it.title;
 export const performerName = (p: {name: string; display_name?: string} | null | undefined) => (p ? p.display_name || p.name : '');
 
+/** The performer a reason is about: its localized name when that is the item's own performer, else reason.name. */
+export const reasonPerformer = (reason: RecReason, item?: Partial<RecItem>): string => {
+  const p = item?.performer ?? null;
+  return p && (!reason.name || reason.name === p.name) ? performerName(p) : reason.name || '';
+};
+
 /** Reason codes with a translatable template (internal/recs ReasonFor, performerRecs). */
 const REASON_KEYS: Record<string, MessageKey> = {
   because_watched: 'reason.becauseWatched',
@@ -237,7 +244,7 @@ export function reasonText(reason: RecReason | undefined, item?: Partial<RecItem
   if (!reason) return '';
   const key = REASON_KEYS[reason.code];
   if (uiLang() === 'zh-CN' || !key) return reason.text || (key ? t(key, {}) : '');
-  const name = performerName(item?.performer ?? null);
+  const name = reasonPerformer(reason, item);
   const vars: Record<string, string> = {name, series: item?.series_name ?? '', maker: item?.maker_name ?? ''};
   // Templates that need a value the item does not carry keep the server text.
   if ((reason.code === 'same_performer' || reason.code === 'followed_new') && !name) return reason.text;

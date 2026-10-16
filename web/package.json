@@ -9,7 +9,8 @@
     "typecheck": "tsc --noEmit && npm run i18n:check",
     "i18n:check": "node scripts/i18n-check.mjs",
     "start": "node server.mjs",
-    "seo:check": "node scripts/seo-check.mjs"
+    "seo:check": "node scripts/seo-check.mjs",
+    "test": "node --test scripts/*.test.mjs"
   },
   "dependencies": {
     "@react-router/node": "7.18.4",

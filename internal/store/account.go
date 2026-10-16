@@ -548,6 +548,14 @@ var exportSections = []struct{ name, sql string }{
 	{"review_likes", `SELECT COALESCE(json_agg(json_build_object('review_id',review_id,'created_at',created_at) ORDER BY created_at),'[]') FROM review_likes WHERE user_id=$1`},
 	{"danmaku", `SELECT COALESCE(json_agg(json_build_object('release',r.slug,'t_ms',x.t_ms,'body',x.body,'color',x.color,'mode',x.mode,'status',x.status,'created_at',x.created_at) ORDER BY x.created_at),'[]')
 		FROM danmaku x JOIN releases r ON r.id=x.release_id WHERE x.user_id=$1`},
+	// 评论 and 赞 / 踩 (migration 040), recent searches and cookie choices.
+	{"comments", `SELECT COALESCE(json_agg(json_build_object('id',x.id,'release',r.slug,'parent_id',x.parent_id,'body',x.body,'spoiler',x.spoiler,'status',x.status,'likes',x.likes,'created_at',x.created_at,'updated_at',x.updated_at) ORDER BY x.created_at),'[]')
+		FROM comments x JOIN releases r ON r.id=x.release_id WHERE x.user_id=$1`},
+	{"comment_likes", `SELECT COALESCE(json_agg(json_build_object('comment_id',comment_id,'created_at',created_at) ORDER BY created_at),'[]') FROM comment_likes WHERE user_id=$1`},
+	{"reactions", `SELECT COALESCE(json_agg(json_build_object('release',r.slug,'value',x.value,'created_at',x.created_at,'updated_at',x.updated_at) ORDER BY x.created_at),'[]')
+		FROM release_reactions x JOIN releases r ON r.id=x.release_id WHERE x.user_id=$1`},
+	{"search_history", `SELECT COALESCE(json_agg(json_build_object('query',query,'searched_at',searched_at) ORDER BY searched_at DESC),'[]') FROM user_search_history WHERE user_id=$1`},
+	{"consent_records", `SELECT COALESCE(json_agg(json_build_object('categories',categories,'policy_version',policy_version,'gpc',gpc,'source',source,'created_at',created_at) ORDER BY id),'[]') FROM consent_records WHERE user_id=$1`},
 	{"push_devices", `SELECT COALESCE(json_agg(json_build_object('user_agent',user_agent,'created_at',created_at,'last_success_at',last_success_at) ORDER BY id),'[]') FROM push_subscriptions WHERE user_id=$1`},
 	// 观看统计 daily aggregate (migration 043).
 	{"user_watch_daily", `SELECT COALESCE(json_agg(json_build_object('day',day,'tz',tz,'watch_seconds',watch_seconds,'plays',plays,'titles',titles,'finished',finished,

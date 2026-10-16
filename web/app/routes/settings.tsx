@@ -140,7 +140,10 @@ export default function SettingsPage() {
 
 function SectionBody({section}: {section: SectionKey}) {
   const {status, settings} = useSettings();
-  if (section === 'account') return <AccountSection />;
+  const {status: auth} = useAuth();
+  // The account groups fetch /api/me/* on mount: wait until the session is
+  // known so a signed-out visitor does not fire 401s before the sign-in prompt.
+  if (section === 'account') return auth === 'user' ? <AccountSection /> : <BlockSkeleton lines={5} />;
   if (status === 'loading' || !settings) return status === 'error' ? null : <BlockSkeleton lines={5} />;
   switch (section) {
     case 'playback':

@@ -3094,6 +3094,23 @@ a.chip {
     font-size: 17px;
   }
 
+  /* Four stats with 32px gaps beside the 92px photo left ~35px each at
+     375px, so 作品 / 粉丝 / 30 天热度 broke one character per line. */
+  .performer-head .stat-row {
+    flex-wrap: wrap;
+    gap: 8px 16px;
+  }
+
+  .performer-head .stat-label {
+    white-space: nowrap;
+  }
+
+  /* 全部 / 主演 / 客串 next to the filmography title ran off the right edge in en. */
+  .performer-works .section-head {
+    flex-wrap: wrap;
+    row-gap: 8px;
+  }
+
   .performer-page .tabbar {
     margin: -8px calc(-1 * var(--gutter)) 0;
     padding: 0 var(--gutter);

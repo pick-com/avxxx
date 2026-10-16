@@ -16,6 +16,7 @@ import {
   type MergeResult,
 } from '../lib/api';
 import {useAdmin, useAdminLoad} from '../lib/adminContext';
+import {adminErrorText} from '../lib/adminApi';
 import {CatalogImage} from '../components/Cards';
 import {getCandidateCompare, linkCandidateVersions, unlinkReleaseVersion, type EntitySummary} from '../lib/adminDedupeApi';
 import '../styles/admin-data.css';
@@ -147,7 +148,7 @@ const scoreTone = (score: number) => (score >= 0.9 ? 'high' : score >= 0.7 ? 'mi
 function failureText(cause: unknown, action: string): string {
   if (isMissingEndpoint(cause)) return `后端还没有部署${action}接口（identity-merge），暂时只能查看候选。`;
   if (cause instanceof ApiError) {
-    if (cause.status === 401) return '管理员令牌无效或未设置';
+    if (cause.status === 401 || cause.status === 403) return adminErrorText(cause);
     return cause.detail ? `${cause.message}：${cause.detail}` : cause.message;
   }
   return cause instanceof Error ? cause.message : String(cause);
@@ -381,7 +382,7 @@ export default function AdminDedupe() {
           <section className="admin-card dedupe-list" aria-label="候选列表">
             <h2>待处理（{candidates.length}）</h2>
             {candidates.length === 0 ? (
-              <p className="muted">{loaded ? '暂无待处理的候选。可以点「生成候选」重新扫描。' : '请先输入管理员令牌。'}</p>
+              <p className="muted">{loaded ? '暂无待处理的候选。可以点「生成候选」重新扫描。' : busy ? '加载中…' : ''}</p>
             ) : (
               <div className="pair-list" role="listbox" aria-label="候选">
                 {candidates.map(c => {

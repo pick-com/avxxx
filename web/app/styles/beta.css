@@ -1327,6 +1327,29 @@ a.notif-main:hover {
     display: none;
   }
 
+  /* Handle, thumb and two 44px buttons in one row left the title ~15px at
+     375px (one character per line): stack 移到收藏夹 and 移除 on the right. */
+  .later-item {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    column-gap: 8px;
+    row-gap: 0;
+  }
+
+  .later-item .drag-handle,
+  .later-item .release-row-link {
+    grid-row: 1 / 3;
+  }
+
+  .later-item .pl-move,
+  .later-item > .icon-btn {
+    grid-column: 3;
+  }
+
+  .later-item .thumb-row {
+    width: 112px;
+  }
+
   .onboard-title {
     font-size: 22px;
   }
