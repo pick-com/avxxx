@@ -5,6 +5,7 @@ import {currentPage, entryFrom, track} from '../lib/analytics';
 import {useAuth} from '../lib/auth';
 import {formatClock} from '../lib/format';
 import {PlayTracker, takeEndReason, takeEntryOverride} from '../lib/playAnalytics';
+import {heightCap, prefHeight, qualityParam, rememberRate, rememberedRate, usePlayerPrefs} from '../lib/playerPrefs';
 import {entriesFromConfig, entriesFromStreams, isHlsEntry, type PlayEntry} from '../lib/playSources';
 import {useAsync} from '../lib/useAsync';
 import {useMediaQuery} from '../lib/useMediaQuery';
@@ -57,6 +58,11 @@ type LockableOrientation = ScreenOrientation & {lock?: (orientation: string) => 
  *
  * Analytics (PRD 14.2): a PlayTracker per playback of a play-config <video>
  * source, when the release id is known (lib/playAnalytics.ts).
+ *
+ * Settings (lib/playerPrefs.ts): quality_pref goes to play-config as
+ * ?quality= and picks the starting hls.js level; on cellular (or Save-Data)
+ * hls.js ABR is capped at 720p, 480p with data_saver; remember_rate restores
+ * the last rate used for this release. autoplay is handled by the page.
  */
 export function Player({slug, releaseId, title, resumeAt, onBack, theater = false, onToggleTheater, onEnded, autoStart = false, overlay}: {
   slug: string;
@@ -75,12 +81,20 @@ export function Player({slug, releaseId, title, resumeAt, onBack, theater = fals
   overlay?: ReactNode;
 }) {
   const {status} = useAuth();
+  const prefs = usePlayerPrefs();
+  const prefsRef = useRef(prefs);
+  prefsRef.current = prefs;
+  // The quality hint is fixed once playback starts so a late settings load
+  // does not reload play-config under a playing video.
+  const [phase, setPhase] = useState<Phase>('idle');
+  const configQuality = useRef<number | undefined>(undefined);
+  if (phase === 'idle') configQuality.current = qualityParam(prefs);
+  const quality = configQuality.current;
   // play-config first; null (404 / not deployed / any failure) means legacy.
-  const config = useAsync(signal => getPlayConfig(slug, signal), [slug]);
+  const config = useAsync(signal => getPlayConfig(slug, signal, quality), [slug, quality]);
   const configEntries = useMemo(() => entriesFromConfig(config.data), [config.data]);
   const mode: 'pending' | 'config' | 'legacy' = config.loading ? 'pending' : configEntries.length > 0 ? 'config' : 'legacy';
   const info = useAsync(signal => getPlayback(slug, signal), [slug], mode === 'legacy');
-  const [phase, setPhase] = useState<Phase>('idle');
   const [entries, setEntries] = useState<PlayEntry[]>([]);
   const [current, setCurrent] = useState(0);
   const [failure, setFailure] = useState('');
@@ -153,7 +167,17 @@ export function Player({slug, releaseId, title, resumeAt, onBack, theater = fals
     lastSaved.current = {at: 0, position: -1};
     pendingSeek.current = 0;
     sharedPos.current = 0;
+    // remember_rate: this release's last rate; otherwise every release starts at 1×.
+    setRate((prefsRef.current.rememberRate && rememberedRate(slug)) || 1);
   }, [slug]);
+
+  const chooseRate = useCallback(
+    (next: number) => {
+      setRate(next);
+      if (prefsRef.current.rememberRate) rememberRate(slug, next);
+    },
+    [slug],
+  );
 
   const showFlash = useCallback((text: string) => {
     window.clearTimeout(flashTimer.current);
@@ -332,7 +356,28 @@ export function Player({slug, releaseId, title, resumeAt, onBack, theater = fals
         hlsRef.current = instance;
         let mediaRecovered = false;
         instance.on(Hls.Events.MANIFEST_PARSED, () => {
-          setLevels(instance.levels.map((l, index) => ({index, height: l.height, bitrate: l.bitrate})));
+          const list = instance.levels.map((l, index) => ({index, height: l.height, bitrate: l.bitrate}));
+          setLevels(list);
+          const p = prefsRef.current;
+          // Cellular / data saver: cap ABR (hls.js orders levels by bitrate).
+          const cap = heightCap(p);
+          if (Number.isFinite(cap)) {
+            let capIndex = -1;
+            list.forEach(l => {
+              if (l.height && l.height <= cap) capIndex = Math.max(capIndex, l.index);
+            });
+            if (capIndex >= 0) instance.autoLevelCapping = capIndex;
+          }
+          // quality_pref: start on the best level at or under the preference.
+          const want = Math.min(prefHeight(p.qualityPref), cap);
+          if (p.qualityPref !== 'auto' && Number.isFinite(want)) {
+            const pick = list.filter(l => l.height && l.height <= want).sort((a, b) => b.height - a.height || b.bitrate - a.bitrate)[0];
+            if (pick) {
+              instance.currentLevel = pick.index;
+              levelRef.current = pick.index;
+              setLevel(pick.index);
+            }
+          }
         });
         instance.on(Hls.Events.LEVEL_SWITCHED, (_event, data) => setPlayingLevel(data.level));
         instance.on(Hls.Events.AUDIO_TRACKS_UPDATED, (_event, data) => {
@@ -736,7 +781,7 @@ export function Player({slug, releaseId, title, resumeAt, onBack, theater = fals
                 {qualityOptions.length > 0 && (
                   <PlayerMenu label="清晰度" buttonText={qualityText} options={qualityOptions} value={level} onChange={chooseLevel} />
                 )}
-                <PlayerMenu label="倍速" buttonText={rate === 1 ? '倍速' : `${rate}×`} options={rateOptions} value={rate} onChange={setRate} />
+                <PlayerMenu label="倍速" buttonText={rate === 1 ? '倍速' : `${rate}×`} options={rateOptions} value={rate} onChange={chooseRate} />
                 <button
                   type="button"
                   className="pbar-btn pbar-text"
@@ -786,7 +831,7 @@ export function Player({slug, releaseId, title, resumeAt, onBack, theater = fals
           container={fullscreen ? shellRef.current : null}
           source={{options: sourceOptions, value: current, onChange: i => switchTo(i), versioned: mode === 'config'}}
           quality={{options: qualityOptions, value: level, onChange: chooseLevel}}
-          rate={{options: rateOptions, value: rate, onChange: setRate}}
+          rate={{options: rateOptions, value: rate, onChange: chooseRate}}
           captions={{options: captionOptions, value: caption, onChange: chooseCaption}}
           audio={{options: audioOptions, value: audioTrack, onChange: chooseAudio}}
         />

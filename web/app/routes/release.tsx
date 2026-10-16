@@ -1,4 +1,4 @@
-import {useEffect, useMemo, useState, type ReactNode} from 'react';
+import {useEffect, useMemo, useRef, useState, type ReactNode} from 'react';
 import {Link, useLocation, useNavigate, useParams, useSearchParams} from 'react-router';
 import {Avatar, ReleaseRow, SectionHeader} from '../components/Cards';
 import {Icon} from '../components/Icon';
@@ -7,7 +7,10 @@ import {Player} from '../components/Player';
 import {LaterButton, ReserveButton} from '../components/SocialButtons';
 import {BlockSkeleton, CardGridSkeleton, EmptyState, ErrorBanner} from '../components/States';
 import {getFavorites, getPerformerReleases, getWatchLater, getRelease, getReleasePerformers, getWatchHistory, setFavorite, type Performer, type ReleaseDetail} from '../lib/api';
+import {track} from '../lib/analytics';
 import {useAuth} from '../lib/auth';
+import {markAutoplayNavigation} from '../lib/playAnalytics';
+import {usePlayerPrefs} from '../lib/playerPrefs';
 import {ageAt, formatDate, formatRuntime} from '../lib/format';
 import {discoverHref} from '../lib/releaseFilter';
 import {useAsync} from '../lib/useAsync';
@@ -22,8 +25,11 @@ export const meta = () => [{title: 'REEL · 视频'}];
 // Video / VideoLight / MobileVideo.
 //
 // Omitted for lack of backend (never filled with sample data):
-// TODO(tech plan 3.13): 赞 / 踩, 评论 (V1.1), 自动连播 switch.
+// TODO(tech plan 3.13): 赞 / 踩, 评论 (V1.1).
 // 稍后观看 toggles here; ?list=later follows the 全部播放 / 随机播放 queue.
+// 自动连播 (PRD 5.4, settings.autoplay, default on): when a video ends, the
+// next one (the queue's next, else the first 接下来播放 work) starts after a
+// 10 s countdown that can be cancelled; it reports autoplay_next.
 // 预约 shows for status 'upcoming', but GET /api/releases/{slug} only serves
 // published works today, so upcoming works are reserved from the feed.
 // TODO(PRD 15 AgeGate): gate playback with <AgeConfirm> once releases carry an
@@ -50,8 +56,25 @@ export default function ReleasePage() {
   const queue = useMemo(() => (listName === 'later' && typeof window !== 'undefined' ? readQueue('later') : null), [listName]);
   const queueIndex = queue ? queue.slugs.indexOf(slug) : -1;
   const nextSlug = queue && queueIndex >= 0 ? queue.slugs[queueIndex + 1] : undefined;
+  const prefs = usePlayerPrefs();
+  const location = useLocation();
+  const autoStart = (location.state as {autoplay?: unknown} | null)?.autoplay === true;
+  const [ended, setEnded] = useState(false);
+  const [related, setRelated] = useState<{id: number; slug: string; title: string} | null>(null);
+  const queueNext = useAsync(signal => getRelease(nextSlug ?? '', signal), [nextSlug], !!nextSlug && ended);
+  const next = nextSlug
+    ? queueNext.data
+      ? {id: queueNext.data.id, slug: queueNext.data.slug, title: queueNext.data.canonical_title, query: '?list=later'}
+      : null
+    : related
+      ? {...related, query: ''}
+      : null;
 
-  useEffect(() => setSheetPerformer(null), [slug]);
+  useEffect(() => {
+    setSheetPerformer(null);
+    setEnded(false);
+    setRelated(null);
+  }, [slug]);
 
   const release = detail.data?.[0];
   const performers = detail.data?.[1] ?? [];
@@ -97,7 +120,23 @@ export default function ReleasePage() {
           onBack={back}
           theater={theater}
           onToggleTheater={() => setTheater(t => !t)}
-          onEnded={nextSlug ? () => navigate(`/releases/${encodeURIComponent(nextSlug)}?list=later`) : undefined}
+          autoStart={autoStart}
+          onEnded={() => setEnded(true)}
+          overlay={
+            ended && prefs.autoplay && next && release ? (
+              <AutoplayNext
+                key={next.slug}
+                fromId={release.id}
+                next={next}
+                onGo={() => {
+                  markAutoplayNavigation();
+                  setEnded(false);
+                  navigate(`/releases/${encodeURIComponent(next.slug)}${next.query}`, {state: {autoplay: true}});
+                }}
+                onCancel={() => setEnded(false)}
+              />
+            ) : null
+          }
         />
 
         {!release ? (
@@ -154,7 +193,7 @@ export default function ReleasePage() {
 
       <aside className="video-aside" aria-label="接下来播放">
         {queue && queueIndex >= 0 && <QueuePanel slugs={queue.slugs} index={queueIndex} />}
-        {release && performers[0] && <SamePerformer performer={performers[0]} currentSlug={slug} />}
+        {release && performers[0] && <SamePerformer performer={performers[0]} currentSlug={slug} onFirst={setRelated} />}
       </aside>
     </div>
   );
@@ -248,9 +287,18 @@ function CastMember({performer, releaseDate, onOpen}: {performer: Performer; rel
   );
 }
 
-function SamePerformer({performer, currentSlug}: {performer: Performer; currentSlug: string}) {
+function SamePerformer({performer, currentSlug, onFirst}: {
+  performer: Performer;
+  currentSlug: string;
+  /** The autoplay candidate (first work in the list). */
+  onFirst?: (next: {id: number; slug: string; title: string} | null) => void;
+}) {
   const works = useAsync(signal => getPerformerReleases(performer.slug, 12, signal), [performer.slug]);
   const list = (works.data ?? []).filter(r => r.slug !== currentSlug).slice(0, 10);
+  const first = list[0];
+  useEffect(() => {
+    onFirst?.(first ? {id: first.id, slug: first.slug, title: first.canonical_title} : null);
+  }, [first, onFirst]);
   if (works.error) return null;
   if (!works.loading && list.length === 0) return null;
   return (
@@ -348,6 +396,67 @@ function ShareButton({title}: {title: string}) {
         {message}
       </span>
     </>
+  );
+}
+
+const AUTOPLAY_SECONDS = 10;
+
+/** PRD 5.4 / 14.2: 10 s countdown to the next video, with 立即播放 and 取消. */
+function AutoplayNext({fromId, next, onGo, onCancel}: {
+  fromId: number;
+  next: {id: number; slug: string; title: string};
+  onGo: () => void;
+  onCancel: () => void;
+}) {
+  const [left, setLeft] = useState(AUTOPLAY_SECONDS);
+  const done = useRef(false);
+  const report = (cancelled: boolean, remaining: number) => {
+    if (done.current) return;
+    done.current = true;
+    track('autoplay_next', {from_release_id: fromId, to_release_id: next.id, cancelled, countdown_left_s: Math.max(0, remaining)});
+  };
+  const reportRef = useRef(report);
+  reportRef.current = report;
+  const goRef = useRef(onGo);
+  goRef.current = onGo;
+
+  useEffect(() => {
+    const timer = window.setInterval(() => setLeft(l => l - 1), 1000);
+    return () => window.clearInterval(timer);
+  }, []);
+  useEffect(() => {
+    if (left > 0) return;
+    reportRef.current(false, 0);
+    goRef.current();
+  }, [left]);
+
+  return (
+    <div className="autoplay-next" role="dialog" aria-label="自动播放下一个" aria-live="polite">
+      <span className="autoplay-next-label">{left} 秒后播放下一个</span>
+      <strong className="autoplay-next-title">{next.title}</strong>
+      <div className="autoplay-next-actions">
+        <button
+          type="button"
+          className="btn btn-primary btn-sm"
+          onClick={() => {
+            report(false, left);
+            onGo();
+          }}
+        >
+          立即播放
+        </button>
+        <button
+          type="button"
+          className="btn btn-on-dark btn-sm"
+          onClick={() => {
+            report(true, left);
+            onCancel();
+          }}
+        >
+          取消
+        </button>
+      </div>
+    </div>
   );
 }
 

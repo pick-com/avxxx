@@ -352,12 +352,13 @@ export type PlayConfig = {
 };
 
 /**
- * GET /api/releases/{slug}/play-config (tech plan 3.3). Resolves to null when
+ * GET /api/releases/{slug}/play-config (tech plan 3.3); `quality` is the
+ * preferred max height (settings.quality_pref, capped on cellular). Resolves to null when
  * the endpoint is not deployed (404) or fails for any reason, so the player
  * falls back to the playback?source=javtiful flow without showing an error.
  */
-export const getPlayConfig = (slug: string, signal?: AbortSignal): Promise<PlayConfig | null> =>
-  api<PlayConfig>(`releases/${enc(slug)}/play-config`, {signal}).then(
+export const getPlayConfig = (slug: string, signal?: AbortSignal, quality?: number): Promise<PlayConfig | null> =>
+  api<PlayConfig>(`releases/${enc(slug)}/play-config${query({quality})}`, {signal}).then(
     data => (data && typeof data === 'object' && Array.isArray(data.sources) ? data : null),
     error => {
       if (isAbort(error)) throw error;
