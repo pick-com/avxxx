@@ -269,6 +269,14 @@ health = 0.7 × 可播放率 + 0.3 × 首帧 ≤ 3s 的比例
 
 **[B] 自营转码**：对象存储收到母带后创建 `transcode` job → FFmpeg 产出 HLS（CMAF fMP4，240p–1080p，4K 按需）、24 张截图、雪碧图 + WebVTT → 写 `playback_sources(kind='hls_owned')`。分片走签名 URL（短时效 token），CDN 按分片缓存。上线前对每个文件做 CSAM 哈希比对和人工抽检。
 
+**系统媒体控制与投屏（已实现，web 端）**：
+
+- Media Session（`web/app/lib/useMediaSession.ts`）：播放中的 `<video>` 向锁屏 / 耳机 / 蓝牙遥控 / 键盘媒体键 / 系统媒体面板提供标题、主演、厂牌或系列、封面（绝对 URL，带尺寸），支持播放、暂停、停止、±10 秒（遵循 `seekOffset`）、拖动（`fastSeek`）；上一个 / 下一个按 `?list=` 队列 → 系列选集 → 自动连播的下一部，没有目标时不注册。迷你播放器沿用同一个 `<video>`，会话不断。
+- Remote Playback（`web/app/lib/useRemotePlayback.ts`）：浏览器报告有可用设备时，控制栏和全屏触控层出现「投屏」按钮（Chrome / Android 投放菜单、Safari AirPlay，Safari 旧接口 `webkitShowPlaybackTargetPicker` 兜底），连接中 / 已连接显示在按钮和「正在投屏到设备」浮层上，进度条保持可见。
+- hls.js 播放的 HLS 是 MediaSource（blob: URL），接收端拿不到，因此这类片源设 `disableRemotePlayback` 并隐藏按钮；直链 MP4 和浏览器原生播放的 HLS（Safari、Android Chrome、较新的桌面 Chrome）可以投屏。
+- 已知限制：投屏设备自己去拉流，不带本站的 Referer、Cookie 和会话。依赖 Referer 防盗链、Cookie 鉴权或绑定观看者 IP / 会话的签名 URL 的片源，在设备上可能播放失败，而本机播放正常。[B] 自营转码的签名 URL 如要支持投屏，签名不能绑定观看者 IP，且有效期要覆盖整场播放（或改为按分片续签）。
+- 后续：Google Cast SDK（自定义接收端、由发送端刷新签名）不在本期范围，按需求再评估。
+
 ### 3.4 搜索
 
 **Alpha（PostgreSQL）**
