@@ -10,7 +10,6 @@ export const searchZhCN = {
   'suggest.tag': '标签',
   'suggest.query': '热搜',
   'suggest.upcomingOn': '{date} 上线',
-  'suggest.searchFor': '搜索「{q}」',
 
   // 大家都在搜 / 热搜词
   'hot.title': '大家都在搜',
@@ -30,7 +29,6 @@ export const searchZhCN = {
 
   // 演员信息更正与隐藏 (CopyrightForm 其他情况 → PRD 6, 15)
   'performerReq.cta': '提交演员信息更正或隐藏申请',
-  'performerReq.ctaBody': '演员本人或经纪方可以申请更正资料、隐藏生日或删除照片。',
   'performerReq.otherCases': '其他情况',
   'performerReq.copyrightLink': '演员本人或经纪方要更正、隐藏个人信息？',
   'performerReq.title': '演员信息更正与隐藏申请',
@@ -72,7 +70,6 @@ export const searchZhCN = {
   'performerReq.linkPlaceholder': 'https://',
   'performerReq.addLink': '添加链接',
   'performerReq.removeLink': '删除链接',
-  'performerReq.required': '必填',
   'performerReq.submit': '提交申请',
   'performerReq.submitting': '正在提交…',
   'performerReq.doneTitle': '申请已收到',

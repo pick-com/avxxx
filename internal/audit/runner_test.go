@@ -32,6 +32,11 @@ type fakeStore struct {
 	sourceHasRuns bool
 
 	names []PerformerNameFacts // R-PERFORMER-NAME input, id order
+
+	seo       []SEOFacts // R-SEO input, releases then performers, id order
+	seoDupes  []TitleGroup
+	seoSite   SEOSiteFacts
+	latestRun map[string]Run // LatestRun by job
 }
 
 func newFake(rels ...ReleaseFacts) *fakeStore {
@@ -169,6 +174,28 @@ func (f *fakeStore) PerformerNames(_ context.Context, after int64, limit int) ([
 	return out, nil
 }
 
+func (f *fakeStore) SEOEntities(_ context.Context, typ string, after int64, limit int) ([]SEOFacts, error) {
+	if err := f.fail("SEOEntities"); err != nil {
+		return nil, err
+	}
+	var out []SEOFacts
+	for _, x := range f.seo {
+		if x.EntityType == typ && x.ID > after && len(out) < limit {
+			out = append(out, x)
+		}
+	}
+	return out, nil
+}
+
+func (f *fakeStore) SEODuplicateTitles(context.Context) ([]TitleGroup, error) { return f.seoDupes, nil }
+
+func (f *fakeStore) SEOSite(context.Context) (SEOSiteFacts, error) { return f.seoSite, nil }
+
+func (f *fakeStore) LatestRun(_ context.Context, job string) (Run, bool, error) {
+	r, ok := f.latestRun[job]
+	return r, ok, nil
+}
+
 func (f *fakeStore) open(rule Rule) []*Issue {
 	var out []*Issue
 	for _, x := range f.issues {
@@ -266,7 +293,7 @@ func TestRunnerHoldsMinorsAndOpensIssues(t *testing.T) {
 	}
 	want := map[string]string{
 		"audit.R-AGE": ResultIssues, "audit.R-META": ResultIssues, "audit.R-TITLE": ResultIssues,
-		"audit.R-STATS": ResultNotApplicable, "audit.R-SOURCE": ResultNotApplicable, "audit.R-SEO": ResultNotApplicable,
+		"audit.R-STATS": ResultNotApplicable, "audit.R-SOURCE": ResultNotApplicable, "audit.R-SEO": ResultOK,
 	}
 	for i, run := range f.runs {
 		if run.Job != "audit."+string(AllRules[i]) || run.JobID != 9 {

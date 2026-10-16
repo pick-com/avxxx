@@ -6,7 +6,8 @@
   "scripts": {
     "dev": "react-router dev --host 127.0.0.1",
     "build": "tsc --noEmit && react-router build",
-    "typecheck": "tsc --noEmit",
+    "typecheck": "tsc --noEmit && npm run i18n:check",
+    "i18n:check": "node scripts/i18n-check.mjs",
     "start": "node server.mjs",
     "seo:check": "node scripts/seo-check.mjs"
   },

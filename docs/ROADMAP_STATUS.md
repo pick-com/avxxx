@@ -1,8 +1,8 @@
 # AVXXX Roadmap 状态
 
-> 状态更新时间：2026-10-16
+> 状态更新时间：2026-10-16（#92 之后）
 >
-> 当前基础能力完成度约为 **96%**。基础架构、目录采集、调度、WebApp 浏览、Javtiful 播放映射、审核后台、生产 smoke/备份和 Ansible 部署已经可运行；来源授权/robots/terms 门禁、baseline/增量/verify 任务隔离、字段优先级策略和 fixture 验收工具已完成。剩余工作主要集中在来源覆盖（更多 adapter 和录制 fixture）、图片存储、生产值班通道配置和正式生产验收（监控、Alertmanager 通知、主机与备份告警已就绪）。
+> 当前完成度约为 **90%**（按本页勾选项计算：84 项中 74 项已完成；DMM、ThePornDB 两项代码已完成、只差凭据实测，计入后 76/84 ≈ 90%）。基础架构、目录采集、调度、WebApp 浏览、Javtiful 播放映射、审核后台（含 checkpoint 页面，#88）、图片存储（#91）、部署/备份/恢复手册与恢复演练、全量验收套件（#92）已经完成。剩余项基本都需要外部输入：来源凭据（DMM、ThePornDB）、VPN/授权确认（XSList、JAVLibrary）、条款/法务结论（JavDB、IAFD、DMM 图片转存）、从线上保存的真实页面（每来源 20 演员 / 100 作品 fixture）和生产值班通道配置；真正还需开发的只有厂商目录 adapter 和 javinfo 评估。
 >
 > 注意：门禁上线后，`license_status` 未审核（`review_required` / `manual_only`）或缺少 `terms_reviewed_at` / `terms_url` 的目录来源不再自动抓取，只能手动创建 verify 任务；需管理员通过 `PUT /api/admin/sources/{id}/license` 记录条款审核后才恢复增量。爬虫必须配置 `CATALOG_CONTACT`（User-Agent 联系方式），否则目录任务以 `config_error` 失败。
 
@@ -85,6 +85,7 @@
 - [x] 拆分非合并产生的实体（`identity.BuildSplitPlan` 纯函数计划 + `store.SplitEntity`：选中的来源记录/署名证据及只由它们支持的别名、外部 ID、番号、署名、标签移到新实体，两边按字段策略重算规范字段，原实体保留 override、slug 和用户数据；不可变 `review_events(action='split')` + `not_duplicate_pairs` 防止候选生成和入库回并；`GET/POST /api/admin/{performers|releases}/{id}/split-preview|split`，`POST /api/admin/splits/{event_id}/undo` 经合并路径撤销；见 FINAL_DATA_DESIGN 5.5）
 - [x] 来源可信度和字段优先级策略
 - [x] 目录 source record 与 Javtiful media record 自动关联（离线 `media_link` 任务按番号精确匹配，`media_link_attempts` 记录尝试与退避；后台 `/api/admin/media-links` 可重试和人工选择）
+- [x] 收录检查规则 R-SEO（`internal/audit/seo.go`，PRD 11 规则 H）：站点地图列出的作品/演员的空标题、`release-<id>` 兜底 slug、无事实可写的描述、缺存储封面、按语言重复的标题，以及最近一次 `seo.check` 报告中失败的页面开 issue；站点地图缺口、缺语言文件和过期报告写入运行详情；不自动改数据，`audit -once -rules R-SEO` 可单独运行
 - [x] 作品、演员和字段完整性报告（`GET /api/admin/reports/completeness?entity=release|performer&source=&group_by=field|source|maker&format=csv`，`internal/completeness`；夜间 `completeness_snapshot` 任务写 `completeness_snapshots` 作趋势）
 
 ### Web 和 API
@@ -92,13 +93,14 @@
 - [x] 演员列表、详情和作品页（列表在 discover 页面）
 - [x] 作品列表、详情和演员页
 - [x] 搜索、筛选、排序和游标分页
+- [x] 界面多语言完整性：`web/app/locales/{en,ja,ko,vi,es,th}.json` 内置译文（已审核的 `ui_strings` 覆盖其上，缺键回落 zh-CN），`npm run i18n:check`（CI web 任务）检查缺键、多余键和 `{占位符}` 一致；zh-TW 仍只来自 `ui_strings`
 - [x] 系列查询 API（`series` 实体与 `releases.series_id`，迁移 027 回填和触发器；`GET /api/series`、`/api/series/{slug}`、`/api/series/{slug}/releases?sort=episode|newest|oldest`；作品详情带 `series`）
 - [x] 来源证据和更新时间展示（`GET /api/releases/{slug}/evidence`、`GET /api/performers/{slug}/evidence`，不含 raw_data、覆盖原因和隐藏生日；作品页和演员页的「信息来源」折叠区，按字段显示来源、层级、更新时间和「人工校正」）
 - [x] 系列页面（`/series`、`/series/{slug}`：服务端渲染、按集数/最新/最早排序、JSON-LD、`/sitemaps/series-{lang}-{n}.xml`）
 - [x] 来源署名（`sources.attribution_html` 经 `GET /api/attributions?release=|performer=|series=` 下发，原样渲染在作品、演员、系列页末尾；DMM 数据出现时显示「Powered by FANZA Webサービス」）
 - [x] 管理后台冲突审核页面
 - [x] 管理后台任务和来源页面（`admin-pipeline`）
-- [ ] 管理后台 checkpoint 页面（`GET /api/admin/sources/{id}/checkpoints` 已有，前端未接入）
+- [x] 管理后台 checkpoint 页面（#88：`web/app/components/AdminSourceGovernance.tsx` 接入 `GET /api/admin/sources/{id}/checkpoints`，与许可审核、手动建任务同页）
 
 ### 生产化
 
@@ -108,6 +110,7 @@
 - [x] robots、terms、授权和配额门禁
 - [x] 数据保留和图片使用策略（[DATA_RETENTION_AND_IMAGES.md](DATA_RETENTION_AND_IMAGES.md)：只有 `official_api`/`licensed`/`internal` 且管理员复核 `images_allowed` 的来源可存图；`internal/objstore` S3 兼容存储 + compose `storage` profile MinIO；`media_fetch`/`media_purge` 任务；公开接口 `cover`/`portrait` 字段和 `/api/images/`；屏蔽/下架 24 h 内清理；DMM 图片转存待法务确认）
 - [x] 部署、备份和恢复文档（`docs/DEPLOYMENT.md`：Ansible provision/deploy、完整 Caddyfile 与 TLS、密钥/vault 清单、按 tag/SHA 发布与镜像标签回滚、只向前且幂等的迁移及其回滚含义、发布后检查、每日备份/保留/异地拷贝、生产恢复、来源许可首跑清单；`make restore-drill`（`scripts/restore-drill.sh`）把最新备份或种子库恢复到一次性 postgres:17、逐表比对 dump 行数、在其上启动 API 跑 smoke，本地种子模式约 9 秒、2 MB/35 万行 dump 约 4 秒，建议每月演练）
+- [ ] 正式环境验收：在生产主机配置值班通道（`ALERT_*`、`monitoring_enabled`、`backup_cron_enabled`）、为目录来源完成首次条款审核（需外部输入）
 - [x] 全量验收：重复抓取不重复实体、阻断不清空数据、公开 API 不泄露 raw_data（`internal/acceptance`，随 `make test-integration` / CI integration 运行，`make acceptance` 单独运行：经生产路径 Enqueue→Claim→`crawlrun`→Finish 抓取 javdatabase/xcity/javguru/DMM/RSS 与 ThePornDB 式回退来源的 httptest 站点。重复/乱序/大小写/空白变化的再入库不新增任何行；403/429/503/验证页/404/500/robots/许可门禁/预算/解析失败/跳过/退化/空页/DMM 错误不清空数据、不丢 last_seen_at、不推进 checkpoint；覆盖、扣留、合并、拆分经多轮重抓保持；遍历全部公开 GET 路由无 raw_data、凭据、覆盖原因、隐藏生日、未发布作品。验收中发现并修复 9 个缺陷：字段历史每次重抓翻倍、退化页/改标题生成重复作品、拆分后署名重抓生成新演员、空列表页推进 checkpoint、javdatabase 空标签生成伪 content_id、javguru/xcity 标签解析、未发布作品的 /performers 返回 200、回退来源新增品番作用域、Ansible 默认 DATABASE_URL 密码不一致）
 
 ## 阶段完成标记
@@ -130,16 +133,18 @@ JAV Database adapter 已接入 scraper，可完成发现、详情抓取、解析
 
 ### 阶段 5：用户 WebApp 和生产化 — 进行中
 
-已完成目录首页、演员/作品详情、标签/厂商面板、搜索/筛选/游标分页、媒体搜索播放、Javtiful 播放映射、后台冲突/身份审核和任务/来源页面、Docker Compose 和 Ansible 部署；仍需完成 checkpoint 和来源证据展示、图片存储、来源记录自动关联、监控和最终验收。
+已完成目录首页、演员/作品详情、标签/厂商面板、搜索/筛选/游标分页、媒体搜索播放、Javtiful 播放映射、后台冲突/身份审核和任务/来源页面、checkpoint 页面（#88）、来源证据与系列页（#87）、来源记录自动关联（media_link）、图片存储（#91）、监控告警、部署/备份/恢复手册与全量验收（#92）；仍需在生产主机完成值班通道配置和首次许可审核后的正式环境验收。
 
 ## 下一步执行顺序
 
+以下各项都在等外部输入，只有第 4 项是纯开发工作：
+
 1. 管理员为现有目录来源完成条款审核（`PUT /api/admin/sources/{id}/license`）并配置 `CATALOG_CONTACT`，否则目录来源只能运行 verify 任务。
 2. 为 JAV Database、XCITY、Jav.Guru 各保存 20 个演员、100 个作品页面作为 recorded fixture；`make fixturecheck` 达标后在 CI 中加 `-strict`。
-3. 用真实凭据实测 DMM adapter（dry-run → 条款审核 → 启用），再实现厂商目录 adapter（官方来源字段优先级最高）。
-4. 前端接入 checkpoint、来源证据和更新时间展示；补系列查询 API。
-5. 目录 source record 与 Javtiful media record 自动关联。
-6. 在生产主机配置值班通道（`ALERT_*`、`monitoring_enabled`、`backup_cron_enabled`）并完成生产验收。
+3. 拿到凭据后实测 DMM（`DMM_API_ID`/`DMM_AFFILIATE_ID`）和 ThePornDB（`THEPORNDB_API_TOKEN`）：dry-run → 条款审核 → 启用；DMM 图片转存等法务确认。
+4. 实现厂商目录 adapter（官方来源字段优先级最高）；评估 javinfo。
+5. XSList、JAVLibrary 等 VPN/授权条件确认后启用；JavDB、IAFD 等条款确认前保持人工 verify。
+6. 在生产主机配置值班通道（`ALERT_*`、`monitoring_enabled`、`backup_cron_enabled`），跑 `npm run seo:check`（带 `ADMIN_TOKEN`）让 R-SEO 拿到页面检查结果，并完成正式环境验收。
 
 ## 总体状态
 
@@ -148,6 +153,6 @@ JAV Database adapter 已接入 scraper，可完成发现、详情抓取、解析
 **关系与冲突审核：已完成**  
 **多来源规模化采集：进行中**  
 **增量调度：分页 checkpoint、预算限速、阻断隔离、授权/robots 门禁和 baseline/增量隔离已完成**  
-**数据质量：字段优先级策略和 fixture 验收工具已完成，录制 fixture 未达标（各来源 0/20、0/100）**  
-**WebApp 完整交付：主要浏览和审核流程已完成，checkpoint 与来源证据展示未完成**  
-**生产化验收：部署/备份/恢复手册、恢复演练和全量验收套件已完成；正式环境（生产主机值班通道、首次许可审核）验收未完成**
+**数据质量：字段优先级策略、fixture 验收工具和审计规则 R-AGE/META/TITLE/SOURCE/PERFORMER-NAME/SEO 已完成（水印、字幕、截屏、统计重建仍缺数据，保持桩），录制 fixture 未达标（各来源 0/20、0/100）**  
+**WebApp 完整交付：已完成（浏览、审核、checkpoint 页面 #88、来源证据 #87、6 种界面语言内置译文）**  
+**生产化验收：图片存储（#91）、部署/备份/恢复手册、恢复演练和全量验收套件（#92）已完成；正式环境（生产主机值班通道、首次许可审核）验收未完成**

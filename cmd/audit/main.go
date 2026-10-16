@@ -12,6 +12,7 @@
 //
 //	audit              worker loop
 //	audit -once        run every rule now, print the report, exit
+//	audit -once -rules R-SEO,R-META   run only these rules
 //	audit -health      run the source health job now, print the report, exit
 //	audit -curves      run the replay / retention curve job now, print the report, exit
 //	audit -release 42  inbound check (R-AGE + R-META) for one release
@@ -77,11 +78,13 @@ import (
 	"encoding/json"
 	"errors"
 	"flag"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"os"
 	"os/signal"
 	"strconv"
+	"strings"
 	"syscall"
 	"time"
 
@@ -90,6 +93,7 @@ import (
 
 func main() {
 	once := flag.Bool("once", false, "run the full audit once and exit")
+	rules := flag.String("rules", "", "with -once: comma-separated rules to run (default all)")
 	release := flag.Int64("release", 0, "run the inbound check for one release id and exit")
 	health := flag.Bool("health", false, "run the source health job once and exit")
 	curves := flag.Bool("curves", false, "run the replay / retention curve job once and exit")
@@ -187,7 +191,17 @@ func main() {
 			obs.Fatal("run failed", err)
 		}
 	case *once:
-		rep, err := (&audit.Runner{Store: s}).Run(ctx)
+		var only []audit.Rule
+		for _, x := range strings.Split(*rules, ",") {
+			if x = strings.TrimSpace(x); x == "" {
+				continue
+			}
+			if !audit.KnownRule(audit.Rule(x)) {
+				obs.Fatal("unknown rule", fmt.Errorf("%q", x))
+			}
+			only = append(only, audit.Rule(x))
+		}
+		rep, err := (&audit.Runner{Store: s, Rules: only}).Run(ctx)
 		printJSON(rep)
 		if err != nil {
 			obs.Fatal("run failed", err)

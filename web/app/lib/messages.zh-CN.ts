@@ -1,8 +1,10 @@
 import {pagesZhCN} from './messages.pages.zh-CN';
 
 // Bundled zh-CN UI strings: the source language and the fallback for every
-// key (lib/i18n.tsx). Other languages come from GET /api/i18n/ui/{lang}
-// (ui_strings, same keys). {name} placeholders are filled by t(key, vars).
+// key (lib/i18n.tsx). Other languages come from app/locales/{lang}.json
+// overlaid with GET /api/i18n/ui/{lang} (ui_strings), same keys. {name}
+// placeholders are filled by t(key, vars). Adding, renaming or removing a key
+// means updating every app/locales file too: `npm run i18n:check`.
 //
 // Covered: app shell (top bar, side nav, bottom tabs, footer, network banner,
 // error pages), player controls and settings sheet, autoplay, home and the
@@ -123,7 +125,6 @@ export const zhCN = {
   'player.quality': '清晰度',
   'player.rate': '倍速',
   'player.captions': '字幕',
-  'player.captionsKey': '字幕 (C)',
   'player.audio': '音轨',
   'player.settings': '设置',
   'player.pip': '画中画',
