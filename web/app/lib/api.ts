@@ -302,6 +302,21 @@ export type ReleaseDetail = Release & {
   series?: {id: number; slug: string; name: string; display_name?: string} | null;
   /** When an upcoming release goes live (status 'upcoming'; absent: date not fixed). */
   scheduled_at?: string | null;
+  /** 其他版本: published releases linked as versions of the same work (migration 047). */
+  other_versions?: ReleaseVersionRef[] | null;
+};
+
+/** One entry of ReleaseDetail.other_versions (store.VersionRef). */
+export type ReleaseVersionRef = {
+  id: number;
+  slug: string;
+  title: string;
+  release_date?: string | null;
+  runtime_minutes?: number | null;
+  edition_type: string;
+  censorship_type?: string | null;
+  code?: string;
+  status: string;
 };
 
 export type Performer = {
@@ -801,7 +816,14 @@ export type UserSettings = {
   personalize_recs?: boolean;
   /** 弹幕个人屏蔽词 (migration 045); absent on older backends. */
   danmaku_block_words?: string[];
+  /** 默认片源 (migration 047): provider play-config orders first; '' = automatic. Absent on older backends. */
+  preferred_provider?: string;
 };
+
+/** A provider a viewer can pick as 默认片源 (GET /api/playback/providers). */
+export type PlaybackProvider = {provider: string; releases: number};
+export const getPlaybackProviders = (signal?: AbortSignal) =>
+  api<{items: PlaybackProvider[] | null}>('playback/providers', {signal}).then(d => d.items ?? []);
 
 /** One release inside a (possibly merged, one-per-day) notification. */
 export type NotificationRelease = {

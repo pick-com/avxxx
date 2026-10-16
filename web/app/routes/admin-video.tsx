@@ -1,6 +1,7 @@
 import {useEffect, useMemo, useState, type FormEvent, type ReactNode} from 'react';
 import {Link, useParams, useSearchParams} from 'react-router';
 import {AdminVideoCast} from '../components/AdminVideoCast';
+import {AdminVideoCurves} from '../components/AdminVideoCurves';
 import {AdminVideoSources} from '../components/AdminVideoSources';
 import {AdminNotice, NotDeployed, Pill, fmtTime, jsonText, statusTone} from '../components/AdminUI';
 import {ApiError, isMissingEndpoint} from '../lib/api';
@@ -32,15 +33,17 @@ export const meta = () => [{title: 'REEL · 视频编辑'}];
 // optimistic-lock version and become manual overrides (the crawler stops
 // writing those fields until 清除覆盖). Publishing is gated by R-AGE on the
 // server; its 409 names the performers. 发布 also carries 推荐位 (home slot
-// shortcut) and 版权凭证 (AdminVideoPublishExtras). 截屏与章节 (artboard tab) has no
+// shortcut) and 版权凭证 (AdminVideoPublishExtras). 数据标签 draws the
+// retention / rewatch / skip curves (AdminVideoCurves). 截屏与章节 (artboard tab) has no
 // backend yet (needs the transcoding pipeline) and is left out.
 
-type TabKey = 'basic' | 'sources' | 'cast' | 'publish' | 'i18n' | 'history';
+type TabKey = 'basic' | 'sources' | 'cast' | 'publish' | 'data' | 'i18n' | 'history';
 const TABS: {key: TabKey; label: string}[] = [
   {key: 'basic', label: '基本信息'},
   {key: 'sources', label: '片源'},
   {key: 'cast', label: '演员'},
   {key: 'publish', label: '发布'},
+  {key: 'data', label: '数据标签'},
   {key: 'i18n', label: '多语言'},
   {key: 'history', label: '修改记录'},
 ];
@@ -536,6 +539,8 @@ const ACTION_LABELS: Record<string, string> = {
   remove_rights_proof: '移除版权凭证',
   add_release: '从搜索词补片',
   create_upcoming: '从搜索词建预约页',
+  link_versions: '关联为其他版本',
+  unlink_versions: '取消其他版本关联',
 };
 
 function HistoryTab({r, onChanged}: {r: AdminRelease; onChanged: () => void}) {
@@ -604,6 +609,7 @@ export default function AdminVideo() {
     else if (tab === 'cast')
       body = <AdminVideoCast releaseId={r.id} performers={r.performers ?? []} shootYear={r.shoot_year} releaseDate={r.release_date} onChanged={rel.reload} />;
     else if (tab === 'publish') body = <PublishTab r={r} onSaved={rel.reload} />;
+    else if (tab === 'data') body = <AdminVideoCurves releaseId={r.id} />;
     else if (tab === 'i18n') body = <I18nTab r={r} />;
     else body = <HistoryTab r={r} onChanged={rel.reload} />;
   }

@@ -10,7 +10,7 @@ import {formatRuntime, formatYear} from '../lib/format';
 import {t, useT} from '../lib/i18n';
 import type {MessageKey} from '../lib/messages.zh-CN';
 import {entriesFromConfig} from '../lib/playSources';
-import {getTonight, performerName, reasonText, recsMissing, recTitle, type RecItem, type TonightDuration} from '../lib/recs';
+import {getTonight, performerName, reasonText, recsMissing, recTitle, type RecItem, type TonightCompany, type TonightDuration, type TonightMood} from '../lib/recs';
 import {useSocial} from '../lib/social';
 import {useAsync} from '../lib/useAsync';
 import {useMediaQuery} from '../lib/useMediaQuery';
@@ -26,15 +26,16 @@ export const meta = () => [{title: t('title.tonight')}];
 // demote their maker and performer. The last 3 swapped-out picks stay as
 // chips and can be brought back. 看过了 writes a finished watch_history row.
 //
-// Filters: 时长 is sent as `duration`. TODO(recs: mood / company signals):
-// 想要 and 和谁看 have no backend field yet — they stay client-side state and
-// only travel in the analytics `filters`.
+// Filters: 时长 is sent as `duration` (a filter); 想要 and 和谁看 are sent as
+// `mood` / `company`, soft preferences the backend maps conservatively to
+// genre tags and a runtime window (internal/recs prefs.go) — they reorder
+// the pick, never empty it.
 // Preview: muted autoplay only when play-config has a direct media file the
 // browser can play (no trailer field exists); otherwise the placeholder.
 
 type Duration = TonightDuration;
-type Mood = 'any' | 'light' | 'thrill' | 'touching' | 'brainy';
-type Who = 'self' | 'friends' | 'family';
+type Mood = TonightMood;
+type Who = TonightCompany;
 type Filters = {duration: Duration; mood: Mood; who: Who};
 
 const DURATIONS: {value: Duration; label: MessageKey}[] = [
@@ -84,7 +85,10 @@ export default function TonightPage() {
   const [shuffles, setShuffles] = useState(0);
   const [notice, setNotice] = useState('');
   const [busy, setBusy] = useState(false);
-  const result = useAsync(signal => getTonight({duration: filters.duration, exclude}, signal), [filters.duration, exclude.join(','), status]);
+  const result = useAsync(
+    signal => getTonight({duration: filters.duration, mood: filters.mood, company: filters.who, exclude}, signal),
+    [filters.duration, filters.mood, filters.who, exclude.join(','), status],
+  );
   // Keep showing the previous pick while the next one loads (no blank flash).
   const [last, setLast] = useState<RecItem | null>(null);
   useEffect(() => {

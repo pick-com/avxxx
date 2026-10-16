@@ -1,0 +1,245 @@
+/* Admin data views: AdminVideo 数据标签 curves (components/AdminVideoCurves.tsx). */
+
+.adm-curves {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.adm-curve {
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.adm-curve figcaption {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: baseline;
+  font-size: 13px;
+}
+
+.adm-curve-top {
+  margin-left: auto;
+  color: var(--text2);
+  font-size: 12px;
+}
+
+.adm-curve-svg {
+  width: 100%;
+  height: 120px;
+  display: block;
+  border-radius: 8px;
+  background: var(--surface2);
+  cursor: crosshair;
+  touch-action: pan-y;
+  --curve: var(--adm-blue-fg);
+}
+
+.adm-curve-svg:focus-visible {
+  outline: 2px solid var(--curve);
+  outline-offset: 2px;
+}
+
+.adm-curve-svg.purple {
+  --curve: var(--adm-purple-fg);
+}
+
+.adm-curve-svg.amber {
+  --curve: var(--adm-amber-fg);
+}
+
+.adm-curve-grid {
+  stroke: var(--line);
+  stroke-width: 0.5;
+}
+
+.adm-curve-area {
+  fill: var(--curve);
+  opacity: 0.18;
+}
+
+.adm-curve-line {
+  fill: none;
+  stroke: var(--curve);
+  stroke-width: 1.5;
+}
+
+.adm-curve-bar {
+  fill: var(--curve);
+  opacity: 0.75;
+}
+
+.adm-curve-peak line {
+  stroke: var(--curve);
+  stroke-dasharray: 3 3;
+  stroke-width: 1;
+  opacity: 0.7;
+}
+
+.adm-curve-peak circle {
+  fill: var(--surface);
+  stroke: var(--curve);
+  stroke-width: 2;
+}
+
+.adm-curve-cursor {
+  stroke: var(--text);
+  stroke-width: 1;
+}
+
+.adm-curve-peaks {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+  font-size: 12px;
+}
+
+.adm-curve-readout {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 20px;
+  margin: 0;
+  padding: 10px 12px;
+  border-radius: 8px;
+  border: 1px solid var(--line);
+  font-size: 13px;
+  min-height: 42px;
+  align-items: center;
+}
+
+.adm-curve-readout div {
+  display: flex;
+  gap: 6px;
+}
+
+.adm-curve-readout dt {
+  color: var(--muted);
+}
+
+.adm-curve-readout dd {
+  margin: 0;
+}
+
+/* AdminDashboard 播放与日活 (components/AdminSiteKPIs.tsx). */
+
+.adm-deltas {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 10px;
+}
+
+.adm-delta {
+  font-family: var(--font-mono);
+}
+
+.adm-delta.up {
+  color: var(--adm-green-fg);
+}
+
+.adm-delta.down {
+  color: var(--adm-red-fg);
+}
+
+.adm-spark {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin-top: 4px;
+}
+
+.adm-spark svg {
+  width: 100%;
+  height: 40px;
+  display: block;
+  cursor: crosshair;
+  touch-action: pan-y;
+}
+
+.adm-spark-line {
+  fill: none;
+  stroke: var(--adm-blue-fg);
+  stroke-width: 1.5;
+}
+
+.adm-spark-line.partial {
+  stroke-dasharray: 3 3;
+  opacity: 0.7;
+}
+
+.adm-spark-dot {
+  fill: var(--adm-blue-fg);
+}
+
+.adm-spark-readout {
+  font-size: 11px;
+  color: var(--faint);
+  min-height: 14px;
+}
+
+/* AdminDedupe compare table and decisions (routes/admin-dedupe.tsx). */
+
+.compare-table th[scope='row'] {
+  width: 96px;
+  white-space: nowrap;
+  vertical-align: top;
+  color: var(--muted);
+  font-weight: 400;
+}
+
+.compare-table td {
+  vertical-align: top;
+  overflow-wrap: anywhere;
+  white-space: normal;
+}
+
+.compare-table tr.compare-differ td {
+  background: var(--adm-amber-bg);
+  color: var(--adm-amber-fg);
+}
+
+.compare-table tr.compare-same td {
+  color: var(--adm-green-fg);
+}
+
+.compare-flag {
+  display: block;
+  font-size: 11px;
+  color: var(--adm-amber-fg);
+}
+
+.compare-cover {
+  width: 140px;
+  max-width: 100%;
+  height: auto;
+  border-radius: 6px;
+  display: block;
+}
+
+.compare-links {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.dedupe-decisions {
+  display: grid;
+  gap: 10px;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+}
+
+.dedupe-decision {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  font-size: 13px;
+}

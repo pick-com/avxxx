@@ -128,6 +128,12 @@ type PlaybackPlan struct {
 // region is an ISO 3166-1 alpha-2 code ("" when unknown); quality is the
 // preferred max height (0 for no preference).
 func PlanPlayback(rel PlaybackRelease, all []PlaybackSource, region string, quality int) PlaybackPlan {
+	return PlanPlaybackFor(rel, all, region, quality, "")
+}
+
+// PlanPlaybackFor is PlanPlayback with the viewer's preferred provider
+// (Settings 默认片源, ” = none) applied to the order.
+func PlanPlaybackFor(rel PlaybackRelease, all []PlaybackSource, region string, quality int, provider string) PlaybackPlan {
 	ref := ReferenceDuration(all, rel.RuntimeMinutes)
 	srcs := make([]PlaybackSource, len(all))
 	copy(srcs, all)
@@ -139,7 +145,7 @@ func PlanPlayback(rel PlaybackRelease, all []PlaybackSource, region string, qual
 	if !RegionAllowed(PlaybackSource{RegionAllow: rel.RegionAllow, RegionDeny: rel.RegionDeny}, region) {
 		srcs = nil // the release itself is not licensed for this region
 	}
-	OrderPlaybackSources(srcs, quality)
+	OrderPlaybackSourcesFor(srcs, quality, provider)
 	return PlaybackPlan{DurationSeconds: ref, Sources: srcs, RegionBlocked: region != "" && len(srcs) == 0 && anywhere}
 }
 
@@ -264,6 +270,15 @@ func qualityRank(x PlaybackSource, quality int) int {
 // match, health_score (high first), priority (low first), id.
 // Call after ApplyAltVersionRule.
 func OrderPlaybackSources(srcs []PlaybackSource, quality int) {
+	OrderPlaybackSourcesFor(srcs, quality, "")
+}
+
+// OrderPlaybackSourcesFor is OrderPlaybackSources with a preferred provider
+// (Settings 默认片源): within each group (shared progress / alternate, then
+// active / degraded) that provider's sources come first, before the
+// quality match. The preference never promotes an alternate version or a
+// degraded source over a better group, so the fallback chain keeps working.
+func OrderPlaybackSourcesFor(srcs []PlaybackSource, quality int, provider string) {
 	slices.SortStableFunc(srcs, func(a, b PlaybackSource) int {
 		if a.IsAltVersion != b.IsAltVersion {
 			if b.IsAltVersion {
@@ -276,6 +291,14 @@ func OrderPlaybackSources(srcs []PlaybackSource, quality int) {
 				return -1
 			}
 			return 1
+		}
+		if provider != "" {
+			if ap, bp := a.Provider == provider, b.Provider == provider; ap != bp {
+				if ap {
+					return -1
+				}
+				return 1
+			}
 		}
 		if d := qualityRank(a, quality) - qualityRank(b, quality); d != 0 {
 			return d
@@ -419,4 +442,36 @@ func (s *Store) PromoteMediaSource(ctx context.Context, in PromoteMediaSourceInp
 		return 0, err
 	}
 	return id, tx.Commit(ctx)
+}
+
+// PlaybackProvider is one provider a viewer can choose as 默认片源.
+type PlaybackProvider struct {
+	Provider string `json:"provider"`
+	Releases int    `json:"releases"`
+}
+
+// PlaybackProviders lists providers with an active or degraded source on a
+// published release, most releases first.
+func (s *Store) PlaybackProviders(ctx context.Context) ([]PlaybackProvider, error) {
+	out, err := collectRows(ctx, s, `SELECT ps.provider, count(DISTINCT ps.release_id)::int FROM playback_sources ps
+		JOIN releases r ON r.id = ps.release_id AND r.status = 'published' AND r.merged_into_id IS NULL
+		WHERE ps.status IN ('active','degraded') AND ps.provider <> ''
+		GROUP BY ps.provider ORDER BY 2 DESC, 1 LIMIT 50`, nil, func(r pgx.Rows) (PlaybackProvider, error) {
+		var p PlaybackProvider
+		return p, r.Scan(&p.Provider, &p.Releases)
+	})
+	if out == nil {
+		out = []PlaybackProvider{}
+	}
+	return out, err
+}
+
+// PreferredProvider is the user's 默认片源 (” = automatic or no settings row).
+func (s *Store) PreferredProvider(ctx context.Context, userID int64) (string, error) {
+	var p string
+	err := s.QueryRow(ctx, `SELECT preferred_provider FROM user_settings WHERE user_id=$1`, userID).Scan(&p)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return "", nil
+	}
+	return p, err
 }

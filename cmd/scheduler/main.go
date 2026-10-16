@@ -9,6 +9,7 @@ import (
 	"avxxx/internal/playcurve"
 	"avxxx/internal/recs"
 	"avxxx/internal/search"
+	"avxxx/internal/sitemetrics"
 	"avxxx/internal/store"
 	"avxxx/internal/watchstats"
 	"context"
@@ -144,6 +145,15 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
+	// AdminDashboard site KPIs (internal/sitemetrics, run by cmd/audit):
+	// site_daily_metrics for yesterday and today once per SITE_METRICS_EVERY
+	// slot (default 1h).
+	siteMetricsEvery := time.Hour
+	if v := os.Getenv("SITE_METRICS_EVERY"); v != "" {
+		if siteMetricsEvery, err = time.ParseDuration(v); err != nil || siteMetricsEvery < 5*time.Minute || siteMetricsEvery > 24*time.Hour {
+			log.Fatalf("invalid SITE_METRICS_EVERY %q: want a duration between 5m and 24h", v)
+		}
+	}
 	interval := 60 * time.Second
 	var lastAuthPrune time.Time
 	for ctx.Err() == nil {
@@ -195,6 +205,9 @@ func main() {
 			log.Printf("enqueue nightly watch stats: %v", err)
 		} else if ok {
 			log.Printf("enqueued nightly watch stats")
+		}
+		if _, err := s.EnqueueKindSince(ctx, sitemetrics.JobKind, time.Now().Truncate(siteMetricsEvery)); err != nil {
+			log.Printf("enqueue site metrics: %v", err)
 		}
 		n, err := s.EnqueueDue(ctx)
 		if err != nil {

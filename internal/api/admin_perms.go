@@ -83,6 +83,7 @@ var adminRoutePerms = map[string]routePerm{
 	"GET /api/admin/playback-sources/health": rd(gDashboard),
 	"GET /api/admin/reports/completeness":    rd(gDashboard),
 	"GET /api/admin/seo/report":              rd(gDashboard),
+	"GET /api/admin/site-metrics":            rd(gDashboard),
 
 	// 视频与演员、重复与归并、字段冲突、拆分
 	"GET /api/admin/releases":                                   rd(gCatalog),
@@ -125,6 +126,9 @@ var adminRoutePerms = map[string]routePerm{
 	"POST /api/admin/identity-candidates/{id}/merge":           wr(gCatalog),
 	"POST /api/admin/identity-candidates/{id}/not-duplicate":   wr(gCatalog),
 	"POST /api/admin/merges/{id}/undo":                         wr(gCatalog),
+	"GET /api/admin/identity-candidates/{id}/compare":          rd(gCatalog),
+	"POST /api/admin/identity-candidates/{id}/versions":        wr(gCatalog),
+	"DELETE /api/admin/releases/{id}/versions/{other_id}":      wr(gCatalog),
 	"GET /api/admin/conflicts":                                 rd(gCatalog),
 	"POST /api/admin/conflicts/{id}/resolve":                   wr(gCatalog),
 	"GET /api/admin/performers/{id}/split-preview":             rd(gCatalog),

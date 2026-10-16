@@ -27,7 +27,9 @@ export const meta = () => [{title: t('title.welcome')}];
 //      Phones replace it with 允许新作推送 (notify_prefs.*.push).
 //   2. 选 3 个以上类型 → PUT /api/me/interests (user_interests) and this
 //      browser's copy; finishing marks users.onboarded_at.
-//      TODO(recs): use the interests to suggest performers / cold-start recs.
+//      Until the user has watched a few releases, home / tonight recs
+//      recall and boost releases with these tags (internal/recs prefs.go).
+//      TODO(recs): use the interests to suggest performers too.
 //   3. 关注演员 → PUT /api/me/follows/{slug}; suggestions are the performers
 //      with the most works (GET /api/performers?sort=works).
 

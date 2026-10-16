@@ -16,12 +16,14 @@ import {
 import {adminErrorText} from '../lib/adminApi';
 import {useAdminLoad} from '../lib/adminContext';
 import {SEOReportPanel} from '../components/AdminSEOReport';
+import {AdminSiteKPIs} from '../components/AdminSiteKPIs';
 
 export const meta = () => [{title: 'REEL · 后台总览'}];
 
 // AdminDashboard (PRD 11 A1): GET admin/dashboard + the moderation counts.
-// Every number links into the work queue that resolves it. Play / DAU KPIs
-// from the artboard have no backend yet and are left out.
+// Every number links into the work queue that resolves it. 播放与日活
+// (plays / DAU / watch time / completion) come from GET admin/site-metrics
+// (AdminSiteKPIs).
 
 const BAND_TONE: Record<string, string> = {severe: 'red', degraded: 'amber', healthy: '', excellent: 'green', insufficient_data: 'blue'};
 const RESULT_LABELS: Record<string, string> = {ok: '正常', issues: '有待处理', failed: '失败', not_applicable: '未启用'};
@@ -178,6 +180,8 @@ export default function AdminDashboard() {
         </div>
       </section>
       {seoOpen && <SEOReportPanel onClose={() => setSeoOpen(false)} />}
+
+      <AdminSiteKPIs />
 
       <div className="adm-grid-2">
         <section className="adm-card">

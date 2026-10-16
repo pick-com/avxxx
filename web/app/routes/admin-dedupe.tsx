@@ -15,7 +15,10 @@ import {
   type IdentityCandidate,
   type MergeResult,
 } from '../lib/api';
-import {useAdmin} from '../lib/adminContext';
+import {useAdmin, useAdminLoad} from '../lib/adminContext';
+import {CatalogImage} from '../components/Cards';
+import {getCandidateCompare, linkCandidateVersions, unlinkReleaseVersion, type EntitySummary} from '../lib/adminDedupeApi';
+import '../styles/admin-data.css';
 
 export const meta = () => [{title: 'REEL · 重复与归并'}];
 
@@ -24,10 +27,14 @@ export const meta = () => [{title: 'REEL · 重复与归并'}];
 // Merges are undoable (POST admin/merges/{event}/undo). The API has no list of
 // past merges, so 最近合并 is kept in this browser (localStorage).
 //
-// The API returns only ids and scoring evidence for a candidate, so the
-// compare panel shows what the evidence says about each side, nothing more.
-// TODO(tech plan 3.11): entity summaries (title, cover, works) by id for the compare panel.
-// TODO(PRD 11): 合并为新片源 vs 合并为其他版本 for videos (the backend has one merge).
+// The compare panel loads both sides' summaries (GET
+// admin/identity-candidates/{id}/compare: codes, dates, maker, performers,
+// catalog sources, playback links, cover) side by side and highlights the
+// fields that differ; the scoring evidence stays below. Videos get the three
+// decisions of the artboard: 新片源 (same work: merge, the other side's
+// sources become sources of the kept one), 其他版本 (link the two as versions
+// of one work without merging; shown on the release page) and 不是重复.
+// Every decision writes a review_events row.
 
 const RECENT_KEY = 'admin_recent_merges';
 const RECENT_MAX = 20;
@@ -257,6 +264,22 @@ export default function AdminDedupe() {
     }
   };
 
+  const linkVersions = async (candidate: IdentityCandidate) => {
+    if (!window.confirm(`把 #${candidate.left_id} 和 #${candidate.right_id} 关联为同一作品的其他版本？\n两条都保留，作品页互相显示「其他版本」。`)) return;
+    setBusy(true);
+    setError('');
+    setMessage(null);
+    try {
+      const result = await linkCandidateVersions(candidate.id, reason.trim() || undefined);
+      dropCandidate(candidate.id);
+      setMessage(`已关联为其他版本：#${candidate.left_id} ↔ #${candidate.right_id}（事件 #${result.review_event_id}）。`);
+    } catch (cause) {
+      setError(failureText(cause, '关联版本'));
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const undo = async (eventId: number) => {
     if (!Number.isInteger(eventId) || eventId <= 0) {
       setError('请输入合并事件编号');
@@ -396,6 +419,7 @@ export default function AdminDedupe() {
                 onReason={setReason}
                 onMerge={target => void merge(current, target)}
                 onNotDuplicate={() => void notDuplicate(current)}
+                onLinkVersions={() => void linkVersions(current)}
                 onSkip={() => {
                   const index = candidates.findIndex(c => c.id === current.id);
                   setSelected(candidates[(index + 1) % candidates.length]?.id ?? null);
@@ -455,7 +479,97 @@ export default function AdminDedupe() {
   );
 }
 
-function Compare({candidate, noun, busy, reason, onReason, onMerge, onNotDuplicate, onSkip}: {
+type SummaryRow = {k: string; a: ReactNode; b: ReactNode; same: boolean | null};
+
+const day = (v?: string | null) => (v ? v.slice(0, 10) : '');
+const norm = (v: string) => v.trim().toLowerCase().replace(/\s+/g, ' ');
+
+/** One compare row; same is null when either side is empty (nothing to compare). */
+function textRow(k: string, a: string | null | undefined, b: string | null | undefined): SummaryRow {
+  const x = a ?? '';
+  const y = b ?? '';
+  return {k, a: x || '—', b: y || '—', same: x && y ? norm(x) === norm(y) : x || y ? false : null};
+}
+
+function listRow(k: string, a: string[] | undefined, b: string[] | undefined): SummaryRow {
+  const x = a ?? [];
+  const y = b ?? [];
+  const key = (l: string[]) => Array.from(new Set(l.map(norm))).sort().join('|');
+  return {k, a: x.join(' · ') || '—', b: y.join(' · ') || '—', same: x.length && y.length ? key(x) === key(y) : x.length || y.length ? false : null};
+}
+
+function linkList(items: {href?: string; text: string; sub?: string}[]): ReactNode {
+  if (items.length === 0) return '—';
+  return (
+    <ul className="compare-links">
+      {items.map((it, i) => (
+        <li key={i}>
+          {it.href ? (
+            <a href={it.href} target="_blank" rel="noopener noreferrer">
+              {it.text}
+            </a>
+          ) : (
+            it.text
+          )}
+          {it.sub && <span className="muted"> · {it.sub}</span>}
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+function summaryRows(a: EntitySummary, b: EntitySummary): SummaryRow[] {
+  const rows: SummaryRow[] = [];
+  const cover = (e: EntitySummary) => (e.cover ? <CatalogImage image={e.cover} alt={e.title} className="compare-cover" sizes="160px" /> : '—');
+  rows.push({k: e2(a) ? '封面' : '照片', a: cover(a), b: cover(b), same: null});
+  rows.push(textRow(e2(a) ? '标题' : '名字', a.title, b.title));
+  rows.push(textRow(e2(a) ? '日文标题' : '日文名', a.title_ja, b.title_ja));
+  if (e2(a)) {
+    rows.push(listRow('番号', a.codes, b.codes));
+    rows.push(textRow('发布日期', day(a.release_date), day(b.release_date)));
+    rows.push(textRow('时长', a.runtime_minutes ? `${a.runtime_minutes} 分钟` : '', b.runtime_minutes ? `${b.runtime_minutes} 分钟` : ''));
+    rows.push(textRow('片商', a.maker, b.maker));
+    rows.push(textRow('厂牌', a.label, b.label));
+    rows.push(textRow('系列', a.series, b.series));
+    rows.push(textRow('版本类型', a.edition_type, b.edition_type));
+    rows.push(listRow('演员', a.performers, b.performers));
+    const play = (e: EntitySummary) =>
+      linkList((e.playback ?? []).map(p => ({href: p.url || undefined, text: `${p.kind === 'playback_source' ? '片源' : '映射'} ${p.provider} · ${p.label}`, sub: p.status})));
+    rows.push({k: '播放链接', a: play(a), b: play(b), same: null});
+  } else {
+    rows.push(textRow('生日', day(a.birth_date), day(b.birth_date)));
+    rows.push(textRow('作品数', a.works?.toString(), b.works?.toString()));
+    rows.push(listRow('别名', a.aliases, b.aliases));
+  }
+  const src = (e: EntitySummary) => linkList(e.sources.map(x => ({href: x.url, text: x.source})));
+  rows.push({k: '目录来源', a: src(a), b: src(b), same: listRow('', a.sources.map(x => x.source), b.sources.map(x => x.source)).same});
+  rows.push(textRow('状态', a.merged_into_id ? `已并入 #${a.merged_into_id}` : a.status, b.merged_into_id ? `已并入 #${b.merged_into_id}` : b.status));
+  return rows;
+}
+
+const e2 = (e: EntitySummary) => e.entity_type === 'release';
+
+function VersionsList({side, onUnlink, busy}: {side: EntitySummary; onUnlink: (other: number) => void; busy: boolean}) {
+  const list = side.versions ?? [];
+  if (list.length === 0) return <span className="muted">—</span>;
+  return (
+    <ul className="compare-links">
+      {list.map(v => (
+        <li key={v.id}>
+          <Link to={`/admin/videos/${v.id}`}>
+            #{v.id} {v.title}
+          </Link>
+          <span className="muted"> · {[v.code, day(v.release_date), v.status].filter(Boolean).join(' · ')}</span>{' '}
+          <button type="button" className="text-btn" disabled={busy} onClick={() => onUnlink(v.id)} title="只删除这两条之间的直接关联">
+            取消关联
+          </button>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+function Compare({candidate, noun, busy, reason, onReason, onMerge, onNotDuplicate, onLinkVersions, onSkip}: {
   candidate: IdentityCandidate;
   noun: string;
   busy: boolean;
@@ -463,15 +577,33 @@ function Compare({candidate, noun, busy, reason, onReason, onMerge, onNotDuplica
   onReason: (value: string) => void;
   onMerge: (targetId: number) => void;
   onNotDuplicate: () => void;
+  onLinkVersions: () => void;
   onSkip: () => void;
 }) {
   const evidence = parseEvidence(candidate.evidence);
   const facts = factsFrom(evidence);
+  const summary = useAdminLoad(signal => getCandidateCompare(candidate.id, signal), [candidate.id]);
+  const [unlinkError, setUnlinkError] = useState('');
   const sides = [
     {label: 'A', id: candidate.left_id, pick: (f: Fact) => f.a},
     {label: 'B', id: candidate.right_id, pick: (f: Fact) => f.b},
   ];
   const maxWeight = Math.max(0.6, ...(evidence?.rules ?? []).map(r => Math.abs(r.weight)));
+  const cmp = summary.data;
+  const rows = cmp ? summaryRows(cmp.left, cmp.right) : [];
+  const differ = rows.filter(r => r.same === false).length;
+  const isRelease = candidate.entity_type === 'release' || noun === '作品';
+
+  const unlink = async (from: EntitySummary, other: number) => {
+    if (!window.confirm(`取消 #${from.id} 与 #${other} 的其他版本关联？`)) return;
+    setUnlinkError('');
+    try {
+      await unlinkReleaseVersion(from.id, other, reason.trim() || undefined);
+      summary.reload();
+    } catch (cause) {
+      setUnlinkError(failureText(cause, '取消关联'));
+    }
+  };
 
   return (
     <div className="compare">
@@ -479,30 +611,79 @@ function Compare({candidate, noun, busy, reason, onReason, onMerge, onNotDuplica
         <h2>
           候选 #{candidate.id} · 相似度 <span className={`pair-score score-${scoreTone(candidate.score)}`}>{candidate.score.toFixed(2)}</span>
         </h2>
-        <span className="review-tag">{candidate.status}</span>
+        <span className="review-tag">{cmp ? `${differ} 项不同` : candidate.status}</span>
       </div>
 
-      <div className="compare-sides">
-        {sides.map(side => (
-          <div key={side.label} className="compare-side">
-            <span className="compare-tag">
-              {noun} {side.label} · #{side.id}
-            </span>
-            {facts.length === 0 ? (
-              <p className="muted">证据里没有可对比的字段。</p>
-            ) : (
-              <dl className="compare-facts">
-                {facts.map(f => (
-                  <div key={f.k} className={`compare-fact tone-${f.tone}`}>
-                    <dt>{f.k}</dt>
-                    <dd>{side.pick(f) || '—'}</dd>
-                  </div>
+      {cmp ? (
+        <div className="adm-table-wrap">
+          <table className="adm-table compare-table">
+            <thead>
+              <tr>
+                <th />
+                {[cmp.left, cmp.right].map((e, i) => (
+                  <th key={e.id}>
+                    {noun} {i === 0 ? 'A' : 'B'} ·{' '}
+                    <Link to={e2(e) ? `/admin/videos/${e.id}` : `/admin/actors?id=${e.id}`}>#{e.id}</Link>{' '}
+                    <Link to={entityHref(e.entity_type, e.slug)} target="_blank" className="muted">
+                      前台
+                    </Link>
+                  </th>
                 ))}
-              </dl>
-            )}
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map(r => (
+                <tr key={r.k} className={r.same === false ? 'compare-differ' : r.same ? 'compare-same' : ''}>
+                  <th scope="row">
+                    {r.k}
+                    {r.same === false && <span className="compare-flag">不同</span>}
+                  </th>
+                  <td>{r.a}</td>
+                  <td>{r.b}</td>
+                </tr>
+              ))}
+              {isRelease && (
+                <tr>
+                  <th scope="row">其他版本</th>
+                  <td>
+                    <VersionsList side={cmp.left} busy={busy} onUnlink={other => void unlink(cmp.left, other)} />
+                  </td>
+                  <td>
+                    <VersionsList side={cmp.right} busy={busy} onUnlink={other => void unlink(cmp.right, other)} />
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      ) : (
+        <>
+          {summary.busy && <p className="muted">正在加载两边的资料…</p>}
+          {summary.error && <p className="muted">资料摘要不可用（{summary.error}），只显示打分证据。</p>}
+          <div className="compare-sides">
+            {sides.map(side => (
+              <div key={side.label} className="compare-side">
+                <span className="compare-tag">
+                  {noun} {side.label} · #{side.id}
+                </span>
+                {facts.length === 0 ? (
+                  <p className="muted">证据里没有可对比的字段。</p>
+                ) : (
+                  <dl className="compare-facts">
+                    {facts.map(f => (
+                      <div key={f.k} className={`compare-fact tone-${f.tone}`}>
+                        <dt>{f.k}</dt>
+                        <dd>{side.pick(f) || '—'}</dd>
+                      </div>
+                    ))}
+                  </dl>
+                )}
+              </div>
+            ))}
           </div>
-        ))}
-      </div>
+        </>
+      )}
+      {unlinkError && <p className="adm-notice adm-notice-err">{unlinkError}</p>}
 
       <div className="signals">
         <h3>相似信号</h3>
@@ -527,24 +708,62 @@ function Compare({candidate, noun, busy, reason, onReason, onMerge, onNotDuplica
       </div>
 
       <label className="field-inline field-block">
-        <span>备注（可选）</span>
+        <span>备注（可选，写入修改记录）</span>
         <textarea value={reason} onChange={e => onReason(e.target.value)} rows={2} maxLength={2000} placeholder="例如：同一番号，标题含画质词" />
       </label>
 
-      <div className="action-row action-row-wrap">
-        <button type="button" className="btn btn-primary" disabled={busy} onClick={() => onMerge(candidate.left_id)}>
-          合并到 A（B 并入 A）
-        </button>
-        <button type="button" className="btn btn-secondary" disabled={busy} onClick={() => onMerge(candidate.right_id)}>
-          合并到 B（A 并入 B）
-        </button>
-        <button type="button" className="btn btn-secondary" disabled={busy} onClick={onNotDuplicate}>
-          {noun === '演员' ? '不是同一人' : '不是重复'}
-        </button>
-        <button type="button" className="text-btn" onClick={onSkip}>
-          稍后
-        </button>
-      </div>
+      {isRelease ? (
+        <div className="dedupe-decisions">
+          <div className="dedupe-decision">
+            <strong>新片源</strong>
+            <span className="muted">同一部作品：合并，另一条的片源、番号、收藏和播放记录转到保留的一条。</span>
+            <span className="action-row">
+              <button type="button" className="btn btn-primary btn-sm" disabled={busy} onClick={() => onMerge(candidate.left_id)}>
+                保留 A（B 并入 A）
+              </button>
+              <button type="button" className="btn btn-secondary btn-sm" disabled={busy} onClick={() => onMerge(candidate.right_id)}>
+                保留 B（A 并入 B）
+              </button>
+            </span>
+          </div>
+          <div className="dedupe-decision">
+            <strong>其他版本</strong>
+            <span className="muted">同一作品的不同版本（复刻、无码、4K 等）：两条都保留，作品页互相显示「其他版本」。</span>
+            <span className="action-row">
+              <button type="button" className="btn btn-secondary btn-sm" disabled={busy} onClick={onLinkVersions}>
+                关联为其他版本
+              </button>
+            </span>
+          </div>
+          <div className="dedupe-decision">
+            <strong>不是重复</strong>
+            <span className="muted">不同的作品：以后不再提示这一对。</span>
+            <span className="action-row">
+              <button type="button" className="btn btn-secondary btn-sm" disabled={busy} onClick={onNotDuplicate}>
+                不是重复
+              </button>
+              <button type="button" className="text-btn" onClick={onSkip}>
+                稍后
+              </button>
+            </span>
+          </div>
+        </div>
+      ) : (
+        <div className="action-row action-row-wrap">
+          <button type="button" className="btn btn-primary" disabled={busy} onClick={() => onMerge(candidate.left_id)}>
+            合并到 A（B 并入 A）
+          </button>
+          <button type="button" className="btn btn-secondary" disabled={busy} onClick={() => onMerge(candidate.right_id)}>
+            合并到 B（A 并入 B）
+          </button>
+          <button type="button" className="btn btn-secondary" disabled={busy} onClick={onNotDuplicate}>
+            不是同一人
+          </button>
+          <button type="button" className="text-btn" onClick={onSkip}>
+            稍后
+          </button>
+        </div>
+      )}
     </div>
   );
 }

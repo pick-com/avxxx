@@ -93,6 +93,7 @@ export const pagesZhCN = {
   'release.idContentId': '品番',
   'release.idOther': '编号',
   'release.tags': '标签',
+  'release.otherVersions': '其他版本',
   'release.age': '约 {age} 岁',
   'release.favorite': '收藏',
   'release.favorited': '已收藏',

@@ -19,6 +19,7 @@ import (
 func (srv *Server) playbackRoutes() []route {
 	return []route{
 		{"GET /api/releases/{slug}/play-config", srv.playConfig},
+		{"GET /api/playback/providers", srv.playbackProviders},
 	}
 }
 
@@ -30,6 +31,22 @@ type playbackStore interface {
 	UserIDByToken(ctx context.Context, token string) (int64, error)
 	DanmakuCurves(ctx context.Context, releaseID int64) (map[string][]int16, error)
 	ReplayCurves(ctx context.Context, releaseID int64) (map[string][]int16, error)
+	// PreferredProvider is the user's Settings 默认片源 ('' = automatic).
+	PreferredProvider(ctx context.Context, userID int64) (string, error)
+}
+
+// playbackProviders lists the providers a viewer can pick as 默认片源
+// (Settings › 播放): GET /api/playback/providers → {"items":[{provider,releases}]}.
+func (srv *Server) playbackProviders(w http.ResponseWriter, r *http.Request) {
+	if srv.store == nil {
+		reply(w, nil, errUnavailable)
+		return
+	}
+	v, err := srv.store.PlaybackProviders(r.Context())
+	if err == nil {
+		w.Header().Set("Cache-Control", "public, max-age=300")
+	}
+	reply(w, map[string]any{"items": v}, err)
 }
 
 func (srv *Server) playConfig(w http.ResponseWriter, r *http.Request) {
@@ -69,7 +86,8 @@ var regionCode = regexp.MustCompile(`^[A-Za-z]{2}$`)
 
 // servePlayConfig implements GET /api/releases/{slug}/play-config
 // (tech plan 3.3). Query: region (ISO 3166-1 alpha-2), quality (preferred
-// max height, e.g. 1080). A valid bearer token adds resume information; a
+// max height, e.g. 1080). A valid bearer token adds resume information and
+// orders the user's 默认片源 (preferred provider) first within its group; a
 // missing or invalid token is not an error.
 func servePlayConfig(w http.ResponseWriter, r *http.Request, ps playbackStore) {
 	q := r.URL.Query()
@@ -99,7 +117,18 @@ func servePlayConfig(w http.ResponseWriter, r *http.Request, ps playbackStore) {
 		return
 	}
 
-	plan := store.PlanPlayback(rel, all, region, quality)
+	var uid int64
+	provider := ""
+	if token := bearerToken(r); token != "" && strings.HasPrefix(r.Header.Get("Authorization"), "Bearer ") {
+		if id, err := ps.UserIDByToken(r.Context(), token); err == nil {
+			uid = id
+			if provider, err = ps.PreferredProvider(r.Context(), uid); err != nil {
+				obs.L(r.Context()).Warn("play-config preferred provider", "err", err)
+				provider = ""
+			}
+		}
+	}
+	plan := store.PlanPlaybackFor(rel, all, region, quality, provider)
 	rel.DurationSeconds = plan.DurationSeconds
 	resp := playConfigResponse{
 		Release:       rel,
@@ -124,15 +153,13 @@ func servePlayConfig(w http.ResponseWriter, r *http.Request, ps playbackStore) {
 		}
 	}
 
-	if token := bearerToken(r); token != "" && strings.HasPrefix(r.Header.Get("Authorization"), "Bearer ") {
-		if uid, err := ps.UserIDByToken(r.Context(), token); err == nil {
-			if sourceID, ok := store.ResumeSource(plan.Sources); ok {
-				pos, found, err := ps.ResumePosition(r.Context(), uid, rel.ID)
-				if err != nil {
-					obs.L(r.Context()).Warn("play-config resume position", "err", err)
-				} else if found {
-					resp.Resume = &playResume{SourceID: sourceID, PositionSeconds: pos}
-				}
+	if uid != 0 {
+		if sourceID, ok := store.ResumeSource(plan.Sources); ok {
+			pos, found, err := ps.ResumePosition(r.Context(), uid, rel.ID)
+			if err != nil {
+				obs.L(r.Context()).Warn("play-config resume position", "err", err)
+			} else if found {
+				resp.Resume = &playResume{SourceID: sourceID, PositionSeconds: pos}
 			}
 		}
 	}

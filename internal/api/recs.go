@@ -5,6 +5,8 @@ package api
 //	GET /api/recs?slot=home|related|similar_performers|performers|tonight
 //	    &release=<slug>&performer=<slug>&limit=&cursor=&lang=
 //	    &exclude=<id,id>&duration=any|30|60|120|series   (tonight)
+//	    &mood=any|light|thrill|touching|brainy&company=self|friends|family
+//	                                                     (tonight: soft preferences)
 //	GET /api/trending?period=today|week|month|year&tag=&limit=&cursor=&lang=
 //	GET /api/trending/performers?period=&limit=&cursor=&lang=
 //	GET/PUT /api/admin/similarity-weights
@@ -15,6 +17,8 @@ package api
 // a language, one translation lookup. The bearer token is optional: with a
 // valid one the user's history, follows and watched filter apply; without
 // (or with an invalid one) the visitor recall (trending + new) is used.
+// Signed-in users with little history (cold start) also get releases tagged
+// with their onboarding interests, which are boosted in ranking too.
 
 import (
 	"avxxx/internal/i18n"
@@ -98,6 +102,8 @@ type recsParams struct {
 	offset    int
 	period    string
 	duration  string
+	mood      string
+	company   string
 	exclude   []int64
 }
 
@@ -109,6 +115,8 @@ func parseRecsParams(q url.Values) (recsParams, error) {
 		performer: strings.TrimSpace(q.Get("performer")),
 		period:    strings.TrimSpace(q.Get("period")),
 		duration:  strings.TrimSpace(q.Get("duration")),
+		mood:      strings.TrimSpace(q.Get("mood")),
+		company:   strings.TrimSpace(q.Get("company")),
 	}
 	if !recs.ValidSlot(p.slot) {
 		return p, badRequest("slot must be home, related, similar_performers, performers or tonight", nil)
@@ -126,6 +134,12 @@ func parseRecsParams(q url.Values) (recsParams, error) {
 	}
 	if !recs.ValidDuration(p.duration) {
 		return p, badRequest("duration must be any, 30, 60, 120 or series", nil)
+	}
+	if !recs.ValidMood(p.mood) {
+		return p, badRequest("mood must be any, light, thrill, touching or brainy", nil)
+	}
+	if !recs.ValidCompany(p.company) {
+		return p, badRequest("company must be self, friends or family", nil)
 	}
 	var err error
 	if p.limit, err = limitParam(q); err != nil {
@@ -241,8 +255,14 @@ func (srv *Server) getRecs(w http.ResponseWriter, r *http.Request) {
 	}
 	if p.slot == recs.SlotTonight {
 		opt.Keep = recs.TonightKeep(p.duration)
+		opt.Prefer = recs.TonightPreferences(p.mood, p.company)
 	} else {
 		opt.Demote = nil
+	}
+	if rec.ColdStart {
+		if pref, ok := recs.InterestPreference(rec.Interests); ok {
+			opt.Prefer = append(opt.Prefer, pref)
+		}
 	}
 	ranked := recs.Rank(rec.Candidates, infos, opt)
 
@@ -257,7 +277,8 @@ func (srv *Server) getRecs(w http.ResponseWriter, r *http.Request) {
 			reply(w, nil, err)
 			return
 		}
-		out := map[string]any{"slot": p.slot, "item": nil, "alternates": []recItem{}, "duration": orAny(p.duration), "exclude": nonNil(p.exclude)}
+		out := map[string]any{"slot": p.slot, "item": nil, "alternates": []recItem{}, "duration": orAny(p.duration), "exclude": nonNil(p.exclude),
+			"mood": orDefault(p.mood, recs.MoodAny), "company": orDefault(p.company, recs.CompanySelf)}
 		if pick != nil {
 			out["item"], out["alternates"] = items[0], items[1:]
 		}
@@ -281,6 +302,13 @@ func orAny(d string) string {
 		return recs.DurationAny
 	}
 	return d
+}
+
+func orDefault(v, d string) string {
+	if v == "" {
+		return d
+	}
+	return v
 }
 
 func nonNil(x []int64) []int64 {

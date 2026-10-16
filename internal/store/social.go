@@ -10,6 +10,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"regexp"
 	"slices"
 	"strings"
 	"time"
@@ -101,6 +102,9 @@ type UserSettings struct {
 	// DanmakuBlockWords is the viewer's 屏蔽词 list (migration 045), applied
 	// in the player only.
 	DanmakuBlockWords []string `json:"danmaku_block_words"`
+	// PreferredProvider is 默认片源 (migration 047): a playback provider
+	// play-config orders first for this user; '' = automatic.
+	PreferredProvider string `json:"preferred_provider"`
 }
 
 // Danmaku block word limits (migration 045 caps the count too).
@@ -290,6 +294,12 @@ func ApplySettingsPatch(cur UserSettings, body []byte) (UserSettings, error) {
 					out.SubtitleLangs = append(out.SubtitleLangs, l)
 				}
 			}
+		case "preferred_provider":
+			var v string
+			if json.Unmarshal(raw, &v) != nil || !providerRe.MatchString(v) {
+				return cur, invalidSettings("preferred_provider must be a provider name (at most 100 characters) or \"\"")
+			}
+			out.PreferredProvider = v
 		case "danmaku_block_words":
 			if out.DanmakuBlockWords, err = decodeBlockWords(raw); err != nil {
 				return cur, err
@@ -366,7 +376,10 @@ func ApplySettingsPatch(cur UserSettings, body []byte) (UserSettings, error) {
 	return out, nil
 }
 
-const settingsColumns = `ui_lang,content_lang,subtitle_langs,quality_pref,data_saver,autoplay,remember_rate,history_paused,theme,timezone,notify_prefs,quiet_hours,later_auto_remove,notify_daily_cap,reservation_timing,personalize_recs,danmaku_block_words`
+const settingsColumns = `ui_lang,content_lang,subtitle_langs,quality_pref,data_saver,autoplay,remember_rate,history_paused,theme,timezone,notify_prefs,quiet_hours,later_auto_remove,notify_daily_cap,reservation_timing,personalize_recs,danmaku_block_words,preferred_provider`
+
+// providerRe: a playback provider identifier or "" (automatic).
+var providerRe = regexp.MustCompile(`^[^\s\p{Cc}<>"'\\]{0,100}$`)
 
 type rowScanner interface{ Scan(dest ...any) error }
 
@@ -376,7 +389,7 @@ func scanSettings(row rowScanner) (UserSettings, error) {
 	var dailyCap int16
 	err := row.Scan(&u.UILang, &u.ContentLang, &u.SubtitleLangs, &u.QualityPref, &u.DataSaver, &u.Autoplay,
 		&u.RememberRate, &u.HistoryPaused, &u.Theme, &u.Timezone, &prefs, &quiet, &u.LaterAutoRemove,
-		&dailyCap, &u.ReservationTiming, &u.PersonalizeRecs, &u.DanmakuBlockWords)
+		&dailyCap, &u.ReservationTiming, &u.PersonalizeRecs, &u.DanmakuBlockWords, &u.PreferredProvider)
 	u.NotifyDailyCap = int(dailyCap)
 	if err != nil {
 		return u, err
@@ -430,17 +443,17 @@ func (s *Store) PatchSettings(ctx context.Context, userID int64, body []byte) (U
 		quiet, _ = json.Marshal(next.QuietHours)
 	}
 	_, err = tx.Exec(ctx, `INSERT INTO user_settings(user_id,`+settingsColumns+`,updated_at)
-		VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,now())
+		VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,now())
 		ON CONFLICT(user_id) DO UPDATE SET ui_lang=EXCLUDED.ui_lang,content_lang=EXCLUDED.content_lang,
 		subtitle_langs=EXCLUDED.subtitle_langs,quality_pref=EXCLUDED.quality_pref,data_saver=EXCLUDED.data_saver,
 		autoplay=EXCLUDED.autoplay,remember_rate=EXCLUDED.remember_rate,history_paused=EXCLUDED.history_paused,
 		theme=EXCLUDED.theme,timezone=EXCLUDED.timezone,notify_prefs=EXCLUDED.notify_prefs,
 		quiet_hours=EXCLUDED.quiet_hours,later_auto_remove=EXCLUDED.later_auto_remove,notify_daily_cap=EXCLUDED.notify_daily_cap,
 		reservation_timing=EXCLUDED.reservation_timing,personalize_recs=EXCLUDED.personalize_recs,
-		danmaku_block_words=EXCLUDED.danmaku_block_words,updated_at=now()`,
+		danmaku_block_words=EXCLUDED.danmaku_block_words,preferred_provider=EXCLUDED.preferred_provider,updated_at=now()`,
 		userID, next.UILang, next.ContentLang, next.SubtitleLangs, next.QualityPref, next.DataSaver, next.Autoplay,
 		next.RememberRate, next.HistoryPaused, next.Theme, next.Timezone, prefs, quiet, next.LaterAutoRemove,
-		next.NotifyDailyCap, next.ReservationTiming, next.PersonalizeRecs, next.DanmakuBlockWords)
+		next.NotifyDailyCap, next.ReservationTiming, next.PersonalizeRecs, next.DanmakuBlockWords, next.PreferredProvider)
 	if err != nil {
 		return UserSettings{}, err
 	}
