@@ -6,6 +6,7 @@ import {EmptyState, ErrorBanner, BlockSkeleton} from '../components/States';
 import {PushDeviceRow} from '../components/PushOptIn';
 import {AccountSettings, DataExportRow} from '../components/AccountSettings';
 import {ClearSearchHistoryRow, DefaultSourceRow} from '../components/SettingsExtras';
+import {RecFeedbackSettings} from '../components/RecFeedback';
 import {Switch, SwitchRow} from '../components/Switch';
 import {clearWatchHistory, type LangCode, type NotifyChannel, type NotifyKind, type QualityPref, type UserSettings} from '../lib/api';
 import {useAuth} from '../lib/auth';
@@ -25,7 +26,8 @@ export const meta = () => [{title: translate('settings.pageTitle')}];
 //
 // 账号 (components/AccountSettings.tsx): 昵称、密码、已登录设备、第三方登录、
 // 注销账号 on /api/me/*. 通知: reservation_timing (上线时 / 上线前一天 / 都提醒)
-// and notify_daily_cap. 隐私: personalize_recs and 下载我的数据 (GET /api/me/export).
+// and notify_daily_cap. 隐私: personalize_recs, 推荐反馈 (components/RecFeedback.tsx)
+// and 下载我的数据 (GET /api/me/export).
 // 默认片源 and 清除搜索记录 are in components/SettingsExtras.tsx.
 //
 // Not built (no backend or decision yet):
@@ -633,6 +635,7 @@ function PrivacySection({s}: {s: UserSettings}) {
           </Link>
         </div>
         <ClearSearchHistoryRow />
+        <RecFeedbackSettings />
         <DataExportRow />
       </Group>
     </>

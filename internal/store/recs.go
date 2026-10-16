@@ -311,6 +311,10 @@ type RecQuery struct {
 	UserID int64 // 0 = visitor
 	SeedID int64 // related: the release being watched
 	Period string
+	// Feedback is whose 推荐反馈 (rec_feedback) applies: the signed-in user
+	// even with personalize_recs off (it is an explicit choice, not
+	// history), else the visitor's device; zero for none.
+	Feedback RecFeedbackOwner
 }
 
 // Per-channel recall limits.
@@ -403,6 +407,8 @@ type RecallResult struct {
 	// watched releases; Interests are their onboarding tags (normalized).
 	ColdStart bool
 	Interests []string
+	// Feedback is the owner's active 推荐反馈 (zero without an owner).
+	Feedback recs.Feedback
 }
 
 // Recall runs the recall branches, the watched list and the "any playback
@@ -427,6 +433,10 @@ func (s *Store) Recall(ctx context.Context, q RecQuery) (RecallResult, error) {
 			UNION ALL (SELECT release_id FROM release_reactions WHERE user_id=$1 AND value=-1 ORDER BY updated_at DESC LIMIT `+itoa(dislikedLimit)+`)`, q.UserID)
 		b.Queue(`SELECT (SELECT count(*) FROM (SELECT 1 FROM watch_history WHERE user_id=$1 LIMIT $2) h) < $2,
 			COALESCE((SELECT array_agg(tag_slug ORDER BY tag_slug) FROM user_interests WHERE user_id=$1), '{}')`, q.UserID, recs.ColdStartHistory)
+	}
+	fbKey := q.Feedback.Key()
+	if fbKey != "" {
+		b.Queue(recFeedbackSQL, fbKey)
 	}
 	br := s.SendBatch(ctx, b)
 	defer br.Close()
@@ -459,6 +469,15 @@ func (s *Store) Recall(ctx context.Context, q RecQuery) (RecallResult, error) {
 			res.Watched[id] = true
 		}
 		if err = br.QueryRow().Scan(&res.ColdStart, &res.Interests); err != nil {
+			return res, err
+		}
+	}
+	if fbKey != "" {
+		rows, err := br.Query()
+		if err != nil {
+			return res, err
+		}
+		if res.Feedback, err = scanRecFeedback(rows); err != nil {
 			return res, err
 		}
 	}

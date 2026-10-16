@@ -79,7 +79,7 @@ export function CardReason({text}: {text?: string}) {
   return text ? <span className="card-reason">{text}</span> : null;
 }
 
-export function ReleaseCard({slug, title, meta, sub, badge, progress, later = true, slot, reason, reasonCode, onOpen, cover}: {
+export function ReleaseCard({slug, title, meta, sub, badge, progress, later = true, slot, reason, reasonCode, onOpen, cover, menu}: {
   slug: string;
   /** Stored cover (Release.cover). */
   cover?: ApiImage | null;
@@ -96,6 +96,8 @@ export function ReleaseCard({slug, title, meta, sub, badge, progress, later = tr
   /** Recommendation reason code, sent as play_request `reason`. */
   reasonCode?: string;
   onOpen?: () => void;
+  /** A 「⋯」 CardMenu over the thumbnail (推荐反馈 on recommendation cards). */
+  menu?: ReactNode;
 }) {
   return (
     <div className="release-card-wrap">
@@ -107,6 +109,7 @@ export function ReleaseCard({slug, title, meta, sub, badge, progress, later = tr
         <CardReason text={reason} />
       </Link>
       {later && <LaterButton slug={slug} title={title} variant="icon" />}
+      {menu}
     </div>
   );
 }

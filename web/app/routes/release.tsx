@@ -12,6 +12,7 @@ import {Comments} from '../components/Comments';
 import {ShareButton, VoteButtons} from '../components/ReleaseActions';
 import {SourceCredits} from '../components/SourceCredits';
 import {OtherVersions} from '../components/OtherVersions';
+import {RecFeedbackCard} from '../components/RecFeedback';
 import {SourceEvidence} from '../components/SourceEvidence';
 import {FavoritePicker} from '../components/PlaylistPicker';
 import {LaterButton, ReserveButton} from '../components/SocialButtons';
@@ -611,16 +612,21 @@ function RelatedList({items, series, onFirst, onList}: {items: RecItem[]; series
       )}
       <div className="row-list" role={tabs.length > 1 ? 'tabpanel' : undefined}>
         {shown.slice(0, 12).map((it, i) => (
-          <ReleaseRow
-            key={it.id}
-            slug={it.slug}
-            title={recTitle(it)}
-            badge={it.runtime_minutes ? t('card.minutes', {n: it.runtime_minutes}) : undefined}
-            meta={performerName(it.performer) || it.maker_name}
-            reason={reasonText(it.reason, it)}
-            reasonCode={it.reason.code}
-            slot={`watch:related:${active}:r${i + 1}`}
-          />
+          <RecFeedbackCard key={it.id} item={it} variant="row">
+            {menu => (
+              <ReleaseRow
+                slug={it.slug}
+                title={recTitle(it)}
+                badge={it.runtime_minutes ? t('card.minutes', {n: it.runtime_minutes}) : undefined}
+                meta={performerName(it.performer) || it.maker_name}
+                reason={reasonText(it.reason, it)}
+                reasonCode={it.reason.code}
+                slot={`watch:related:${active}:r${i + 1}`}
+              >
+                {menu}
+              </ReleaseRow>
+            )}
+          </RecFeedbackCard>
         ))}
       </div>
       {series?.slug && (active === 'series' || !tabs.some(x => x.key === 'series')) && (

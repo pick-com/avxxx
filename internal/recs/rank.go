@@ -119,6 +119,10 @@ type Options struct {
 	// Prefer are soft preferences (cold-start interests, Tonight mood /
 	// company): they multiply the score, never filter (prefs.go).
 	Prefer []Preference
+	// Feedback is the viewer's 推荐反馈 (feedback.go): releases marked 不感兴趣
+	// and those led by a performer marked 不推荐 are dropped, recall hits
+	// through such a performer ignored, and marked tags demoted.
+	Feedback Feedback
 }
 
 // DemoteFactor multiplies the score of a demoted candidate per match.
@@ -131,9 +135,11 @@ const DemoteFactor = 0.7
 //	× 1.1 when the release has audio / subtitles in the request language
 //	× (0.9 + 0.02 · rating) when a rating is shown (8.0 → ×1.06)
 //	× each soft preference's Factor (matching tags / runtime)
+//	× TagFeedbackFactor when a tag is marked 不感兴趣 (推荐反馈)
 //
 // Releases missing from infos (not published, held, merged) are dropped,
-// as are the seed, watched and excluded ones, unplayable ones when
+// as are the seed, watched and excluded ones, those dropped by Feedback
+// (marked 不感兴趣, or led by a performer marked 不推荐), unplayable ones when
 // RequirePlayable, and those Keep rejects. The reason comes from the best
 // channel. Finally Diversify caps runs of the same performer.
 func Rank(cands []Candidate, infos map[int64]Info, opt Options) []Rec {
@@ -151,7 +157,7 @@ func Rank(cands []Candidate, infos map[int64]Info, opt Options) []Rec {
 	var order []int64
 	for _, c := range cands {
 		w, ok := ChannelWeights[c.Channel]
-		if !ok {
+		if !ok || opt.Feedback.ignoresHit(c) {
 			continue
 		}
 		norm := 1.0
@@ -180,6 +186,9 @@ func Rank(cands []Candidate, infos map[int64]Info, opt Options) []Rec {
 		if !ok || id == opt.Seed || opt.Watched[id] || opt.Exclude[id] {
 			continue
 		}
+		if opt.Feedback.drops(info) {
+			continue
+		}
 		if opt.RequirePlayable && !info.Playable {
 			continue
 		}
@@ -196,6 +205,7 @@ func Rank(cands []Candidate, infos map[int64]Info, opt Options) []Rec {
 		for _, p := range opt.Prefer {
 			score *= p.Factor(info)
 		}
+		score *= opt.Feedback.factor(info)
 		for _, d := range opt.Demote {
 			if (d.Maker != "" && d.Maker == info.Maker) || (d.PerformerID != 0 && d.PerformerID == info.PerformerID) {
 				score *= DemoteFactor
