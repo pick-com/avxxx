@@ -2,6 +2,9 @@ package api
 
 import (
 	"avxxx/internal/i18n"
+	"avxxx/internal/images"
+	"avxxx/internal/model"
+	"avxxx/internal/store"
 	"net/http"
 	"strconv"
 )
@@ -43,6 +46,7 @@ func (srv *Server) performers(w http.ResponseWriter, r *http.Request) {
 		reply(w, nil, err)
 		return
 	}
+	srv.withPortraits(r.Context(), performerPtrs(v, func(p *store.PerformerListItem) *model.Performer { return &p.Performer }))
 	l, err := srv.localizer(r.Context(), lang, performerRefs(v))
 	reply(w, withLang(page(localizePerformers(l, v), next), l), err)
 }
@@ -61,6 +65,11 @@ func (srv *Server) performerDetail(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	id := mapID(v)
+	if pid, perr := strconv.ParseInt(id, 10, 64); perr == nil {
+		if img := srv.publicImages(r.Context(), images.EntityPerformer, []int64{pid})[pid]; img != nil {
+			v["portrait"] = img
+		}
+	}
 	l, err := srv.localizer(r.Context(), lang, func() []i18n.Ref {
 		return []i18n.Ref{ref(i18n.EntityPerformer, id, "name"), ref(i18n.EntityPerformer, id, "biography")}
 	})
@@ -71,6 +80,9 @@ func (srv *Server) performerDetail(w http.ResponseWriter, r *http.Request) {
 func (srv *Server) performerReleases(w http.ResponseWriter, r *http.Request) {
 	limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
 	v, e := srv.store.PerformerReleases(r.Context(), r.PathValue("slug"), limit)
+	if e == nil {
+		srv.withCovers(r.Context(), v)
+	}
 	reply(w, map[string]any{"items": v}, e)
 }
 
@@ -92,6 +104,7 @@ func (srv *Server) releases(w http.ResponseWriter, r *http.Request) {
 		reply(w, nil, err)
 		return
 	}
+	srv.withCovers(r.Context(), v)
 	l, err := srv.localizer(r.Context(), lang, releaseRefs(v))
 	reply(w, withLang(page(localizeReleases(l, v), next), l), err)
 }
@@ -109,12 +122,18 @@ func (srv *Server) releaseBySlug(w http.ResponseWriter, r *http.Request) {
 		reply(w, nil, err)
 		return
 	}
+	one := []model.Release{v.Release}
+	srv.withCovers(r.Context(), one)
+	v.Cover = one[0].Cover
 	l, err := srv.localizer(r.Context(), lang, releaseDetailRefs(v))
 	reply(w, localizeReleaseDetail(l, v), err)
 }
 
 func (srv *Server) releasePerformers(w http.ResponseWriter, r *http.Request) {
 	v, e := srv.store.ReleasePerformers(r.Context(), r.PathValue("slug"))
+	if e == nil {
+		srv.withPortraits(r.Context(), performerPtrs(v, func(p *model.Performer) *model.Performer { return p }))
+	}
 	reply(w, map[string]any{"items": v}, e)
 }
 

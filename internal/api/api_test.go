@@ -193,6 +193,14 @@ var expectedRoutes = []string{
 	"GET /api/admin/seo/report",
 	// Source credits (attributions.go).
 	"GET /api/attributions",
+	// Catalog images (images.go).
+	"GET /api/images/{key...}",
+	"GET /api/admin/media",
+	"GET /api/admin/media/sources",
+	"POST /api/admin/media/jobs",
+	"POST /api/admin/media/{id}/suppress",
+	"POST /api/admin/media/{id}/restore",
+	"PUT /api/admin/sources/{id}/images",
 }
 
 var (
