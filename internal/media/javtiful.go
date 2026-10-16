@@ -5,7 +5,6 @@ import (
 	"crypto/tls"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"html"
 	"io"
 	"net/http"
@@ -102,7 +101,7 @@ func (a *JavtifulAdapter) get(ctx context.Context, rawURL, referer string) (stri
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
-		return "", fmt.Errorf("javtiful returned HTTP %d", resp.StatusCode)
+		return "", &StatusError{Source: "javtiful", Code: resp.StatusCode}
 	}
 	b, err := io.ReadAll(io.LimitReader(resp.Body, 8<<20))
 	if err != nil {

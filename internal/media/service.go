@@ -99,18 +99,31 @@ func validHTTPURL(raw string) bool {
 type ResultCache struct {
 	mu     sync.Mutex
 	values map[string]cacheValue
+	clock  func() time.Time // nil = time.Now (tests override it)
 }
 type cacheValue struct {
 	value   any
 	expires time.Time
 }
 
+// maxCacheEntries bounds the cache: when it is full, Set drops expired
+// entries and, if it is still full, starts over.
+const maxCacheEntries = 10000
+
 func NewResultCache() *ResultCache { return &ResultCache{values: map[string]cacheValue{}} }
+
+func (c *ResultCache) now() time.Time {
+	if c.clock != nil {
+		return c.clock()
+	}
+	return time.Now()
+}
+
 func (c *ResultCache) Get(key string) (any, bool) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	v, ok := c.values[key]
-	if !ok || time.Now().After(v.expires) {
+	if !ok || !c.now().Before(v.expires) {
 		delete(c.values, key)
 		return nil, false
 	}
@@ -119,5 +132,16 @@ func (c *ResultCache) Get(key string) (any, bool) {
 func (c *ResultCache) Set(key string, value any, ttl time.Duration) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	c.values[key] = cacheValue{value: value, expires: time.Now().Add(ttl)}
+	now := c.now()
+	if len(c.values) >= maxCacheEntries {
+		for k, v := range c.values {
+			if !now.Before(v.expires) {
+				delete(c.values, k)
+			}
+		}
+		if len(c.values) >= maxCacheEntries {
+			c.values = map[string]cacheValue{}
+		}
+	}
+	c.values[key] = cacheValue{value: value, expires: now.Add(ttl)}
 }
