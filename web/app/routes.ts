@@ -30,6 +30,7 @@ export default [
     route('admin/pipeline', 'routes/admin-pipeline.tsx'),
     route('admin/audit', 'routes/admin-audit.tsx'),
     route('admin/moderation', 'routes/admin-moderation.tsx'),
+    route('admin/i18n', 'routes/admin-i18n.tsx'),
     route('admin/review', 'routes/admin-review.tsx'),
     route('admin/dedupe', 'routes/admin-dedupe.tsx'),
   ]),
