@@ -75,12 +75,24 @@ func ParsePayload(raw []byte) (Payload, error) {
 	return p, nil
 }
 
+// KindReminder is the day-before reservation reminder template; it uses the
+// reservation notify prefs (store.RemindReservations).
+const KindReminder = "reservation_reminder"
+
 // TemplateKind is the template (and notify-prefs kind) for a payload.
 func (p Payload) TemplateKind() string {
+	reminders := 0
 	for _, it := range p.Items {
-		if it.Reason != "reservation" {
+		switch it.Reason {
+		case "reservation":
+		case KindReminder:
+			reminders++
+		default:
 			return KindNewWork
 		}
+	}
+	if reminders == len(p.Items) {
+		return KindReminder
 	}
 	return KindReservation
 }
@@ -91,7 +103,7 @@ func (p Payload) PrefKinds() []string {
 	var out []string
 	for _, it := range p.Items {
 		k := KindNewWork
-		if it.Reason == "reservation" {
+		if it.Reason == "reservation" || it.Reason == KindReminder {
 			k = KindReservation
 		}
 		if !seen[k] {

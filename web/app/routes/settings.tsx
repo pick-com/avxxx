@@ -4,6 +4,7 @@ import {Link, useLocation, useNavigate} from '../lib/nav';
 import {Icon, type IconName} from '../components/Icon';
 import {EmptyState, ErrorBanner, BlockSkeleton} from '../components/States';
 import {PushDeviceRow} from '../components/PushOptIn';
+import {AccountSettings, DataExportRow} from '../components/AccountSettings';
 import {Switch, SwitchRow} from '../components/Switch';
 import {clearWatchHistory, type LangCode, type NotifyChannel, type NotifyKind, type QualityPref, type UserSettings} from '../lib/api';
 import {useAuth} from '../lib/auth';
@@ -21,11 +22,13 @@ export const meta = () => [{title: translate('settings.pageTitle')}];
 // Settings / MobileSettings on GET / PATCH /api/me/settings. Every control
 // saves on change (optimistic, per-field error under the control).
 //
+// 账号 (components/AccountSettings.tsx): 昵称、密码、已登录设备、第三方登录、
+// 注销账号 on /api/me/*. 通知: reservation_timing (上线时 / 上线前一天 / 都提醒)
+// and notify_daily_cap. 隐私: personalize_recs and 下载我的数据 (GET /api/me/export).
+//
 // Not built (no backend or decision yet):
-// TODO(tech plan 3.6 / 3.13): 昵称、修改密码、已登录设备、第三方登录、注销账号.
-// TODO(tech plan 3.13): 跳过片头、默认片源、字幕大小、配音、清除搜索记录、下载我的数据、用观看记录改进推荐.
-// TODO(PRD 17): 「上线前一天」提醒 and a configurable daily cap — the fan-out
-// sends at go-live and merges to one notice per channel per day.
+// TODO(tech plan 3.13): 跳过片头 (needs intro markers; only a curve-based
+// suggestion exists), 默认片源、字幕大小、配音、清除搜索记录.
 // TODO(PRD 16 / 20): 广告偏好 and 青少年模式 sections (青少年模式 positioning is undecided).
 
 type SectionKey = 'account' | 'playback' | 'language' | 'notify' | 'privacy';
@@ -51,6 +54,13 @@ const CHANNEL_LABELS: [NotifyChannel, MessageKey][] = [
   ['email', 'settings.channelEmail'],
 ];
 const DEFAULT_QUIET = {start: '22:00', end: '08:00'};
+type ReservationTiming = NonNullable<UserSettings['reservation_timing']>;
+const RESERVATION_TIMINGS: [ReservationTiming, MessageKey][] = [
+  ['go_live', 'settings.whenGoLive'],
+  ['day_before', 'settings.whenDayBefore'],
+  ['both', 'settings.whenBoth'],
+];
+const DAILY_CAPS = [1, 2, 3, 5, 10];
 
 export default function SettingsPage() {
   const t = useT();
@@ -162,14 +172,14 @@ function FieldError({k}: {k: string}) {
 
 /** Boolean setting bound to a top-level key. */
 function BoolRow({k, label, description, s, invert = false}: {
-  k: 'data_saver' | 'autoplay' | 'remember_rate' | 'history_paused';
+  k: 'data_saver' | 'autoplay' | 'remember_rate' | 'history_paused' | 'personalize_recs';
   label: string;
   description?: string;
   s: UserSettings;
   invert?: boolean;
 }) {
   const {save, fieldErrors, pending} = useSettings();
-  const value = invert ? !s[k] : s[k];
+  const value = invert ? !s[k] : !!s[k];
   return (
     <SwitchRow
       label={label}
@@ -215,33 +225,7 @@ function SelectRow<T extends string>({id, label, description, value, options, on
 }
 
 function AccountSection() {
-  const t = useT();
-  const {user, signOut} = useAuth();
-  const navigate = useNavigate();
-  return (
-    <>
-      <Group title={t('settings.basicInfo')}>
-        <div className="set-row">
-          <div className="set-text">
-            <span className="set-label">{t('settings.email')}</span>
-            <span className="set-desc">{t('settings.emailDesc')}</span>
-          </div>
-          <span className="set-value">{user?.email ?? ''}</span>
-        </div>
-      </Group>
-      <p className="muted">{t('settings.accountSoon')}</p>
-      <button
-        type="button"
-        className="btn btn-secondary"
-        onClick={() => {
-          signOut();
-          navigate('/');
-        }}
-      >
-        {t('settings.signOut')}
-      </button>
-    </>
-  );
+  return <AccountSettings />;
 }
 
 function PlaybackSection({s}: {s: UserSettings}) {
@@ -423,20 +407,28 @@ function NotifySection({s}: {s: UserSettings}) {
         {push.availability !== 'disabled' && <p className="set-note">{t('settings.pushNote')}</p>}
       </Group>
       <Group title={t('settings.timing')}>
-        <div className="set-row">
-          <div className="set-text">
-            <span className="set-label">{t('settings.when')}</span>
-            <span className="set-desc">{t('settings.whenDesc')}</span>
-          </div>
-          <span className="set-value">{t('settings.whenValue')}</span>
-        </div>
-        <div className="set-row">
-          <div className="set-text">
-            <span className="set-label">{t('settings.dailyCap')}</span>
-            <span className="set-desc">{t('settings.dailyCapDesc')}</span>
-          </div>
-          <span className="set-value">{t('settings.dailyCapValue')}</span>
-        </div>
+        {s.reservation_timing !== undefined && (
+          <SelectRow
+            id="set-reservation-timing"
+            label={t('settings.when')}
+            description={t('settings.whenDesc')}
+            value={s.reservation_timing}
+            options={RESERVATION_TIMINGS.map(([v, k]) => [v, t(k)])}
+            errorKey="reservation_timing"
+            onChange={v => save('reservation_timing', {reservation_timing: v}, cur => ({...cur, reservation_timing: v}))}
+          />
+        )}
+        {s.notify_daily_cap !== undefined && (
+          <SelectRow
+            id="set-daily-cap"
+            label={t('settings.dailyCap')}
+            description={t('settings.dailyCapDesc')}
+            value={String(s.notify_daily_cap)}
+            options={DAILY_CAPS.map(n => [String(n), t('settings.dailyCapN', {n})])}
+            errorKey="notify_daily_cap"
+            onChange={v => save('notify_daily_cap', {notify_daily_cap: Number(v)}, cur => ({...cur, notify_daily_cap: Number(v)}))}
+          />
+        )}
         <QuietHours s={s} />
         <div className="set-row">
           <div className="set-text">
@@ -578,6 +570,9 @@ function PrivacySection({s}: {s: UserSettings}) {
     <>
       <Group title={t('settings.historyGroup')}>
         <BoolRow k="history_paused" label={t('settings.recordHistory')} description={t('settings.recordHistoryDesc')} s={s} invert />
+        {s.personalize_recs !== undefined && (
+          <BoolRow k="personalize_recs" label={t('settings.personalizeRecs')} description={t('settings.personalizeRecsDesc')} s={s} />
+        )}
         <div className="set-row set-row-stack">
           <div className="set-row-inline">
             <div className="set-text">
@@ -630,6 +625,7 @@ function PrivacySection({s}: {s: UserSettings}) {
             {t('settings.view')}
           </Link>
         </div>
+        <DataExportRow />
       </Group>
     </>
   );

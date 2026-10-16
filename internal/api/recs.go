@@ -202,7 +202,7 @@ func (srv *Server) getRecs(w http.ResponseWriter, r *http.Request) {
 		reply(w, nil, err)
 		return
 	}
-	uid := srv.viewerID(r)
+	uid := srv.recsViewerID(r) // 0 when the viewer turned off personalize_recs (auth.go)
 	if uid != 0 {
 		w.Header().Set("Cache-Control", "private, no-store")
 	}

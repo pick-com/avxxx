@@ -5,6 +5,7 @@ import (
 	"avxxx/internal/clientip"
 	"avxxx/internal/media"
 	"avxxx/internal/obs"
+	"avxxx/internal/oidc"
 	"avxxx/internal/store"
 	"context"
 	"log/slog"
@@ -51,6 +52,11 @@ func main() {
 	clientIPs, e := clientip.FromEnv(os.Getenv)
 	if e != nil {
 		obs.Fatal("client ip config", e)
+	}
+	// Google / Apple sign-in: a partial GOOGLE_* / APPLE_* set is fatal so a
+	// typo does not silently hide the buttons. Values are never logged.
+	if _, e := oidc.FromEnv(os.Getenv); e != nil {
+		obs.Fatal("oauth config", e)
 	}
 	if clientIPs.Trusts() {
 		slog.Info("client ip from X-Forwarded-For behind trusted proxies", "trusted_proxies", os.Getenv(clientip.EnvVar))

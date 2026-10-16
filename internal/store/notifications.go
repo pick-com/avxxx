@@ -210,6 +210,7 @@ type FanoutResult struct {
 	Releases      int   `json:"releases"`
 	Notifications int   `json:"notifications"`
 	Outbox        int   `json:"outbox"`
+	Reminders     int   `json:"reminders"` // day-before reservation reminders (reminders.go)
 }
 
 // PromoteDueReleases publishes upcoming releases whose scheduled_at has passed.
@@ -226,6 +227,9 @@ func (s *Store) NotifyFanout(ctx context.Context, maxReleases int) (FanoutResult
 	var err error
 	if res.Promoted, err = s.PromoteDueReleases(ctx); err != nil {
 		return res, fmt.Errorf("promote due releases: %w", err)
+	}
+	if res.Reminders, err = s.RemindReservations(ctx, time.Now(), 500); err != nil {
+		return res, fmt.Errorf("reservation reminders: %w", err)
 	}
 	if maxReleases <= 0 {
 		maxReleases = 100
@@ -299,9 +303,16 @@ func (s *Store) fanoutOne(ctx context.Context) (done bool, notified, outbox int,
 	}
 
 	recipients := FanoutRecipients(credits, follows, reservers, FreshForFollowers(releaseDate, now))
+	if err := dropDeletingUsers(ctx, tx, recipients); err != nil {
+		return false, 0, 0, fmt.Errorf("deleting users: %w", err)
+	}
 	settings, err := s.settingsFor(ctx, tx, recipients)
 	if err != nil {
 		return false, 0, 0, fmt.Errorf("settings: %w", err)
+	}
+	reminded, err := remindedUsers(ctx, tx, releaseID)
+	if err != nil {
+		return false, 0, 0, fmt.Errorf("reminders: %w", err)
 	}
 	for uid, rc := range recipients {
 		var performers []map[string]string
@@ -316,6 +327,11 @@ func (s *Store) fanoutOne(ctx context.Context) (done bool, notified, outbox int,
 		}
 		if tag.RowsAffected() == 0 {
 			continue // already told about this release
+		}
+		// reservation_timing=day_before: the day-before reminder replaces the
+		// go-live notice (when one was sent; undated releases still notify).
+		if rc.Reason == ReasonReservation && settings[uid].ReservationTiming == "day_before" && reminded[uid] {
+			continue
 		}
 		d := PlanDelivery(settings[uid], uid, rc.Reason, now)
 		if d.InApp {
@@ -339,19 +355,26 @@ func (s *Store) fanoutOne(ctx context.Context) (done bool, notified, outbox int,
 			notified++
 		}
 		for _, ch := range d.Channels {
-			tag, err := tx.Exec(ctx, `INSERT INTO notification_outbox(user_id,channel,payload,merged_key,send_after)
-				VALUES($1,$2,jsonb_build_object('kind',$3::text,'items',jsonb_build_array($4::jsonb),'count',1),$5,$6)
-				ON CONFLICT (user_id,channel,merged_key) WHERE merged_key IS NOT NULL DO UPDATE SET
-				  payload=jsonb_build_object('kind',$3::text,
-				    'items', CASE WHEN jsonb_array_length(COALESCE(notification_outbox.payload->'items','[]'::jsonb)) < $7
-				                  THEN COALESCE(notification_outbox.payload->'items','[]'::jsonb) || jsonb_build_array($4::jsonb)
-				                  ELSE notification_outbox.payload->'items' END,
-				    'count', COALESCE((notification_outbox.payload->>'count')::int,0)+1)
-				WHERE notification_outbox.status='pending'`, uid, ch, KindNewWork, item, d.MergedKey, d.SendAfter, maxMergedItems)
-			if err != nil {
-				return false, 0, 0, fmt.Errorf("outbox: %w", err)
+			// notify_daily_cap: slot 0 is the day's merged row; once a slot was
+			// sent (no longer pending) the next slot opens, up to the cap.
+			for slot := 0; slot < max(settings[uid].NotifyDailyCap, 1); slot++ {
+				tag, err := tx.Exec(ctx, `INSERT INTO notification_outbox(user_id,channel,payload,merged_key,send_after)
+					VALUES($1,$2,jsonb_build_object('kind',$3::text,'items',jsonb_build_array($4::jsonb),'count',1),$5,$6)
+					ON CONFLICT (user_id,channel,merged_key) WHERE merged_key IS NOT NULL DO UPDATE SET
+					  payload=jsonb_build_object('kind',$3::text,
+					    'items', CASE WHEN jsonb_array_length(COALESCE(notification_outbox.payload->'items','[]'::jsonb)) < $7
+					                  THEN COALESCE(notification_outbox.payload->'items','[]'::jsonb) || jsonb_build_array($4::jsonb)
+					                  ELSE notification_outbox.payload->'items' END,
+					    'count', COALESCE((notification_outbox.payload->>'count')::int,0)+1)
+					WHERE notification_outbox.status='pending'`, uid, ch, KindNewWork, item, SlotKey(d.MergedKey, slot), d.SendAfter, maxMergedItems)
+				if err != nil {
+					return false, 0, 0, fmt.Errorf("outbox: %w", err)
+				}
+				if n := tag.RowsAffected(); n > 0 {
+					outbox += int(n)
+					break
+				}
 			}
-			outbox += int(tag.RowsAffected())
 		}
 	}
 	if _, err = tx.Exec(ctx, `UPDATE releases SET notified_at=now() WHERE id=$1`, releaseID); err != nil {

@@ -126,6 +126,7 @@ func main() {
 		log.Fatal(err)
 	}
 	interval := 60 * time.Second
+	var lastAuthPrune time.Time
 	for ctx.Err() == nil {
 		if ok, err := s.EnqueueKindSince(ctx, recs.JobKindSimilarity, audit.LastSlot(time.Now(), recsHour, recsMinute)); err != nil {
 			log.Printf("enqueue recs similarity: %v", err)
@@ -180,6 +181,23 @@ func main() {
 			log.Printf("notify fan-out: %v", err)
 		} else if res.Promoted > 0 || res.Releases > 0 {
 			log.Printf("notify fan-out: promoted=%d releases=%d notifications=%d outbox=%d", res.Promoted, res.Releases, res.Notifications, res.Outbox)
+		}
+		// Account deletion (PRD 14.5, tech plan 3.6): accounts marked for
+		// deletion more than 30 days ago are hard-deleted; logging in during
+		// the grace period cancels. Expired sessions / OAuth requests / reset
+		// tokens are pruned hourly. DB-only and bounded, like the fan-out.
+		if n, err := s.PurgeDeletedAccounts(ctx, store.AccountDeletionGrace, 100); err != nil {
+			log.Printf("account purge: %v", err)
+		} else if n > 0 {
+			log.Printf("account purge: deleted %d accounts", n)
+		}
+		if now := time.Now(); now.Sub(lastAuthPrune) >= time.Hour {
+			lastAuthPrune = now
+			if n, err := s.PruneExpiredAuth(ctx); err != nil {
+				log.Printf("auth prune: %v", err)
+			} else if n > 0 {
+				log.Printf("auth prune: removed %d expired rows", n)
+			}
 		}
 		// Danmaku peak curves (PRD 5.5.1). Runs inline like the fan-out: a
 		// bounded, DB-only pass over releases queued by new danmaku, moderation
