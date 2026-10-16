@@ -1,7 +1,8 @@
 // Search query understanding (PRD 4.5; tech plan 3.4, 3.13; backend
 // internal/api/search.go). Three public routes:
 //
-//   GET /api/catalog/search?q=   typed results + the envelope: effective_query
+//   GET /api/catalog/search?q=   typed results (&type=performer|release) + the
+//                                envelope: counts (&counts=1), effective_query
 //                                (synonym or modifier-stripped retry), rescued,
 //                                redirect {target_url, reason}, exact_match
 //                                {type, id, slug} for a single product-code hit;
@@ -33,10 +34,16 @@ export type SearchResponse = {
   rescued?: boolean;
   redirect?: SearchRedirect;
   exact_match?: ExactMatch;
+  /** Per-type match counts (counts=1; each capped at 1000). */
+  counts?: {performer: number; release: number};
 };
 
-export function searchCatalog(q: string, limit: number, signal?: AbortSignal): Promise<SearchResponse> {
-  return api<SearchResponse | null>(`catalog/search?q=${enc(q)}&limit=${limit}`, {signal}).then(d => ({
+/** Search results 类型 filter: only performers or only releases. */
+export type SearchType = 'performer' | 'release';
+
+export function searchCatalog(q: string, limit: number, signal?: AbortSignal, opts: {type?: SearchType; counts?: boolean} = {}): Promise<SearchResponse> {
+  const extra = `${opts.type ? `&type=${opts.type}` : ''}${opts.counts ? '&counts=1' : ''}`;
+  return api<SearchResponse | null>(`catalog/search?q=${enc(q)}&limit=${limit}${extra}`, {signal}).then(d => ({
     ...(d ?? {}),
     items: d?.items ?? [],
   }));
