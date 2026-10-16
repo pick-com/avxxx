@@ -100,6 +100,10 @@ type Server struct {
 	// commentsOff is COMMENTS_ENABLED=false (comment routes answer 404).
 	interactions interactionStore
 	commentsOff  bool
+	// watchStats backs GET /api/me/watch-stats (watchstats.go);
+	// watchStatsCache holds each owner's summaries briefly.
+	watchStats      watchStatsStore
+	watchStatsCache *respCache
 	// adminToken is ADMIN_TOKEN, read once at construction. Empty disables
 	// every admin route (they all return 401).
 	adminToken string
@@ -182,6 +186,8 @@ func Register(mux *http.ServeMux, s *store.Store, mediaHandler *media.Handler) {
 		srv.homeCache = newRespCache()
 		srv.compliance = s
 		srv.interactions = s
+		srv.watchStats = s
+		srv.watchStatsCache = newRespCache()
 	}
 	srv.commentsOff = !commentsEnabled(os.Getenv("COMMENTS_ENABLED"))
 	srv.linkOnDemand = medialink.OnDemandFromEnv(os.Getenv("MEDIA_LINK_ON_DEMAND"))

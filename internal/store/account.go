@@ -549,6 +549,9 @@ var exportSections = []struct{ name, sql string }{
 	{"danmaku", `SELECT COALESCE(json_agg(json_build_object('release',r.slug,'t_ms',x.t_ms,'body',x.body,'color',x.color,'mode',x.mode,'status',x.status,'created_at',x.created_at) ORDER BY x.created_at),'[]')
 		FROM danmaku x JOIN releases r ON r.id=x.release_id WHERE x.user_id=$1`},
 	{"push_devices", `SELECT COALESCE(json_agg(json_build_object('user_agent',user_agent,'created_at',created_at,'last_success_at',last_success_at) ORDER BY id),'[]') FROM push_subscriptions WHERE user_id=$1`},
+	// 观看统计 daily aggregate (migration 043).
+	{"user_watch_daily", `SELECT COALESCE(json_agg(json_build_object('day',day,'tz',tz,'watch_seconds',watch_seconds,'plays',plays,'titles',titles,'finished',finished,
+		'by_hour',by_hour,'top_performers',top_performers,'top_tags',top_tags,'built_at',built_at) ORDER BY day),'[]') FROM user_watch_daily WHERE user_id=$1`},
 }
 
 // WriteDataExport streams the user's data as one JSON object to w, section

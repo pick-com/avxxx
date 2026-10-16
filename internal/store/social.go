@@ -753,8 +753,21 @@ func (s *Store) DeleteWatch(ctx context.Context, userID int64, releaseSlug strin
 	return err
 }
 
-// ClearWatchHistory deletes the user's whole watch history and returns the row count.
+// ClearWatchHistory deletes the user's whole watch history and returns the
+// row count. 观看统计 (user_watch_daily) is cleared with it (PRD 20); later
+// rebuilds only count plays whose release is back in the history.
 func (s *Store) ClearWatchHistory(ctx context.Context, userID int64) (int64, error) {
-	tag, err := s.Exec(ctx, `DELETE FROM watch_history WHERE user_id=$1`, userID)
-	return tag.RowsAffected(), err
+	tx, err := s.Begin(ctx)
+	if err != nil {
+		return 0, err
+	}
+	defer tx.Rollback(ctx)
+	tag, err := tx.Exec(ctx, `DELETE FROM watch_history WHERE user_id=$1`, userID)
+	if err != nil {
+		return 0, err
+	}
+	if _, err = tx.Exec(ctx, `DELETE FROM user_watch_daily WHERE user_id=$1`, userID); err != nil {
+		return 0, err
+	}
+	return tag.RowsAffected(), tx.Commit(ctx)
 }

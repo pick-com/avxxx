@@ -55,6 +55,10 @@ export default function Me() {
               <Icon name="calendar" />
               {t('me.reservations')}
             </Link>
+            <Link to="/me/stats" className="list-link">
+              <Icon name="stats" />
+              {t('me.stats')}
+            </Link>
             <Link to="/notifications" className="list-link">
               <Icon name="bell" />
               {t('me.notifications')}

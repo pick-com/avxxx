@@ -292,6 +292,8 @@ var expectedRoutes = []string{
 	"PUT /api/comments/{id}/like",
 	"DELETE /api/comments/{id}/like",
 	"POST /api/comments/{id}/report",
+	// 观看统计 (social.go, watchstats.go).
+	"GET /api/me/watch-stats",
 }
 
 var (

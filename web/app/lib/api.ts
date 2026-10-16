@@ -817,3 +817,31 @@ export const getUnreadCount = (signal?: AbortSignal) =>
   api<{unread: number}>('me/notifications/unread-count', {signal}).then(d => d?.unread ?? 0);
 export const markNotificationsRead = (ids: number[] | 'all') =>
   api<{updated: number}>('me/notifications/read', {method: 'POST', body: ids === 'all' ? {all: true} : {ids}});
+
+// ---- 观看统计 (WatchStats, PRD 20; internal/api/watchstats.go) ----
+// Owner-only; built from user_watch_daily, which cmd/audit refreshes hourly.
+
+export type WatchStatsRange = '7d' | '30d' | '365d';
+export const WATCH_STATS_RANGES: WatchStatsRange[] = ['7d', '30d', '365d'];
+
+export type WatchStats = {
+  range: WatchStatsRange;
+  /** First and last local date of the range (YYYY-MM-DD). */
+  from: string;
+  to: string;
+  /** IANA zone the days are counted in (user_settings.timezone, else UTC). */
+  tz: string;
+  totals: {seconds: number; plays: number; titles: number; finished: number; completion_rate: number; active_days: number};
+  /** Watch seconds by weekday (0 = Monday … 6 = Sunday) and hour (0–23). */
+  heatmap: number[][];
+  streak: {current: number; longest: number};
+  daily: {day: string; seconds: number; finished: number}[];
+  performers: {slug: string; name: string; name_ja?: string; seconds: number; portrait?: ApiImage | null}[];
+  genres: {slug: string; name: string; seconds: number}[];
+  /** False until the first statistics row exists (empty state). */
+  has_data: boolean;
+  updated_at: string | null;
+};
+
+export const getWatchStats = (range: WatchStatsRange, signal?: AbortSignal) =>
+  api<WatchStats>(`me/watch-stats${query({range})}`, {signal});
