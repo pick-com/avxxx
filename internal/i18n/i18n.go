@@ -209,6 +209,7 @@ const (
 	EntityRelease   = "release"
 	EntityPerformer = "performer"
 	EntityTag       = "tag"
+	EntitySeries    = "series"
 )
 
 // Fields maps each entity type to its translatable fields; the comment
@@ -217,10 +218,11 @@ var Fields = map[string][]string{
 	EntityRelease:   {"title", "synopsis"}, // releases.canonical_title, releases.synopsis
 	EntityPerformer: {"name", "biography"}, // performers.canonical_name, performers.biography
 	EntityTag:       {"name"},              // release_tags.tag (by normalized_tag)
+	EntitySeries:    {"name"},              // series.name (migrations/027_series.sql)
 }
 
 // Ref names one translatable field of one entity. EntityID is the numeric
-// id as text for releases and performers, and normalized_tag for tags.
+// id as text for releases, performers and series, and normalized_tag for tags.
 type Ref struct {
 	EntityType string
 	EntityID   string

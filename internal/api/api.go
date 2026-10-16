@@ -67,6 +67,11 @@ type Server struct {
 	linker       *medialink.Linker
 	linkOnDemand bool
 	linkAdmin    mediaLinkAdmin
+	// seriesSt backs /api/series, evidence the public source evidence
+	// routes (series.go); reports the admin completeness report (reports.go).
+	seriesSt seriesStore
+	evidence evidenceStore
+	reports  reportStore
 	// adminToken is ADMIN_TOKEN, read once at construction. Empty disables
 	// every admin route (they all return 401).
 	adminToken string
@@ -111,6 +116,9 @@ func Register(mux *http.ServeMux, s *store.Store, mediaHandler *media.Handler) {
 			}
 			srv.linker = &medialink.Linker{Store: s, Search: svc, Pacer: medialink.NewPacer(cfg.MinInterval), MaxWait: onDemandMaxWait}
 		}
+		srv.seriesSt = s
+		srv.evidence = s
+		srv.reports = s
 	}
 	srv.linkOnDemand = medialink.OnDemandFromEnv(os.Getenv("MEDIA_LINK_ON_DEMAND"))
 	for _, rt := range srv.routes() {
@@ -142,6 +150,8 @@ func (srv *Server) routes() []route {
 	rs = append(rs, srv.searchRoutes()...)
 	rs = append(rs, srv.adminPerformerRoutes()...)
 	rs = append(rs, srv.adminMediaLinkRoutes()...)
+	rs = append(rs, srv.seriesRoutes()...)
+	rs = append(rs, srv.adminReportRoutes()...)
 	return srv.followMerges(rs)
 }
 

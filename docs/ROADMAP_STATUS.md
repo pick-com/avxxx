@@ -80,16 +80,16 @@
 - [x] 合并、人工覆盖和撤销合并审计（`review_events`）
 - [ ] 拆分非合并产生的实体（当前“拆分”只能通过撤销合并实现）
 - [x] 来源可信度和字段优先级策略
-- [ ] 目录 source record 与 Javtiful media record 自动关联（目前仅有管理员手动关联接口）
-- [ ] 作品、演员和字段完整性报告（已有 R-META 审计问题和 fixture 报告，缺全库聚合报告）
+- [x] 目录 source record 与 Javtiful media record 自动关联（离线 `media_link` 任务按番号精确匹配，`media_link_attempts` 记录尝试与退避；后台 `/api/admin/media-links` 可重试和人工选择）
+- [x] 作品、演员和字段完整性报告（`GET /api/admin/reports/completeness?entity=release|performer&source=&group_by=field|source|maker&format=csv`，`internal/completeness`；夜间 `completeness_snapshot` 任务写 `completeness_snapshots` 作趋势）
 
 ### Web 和 API
 
 - [x] 演员列表、详情和作品页（列表在 discover 页面）
 - [x] 作品列表、详情和演员页
 - [x] 搜索、筛选、排序和游标分页
-- [ ] 系列查询 API
-- [ ] 来源证据和更新时间展示（`GET /api/releases/{slug}/sources` 已有，前端未展示）
+- [x] 系列查询 API（`series` 实体与 `releases.series_id`，迁移 027 回填和触发器；`GET /api/series`、`/api/series/{slug}`、`/api/series/{slug}/releases?sort=episode|newest|oldest`；作品详情带 `series`）
+- [ ] 来源证据和更新时间展示（API 已完成：`GET /api/releases/{slug}/evidence`、`GET /api/performers/{slug}/evidence`，不含 raw_data、覆盖原因和隐藏生日；前端展示待做）
 - [x] 管理后台冲突审核页面
 - [x] 管理后台任务和来源页面（`admin-pipeline`）
 - [ ] 管理后台 checkpoint 页面（`GET /api/admin/sources/{id}/checkpoints` 已有，前端未接入）
@@ -100,7 +100,7 @@
 - [x] robots、terms、授权和配额门禁
 - [ ] 数据保留和图片使用策略
 - [ ] 部署、备份和恢复文档
-- [ ] 全量验收：重复抓取不重复实体、阻断不清空数据、公开 API 不泄露 raw_data
+- [ ] 全量验收：重复抓取不重复实体、阻断不清空数据、公开 API 不泄露 raw_data（最后一项已有集成测试 `TestPublicAPINoRawDataIntegration` 遍历全部公开 GET 路由）
 
 ## 阶段完成标记
 

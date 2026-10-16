@@ -95,7 +95,7 @@ func mapI18nError(err error) error {
 }
 
 // translationTasks lists the workbench: ?lang=&status=machine|draft|reviewed|stale
-// &entity_type=release|performer|tag&missing=true&limit=&cursor=.
+// &entity_type=release|performer|tag|series&missing=true&limit=&cursor=.
 // missing=true lists source fields with no translation in lang (lang required).
 func (srv *Server) translationTasks(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
