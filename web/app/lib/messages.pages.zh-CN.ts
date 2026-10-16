@@ -411,7 +411,6 @@ export const pagesZhCN = {
   'following.noUpdates': '没有新的更新',
   'following.noUpdatesBody': '你关注的演员有新作时，会出现在这里。',
   'following.older': '更早的动态',
-  'following.loadOlder': '加载更早的动态',
   'following.upcoming': '即将上线',
   'following.whoUpcoming': '{who} · 即将上线',
   'following.newWork': '新作',

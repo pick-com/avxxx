@@ -8,6 +8,8 @@ import (
 	"os"
 	"testing"
 	"time"
+
+	"github.com/jackc/pgx/v5"
 )
 
 // TestSocialIntegration exercises migration 014 and the social / fan-out SQL
@@ -83,6 +85,13 @@ func TestSocialIntegration(t *testing.T) {
 	feed2, _, err := s.FollowingFeed(ctx, uid, &c, 2)
 	if err != nil || len(feed2) != 1 {
 		t.Fatalf("feed page 2: %v %v", feed2, err)
+	}
+	// 按演员筛选: one followed performer; unknown slugs are ErrNoRows.
+	if only, _, err := s.FollowingFeedFor(ctx, uid, "lead-"+sfx, nil, 10); err != nil || len(only) != 3 {
+		t.Fatalf("feed for lead: %d items, err=%v", len(only), err)
+	}
+	if _, _, err := s.FollowingFeedFor(ctx, uid, "nobody-"+sfx, nil, 10); !errors.Is(err, pgx.ErrNoRows) {
+		t.Fatalf("feed for unknown performer: %v", err)
 	}
 
 	res, err := s.NotifyFanout(ctx, 50)

@@ -33,7 +33,7 @@ func (s *stubSocial) Unfollow(context.Context, int64, string) error { s.rec("Unf
 func (s *stubSocial) Follows(context.Context, int64) ([]map[string]any, error) {
 	return []map[string]any{}, nil
 }
-func (s *stubSocial) FollowingFeed(context.Context, int64, *store.Cursor, int) ([]map[string]any, string, error) {
+func (s *stubSocial) FollowingFeedFor(context.Context, int64, string, *store.Cursor, int) ([]map[string]any, string, error) {
 	s.rec("FollowingFeed")
 	return []map[string]any{}, "", nil
 }
@@ -161,6 +161,7 @@ func TestSocialHandlerStatus(t *testing.T) {
 		{"feed cursor", nil, "GET", "/api/me/following/feed?cursor=" + feedCursor, "", 200},
 		{"feed wrong cursor", nil, "GET", "/api/me/following/feed?cursor=" + notifCursor, "", 400},
 		{"feed bad limit", nil, "GET", "/api/me/following/feed?limit=-1", "", 400},
+		{"feed one performer", nil, "GET", "/api/me/following/feed?performer=aoi", "", 200},
 
 		{"reserve upcoming", nil, "PUT", "/api/me/reservations/abc-123", "", 200},
 		{"reserve published", store.ErrReleaseNotUpcoming, "PUT", "/api/me/reservations/abc-123", "", 409},

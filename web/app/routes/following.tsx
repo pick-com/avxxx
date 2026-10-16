@@ -4,7 +4,7 @@ import {Avatar, ReleaseRow, Thumb} from '../components/Cards';
 import {LoadMore} from '../components/Paging';
 import {LaterButton, ReserveButton} from '../components/SocialButtons';
 import {CardGridSkeleton, EmptyState, ErrorBanner} from '../components/States';
-import {getFollowingFeed, isMissingEndpoint, type FeedItem} from '../lib/api';
+import {getFollowingFeed, getFollowingFeedFor, isMissingEndpoint, type FeedItem} from '../lib/api';
 import {useAuth} from '../lib/auth';
 import {formatDate, formatSchedule} from '../lib/format';
 import {t, useT} from '../lib/i18n';
@@ -20,8 +20,8 @@ const PAGE_SIZE = 20;
 // paged). Opening the first page marks every follow as seen on the server,
 // which clears the SideNav new-work dots, so follows are refreshed after it.
 // Upcoming works get 预约; they have no public page yet, so they are not links.
-// The performer strip filters the loaded items client-side (the feed has no
-// performer parameter).
+// The performer strip reloads the feed with ?performer= (server-side filter,
+// so older pages of that performer page in too).
 type Row = FeedItem & {id: string};
 
 export default function Following() {
@@ -30,8 +30,12 @@ export default function Following() {
   const {follows, followsReady, available, refreshFollows} = useSocial();
   const [only, setOnly] = useState<string | null>(null);
   const feed = usePaged<Row>(
-    (cursor, signal) => getFollowingFeed(PAGE_SIZE, cursor, signal).then(page => ({...page, items: page.items.map(i => ({...i, id: i.slug}))})),
-    [status],
+    (cursor, signal) =>
+      (only ? getFollowingFeedFor(only, PAGE_SIZE, cursor, signal) : getFollowingFeed(PAGE_SIZE, cursor, signal)).then(page => ({
+        ...page,
+        items: page.items.map(i => ({...i, id: i.slug})),
+      })),
+    [status, only],
     status === 'user',
   );
   // Snapshot of which performers had new works before the feed cleared the dots.
@@ -51,7 +55,7 @@ export default function Following() {
   }, [feed.loading, feed.error, feed.paged, refreshFollows]);
 
   const names = useMemo(() => new Map(follows.map(f => [f.slug, f.name])), [follows]);
-  const shown = only ? feed.items.filter(i => i.followed_performers?.includes(only)) : feed.items;
+  const shown = feed.items;
 
   if (status === 'anon') {
     return (
@@ -125,12 +129,7 @@ export default function Following() {
               <FeedRow key={item.slug} item={item} names={names} />
             ))}
           </div>
-          {!only && <LoadMore state={feed} label={t('following.older')} />}
-          {only && feed.hasMore && (
-            <button type="button" className="btn btn-secondary" onClick={feed.loadMore} disabled={feed.loadingMore}>
-              {feed.loadingMore ? t('common.loadingMore') : t('following.loadOlder')}
-            </button>
-          )}
+          <LoadMore state={feed} label={t('following.older')} />
         </>
       )}
     </div>

@@ -20,7 +20,7 @@ type socialStore interface {
 	Follow(ctx context.Context, userID int64, performerSlug, mode string) (map[string]any, error)
 	Unfollow(ctx context.Context, userID int64, performerSlug string) error
 	Follows(ctx context.Context, userID int64) ([]map[string]any, error)
-	FollowingFeed(ctx context.Context, userID int64, c *store.Cursor, limit int) ([]map[string]any, string, error)
+	FollowingFeedFor(ctx context.Context, userID int64, performerSlug string, c *store.Cursor, limit int) ([]map[string]any, string, error)
 
 	Reserve(ctx context.Context, userID int64, releaseSlug string) error
 	Unreserve(ctx context.Context, userID int64, releaseSlug string) error
@@ -157,7 +157,8 @@ func (srv *Server) followingFeed(w http.ResponseWriter, r *http.Request, uid int
 		reply(w, nil, err)
 		return
 	}
-	v, next, e := srv.social.FollowingFeed(r.Context(), uid, c, limit)
+	// ?performer= narrows the feed to one followed performer (按演员筛选).
+	v, next, e := srv.social.FollowingFeedFor(r.Context(), uid, q.Get("performer"), c, limit)
 	reply(w, page(v, next), e)
 }
 

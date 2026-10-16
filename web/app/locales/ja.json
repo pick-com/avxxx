@@ -499,7 +499,6 @@
   "following.noUpdates": "新しい更新はありません",
   "following.noUpdatesBody": "フォロー中の出演者の新作がここに表示されます。",
   "following.older": "以前のアクティビティ",
-  "following.loadOlder": "以前のアクティビティを読み込む",
   "following.upcoming": "配信予定",
   "following.whoUpcoming": "{who} · 配信予定",
   "following.newWork": "新作",

@@ -707,6 +707,9 @@ export const followPerformer = (slug: string, mode: NotifyMode) =>
 export const unfollowPerformer = (slug: string) => api<{deleted: boolean}>(`me/follows/${enc(slug)}`, {method: 'DELETE'});
 export const getFollowingFeed = (limit: number, cursor?: string | null, signal?: AbortSignal) =>
   api<PageBody<FeedItem>>(`me/following/feed${query({limit, cursor})}`, {signal}).then(toPage);
+/** The following feed narrowed to one followed performer (?performer=; 按演员筛选). */
+export const getFollowingFeedFor = (performer: string, limit: number, cursor?: string | null, signal?: AbortSignal) =>
+  api<PageBody<FeedItem>>(`me/following/feed${query({performer, limit, cursor})}`, {signal}).then(toPage);
 
 export const getReservations = (signal?: AbortSignal) => api<Items<ReservationItem>>('me/reservations', {signal}).then(items);
 export const reserveRelease = (slug: string) => api<{reserved: boolean}>(`me/reservations/${enc(slug)}`, {method: 'PUT'});

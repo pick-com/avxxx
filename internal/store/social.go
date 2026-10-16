@@ -457,8 +457,23 @@ const feedKey = `COALESCE(r.release_date, (r.scheduled_at AT TIME ZONE 'UTC')::d
 // newest first, keyset-paginated. The first page (no cursor) marks every follow
 // as seen, which clears the sidebar new-work dot.
 func (s *Store) FollowingFeed(ctx context.Context, userID int64, c *Cursor, limit int) ([]map[string]any, string, error) {
+	return s.FollowingFeedFor(ctx, userID, "", c, limit)
+}
+
+// FollowingFeedFor is FollowingFeed narrowed to one followed performer
+// (MobileFollowing 按演员筛选) when performerSlug is set; its first page marks
+// only that follow as seen. A performer the user does not follow yields an
+// empty feed; an unknown slug is pgx.ErrNoRows.
+func (s *Store) FollowingFeedFor(ctx context.Context, userID int64, performerSlug string, c *Cursor, limit int) ([]map[string]any, string, error) {
 	limit = pageLimit(limit)
-	args := []any{userID, limit + 1}
+	var pid int64
+	if performerSlug != "" {
+		var err error
+		if pid, err = s.publicPerformerID(ctx, performerSlug); err != nil {
+			return nil, "", err
+		}
+	}
+	args := []any{userID, limit + 1, pid}
 	after := ""
 	if c != nil {
 		if c.Sort != FeedSort {
@@ -469,7 +484,7 @@ func (s *Store) FollowingFeed(ctx context.Context, userID int64, c *Cursor, limi
 			return nil, "", invalidQuery("malformed cursor")
 		}
 		args = append(args, d, c.ID)
-		after = ` AND (` + feedKey + `, r.id) < ($3::date, $4::bigint)`
+		after = ` AND (` + feedKey + `, r.id) < ($4::date, $5::bigint)`
 	}
 	rows, err := s.Query(ctx, `SELECT r.id,r.slug,r.canonical_title,COALESCE(r.title_ja,''),r.release_date,r.scheduled_at,r.status,
 		to_char(`+feedKey+`,'YYYY-MM-DD'),
@@ -479,7 +494,7 @@ func (s *Store) FollowingFeed(ctx context.Context, userID int64, c *Cursor, limi
 		FROM releases r
 		WHERE r.status IN ('published','upcoming') AND r.merged_into_id IS NULL
 		  AND EXISTS(SELECT 1 FROM release_performers rp JOIN follows f ON f.performer_id=rp.performer_id
-		             WHERE f.user_id=$1 AND rp.release_id=r.id)`+after+`
+		             WHERE f.user_id=$1 AND rp.release_id=r.id AND ($3::bigint=0 OR rp.performer_id=$3))`+after+`
 		ORDER BY `+feedKey+` DESC, r.id DESC LIMIT $2`, args...)
 	if err != nil {
 		return nil, "", err
@@ -511,7 +526,7 @@ func (s *Store) FollowingFeed(ctx context.Context, userID int64, c *Cursor, limi
 		next = EncodeCursor(Cursor{Sort: FeedSort, Key: keys[limit-1], ID: ids[limit-1]})
 	}
 	if c == nil {
-		if _, err := s.Exec(ctx, `UPDATE follows SET last_seen_at=now() WHERE user_id=$1`, userID); err != nil {
+		if _, err := s.Exec(ctx, `UPDATE follows SET last_seen_at=now() WHERE user_id=$1 AND ($2::bigint=0 OR performer_id=$2)`, userID, pid); err != nil {
 			return nil, "", err
 		}
 	}
