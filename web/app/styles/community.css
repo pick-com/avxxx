@@ -147,6 +147,22 @@ span.dm-form {
   color: #ececee;
 }
 
+button.dm-login {
+  border: 0;
+  cursor: pointer;
+  text-align: start;
+}
+
+/* Sign-in links that open the in-page sheet (AuthPrompt) instead of navigating. */
+button.text-link {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--accent);
+  font: inherit;
+  cursor: pointer;
+}
+
 .dm-error {
   margin: 0;
   padding: 0 16px 10px;

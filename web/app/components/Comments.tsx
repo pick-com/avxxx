@@ -1,5 +1,4 @@
 import {useEffect, useState} from 'react';
-import {Link, useLocation} from '../lib/nav';
 import {ApiError, isAbort} from '../lib/api';
 import {track} from '../lib/analytics';
 import {useAuth} from '../lib/auth';
@@ -20,6 +19,7 @@ import {
   type CommentSort,
 } from '../lib/interactions';
 import type {MessageKey} from '../lib/messages.zh-CN';
+import {useRequireAuth} from './AuthPrompt';
 import {Icon} from './Icon';
 import {ReportPicker} from './ReportPicker';
 import {ErrorBanner} from './States';
@@ -45,11 +45,6 @@ const SORTS: {value: CommentSort; label: MessageKey}[] = [
   {value: 'top', label: 'comment.sortTop'},
   {value: 'newest', label: 'comment.sortNewest'},
 ];
-
-function useLoginHref() {
-  const location = useLocation();
-  return `/login?next=${encodeURIComponent(location.pathname + location.search)}`;
-}
 
 function CommentComposer({slug, releaseId, parent, onPosted, onCancel}: {
   slug: string;
@@ -147,7 +142,7 @@ function CommentItem({comment, onChange, onRemove, onReply}: {
 }) {
   const t = useT();
   const {status} = useAuth();
-  const loginHref = useLoginHref();
+  const requireAuth = useRequireAuth();
   const [open, setOpen] = useState(!comment.spoiler);
   const [reporting, setReporting] = useState(false);
   const [reported, setReported] = useState('');
@@ -243,10 +238,10 @@ function CommentItem({comment, onChange, onRemove, onReply}: {
             <span aria-hidden="true">{comment.likes > 0 ? formatCount(comment.likes) : t('vote.likeShort')}</span>
           </button>
         ) : (
-          <Link to={loginHref} className="review-like" aria-label={t('review.loginToLike', {n: comment.likes})}>
+          <button type="button" className="review-like" aria-label={t('review.loginToLike', {n: comment.likes})} onClick={() => requireAuth('like')}>
             <Icon name="thumb" size={18} />
             <span aria-hidden="true">{comment.likes > 0 ? formatCount(comment.likes) : t('vote.likeShort')}</span>
-          </Link>
+          </button>
         )}
         {onReply &&
           (status === 'user' ? (
@@ -254,9 +249,9 @@ function CommentItem({comment, onChange, onRemove, onReply}: {
               {t('comment.reply')}
             </button>
           ) : (
-            <Link to={loginHref} className="text-btn">
+            <button type="button" className="text-btn" onClick={() => requireAuth('comment')}>
               {t('comment.reply')}
-            </Link>
+            </button>
           ))}
         <span className="section-spacer" />
         {comment.mine ? (
@@ -294,7 +289,9 @@ function CommentItem({comment, onChange, onRemove, onReply}: {
           <ReportPicker onSubmit={report} onCancel={() => setReporting(false)} />
         ) : (
           <p className="muted">
-            <Link to={loginHref}>{t('report.loginFirst')}</Link>
+            <button type="button" className="text-link" onClick={() => requireAuth('report')}>
+              {t('report.loginFirst')}
+            </button>
           </p>
         ))}
     </>
@@ -459,7 +456,7 @@ function Thread({slug, releaseId, comment, onChange, onRemove}: {
 export function Comments({slug, releaseId}: {slug: string; releaseId: number}) {
   const t = useT();
   const {status} = useAuth();
-  const loginHref = useLoginHref();
+  const requireAuth = useRequireAuth();
   const [sort, setSort] = useState<CommentSort>('top');
   const [items, setItems] = useState<Comment[]>([]);
   const [cursor, setCursor] = useState<string | null>(null);
@@ -521,9 +518,9 @@ export function Comments({slug, releaseId}: {slug: string; releaseId: number}) {
         <CommentComposer slug={slug} releaseId={releaseId} onPosted={c => setItems(list => [c, ...list.filter(x => x.id !== c.id)])} />
       ) : status === 'anon' ? (
         <p className="muted">
-          <Link to={loginHref} className="text-link">
+          <button type="button" className="text-link" onClick={() => requireAuth('comment')}>
             {t('comment.loginToWrite')}
-          </Link>
+          </button>
         </p>
       ) : null}
       {error && <ErrorBanner error={error} onRetry={() => setNonce(n => n + 1)} />}

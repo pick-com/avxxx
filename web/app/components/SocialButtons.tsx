@@ -1,14 +1,14 @@
 import {useEffect, useId, useRef, useState} from 'react';
-import {useLocation, useNavigate} from '../lib/nav';
 import {track} from '../lib/analytics';
 import type {NotifyMode} from '../lib/api';
 import {useAuth} from '../lib/auth';
 import {t, useT} from '../lib/i18n';
 import {useSocial} from '../lib/social';
+import {useRequireAuth} from './AuthPrompt';
 import {Icon, type IconName} from './Icon';
 
 // NewWorkAlert: 关注 + bell with three modes; 预约 for upcoming works; 稍后观看.
-// Signed-out clicks go to login and come back to the same page.
+// Signed-out clicks open the in-page sign-in sheet (AuthPrompt).
 
 // Getters, so labels follow the current UI language.
 export const notifyModeLabels: Record<NotifyMode, string> = {
@@ -34,12 +34,6 @@ const notifyModeHints: Record<NotifyMode, string> = {
   },
 };
 const modeIcon: Record<NotifyMode, IconName> = {all: 'bell', lead_only: 'bellLead', off: 'bellOff'};
-
-function useLoginRedirect() {
-  const navigate = useNavigate();
-  const location = useLocation();
-  return () => navigate(`/login?next=${encodeURIComponent(location.pathname + location.search)}`);
-}
 
 /** Closes on outside pointer-down and Esc; returns focus to the trigger on Esc. */
 export function useDismiss(open: boolean, close: () => void, rootRef: React.RefObject<HTMLElement | null>, triggerRef?: React.RefObject<HTMLElement | null>) {
@@ -77,7 +71,7 @@ export function FollowButton({slug, name, performerId, source = 'other', size = 
   const {status} = useAuth();
   const t = useT();
   const {available, followMode, setFollow, followsReady} = useSocial();
-  const toLogin = useLoginRedirect();
+  const requireAuth = useRequireAuth();
   const [open, setOpen] = useState(false);
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
@@ -91,10 +85,7 @@ export function FollowButton({slug, name, performerId, source = 'other', size = 
   const following = mode !== null;
 
   const run = async (next: NotifyMode | null) => {
-    if (status !== 'user') {
-      toLogin();
-      return;
-    }
+    if (!requireAuth('follow')) return;
     setBusy(true);
     setError('');
     const err = await setFollow(slug, next, name);
@@ -177,7 +168,7 @@ export function LaterButton({slug, title, variant = 'pill'}: {slug: string; titl
   const {status} = useAuth();
   const t = useT();
   const {available, later, setLater} = useSocial();
-  const toLogin = useLoginRedirect();
+  const requireAuth = useRequireAuth();
   const [error, setError] = useState('');
   if (status === 'user' && available.later === 'no') return null;
   // Card overlays only for signed-in users: a login prompt on every card is noise.
@@ -185,10 +176,7 @@ export function LaterButton({slug, title, variant = 'pill'}: {slug: string; titl
   const on = status === 'user' && later.has(slug);
 
   const toggle = async () => {
-    if (status !== 'user') {
-      toLogin();
-      return;
-    }
+    if (!requireAuth('later')) return;
     setError('');
     setError(await setLater(slug, !on));
   };
@@ -228,7 +216,7 @@ export function ReserveButton({slug, title, initial, size = 'md'}: {slug: string
   const {status} = useAuth();
   const t = useT();
   const {available, reserved, setReserved, noteReserved} = useSocial();
-  const toLogin = useLoginRedirect();
+  const requireAuth = useRequireAuth();
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
 
@@ -240,10 +228,7 @@ export function ReserveButton({slug, title, initial, size = 'md'}: {slug: string
   const on = status === 'user' && reserved.has(slug);
 
   const toggle = async () => {
-    if (status !== 'user') {
-      toLogin();
-      return;
-    }
+    if (!requireAuth('reserve')) return;
     setBusy(true);
     setError('');
     setError(await setReserved(slug, !on));

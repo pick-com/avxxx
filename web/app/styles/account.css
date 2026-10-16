@@ -55,6 +55,64 @@
   gap: 10px;
 }
 
+/* In-page sign-in sheet (components/AuthPrompt.tsx): a bottom sheet sized
+   to its content on phones, a centred modal on desktop. */
+
+.sheet.auth-sheet,
+.sheet.auth-sheet[data-snap='full'] {
+  height: auto;
+  max-height: calc(100vh - 56px);
+  max-height: calc(100dvh - 56px);
+  max-width: 440px;
+}
+
+.auth-sheet-head {
+  padding: 0 20px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.auth-sheet-head .sheet-title {
+  margin: 0;
+  font-size: 18px;
+}
+
+.auth-sheet-body {
+  padding: 8px 20px 4px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.auth-sheet-body .auth-skip {
+  border: 0;
+  background: none;
+  cursor: pointer;
+}
+
+@media (min-width: 768px) {
+  .sheet.auth-sheet,
+  .sheet.auth-sheet[data-snap='full'] {
+    top: 0;
+    bottom: 0;
+    margin: auto;
+    height: fit-content;
+    border-radius: 16px;
+    max-height: calc(100vh - 64px);
+    animation: sheet-fade 0.2s ease-out;
+  }
+
+  .auth-sheet .sheet-handle {
+    height: 12px;
+    visibility: hidden;
+  }
+
+  .auth-sheet-head {
+    padding-top: 4px;
+  }
+}
+
 /* Settings › 账号 */
 
 .set-input {
