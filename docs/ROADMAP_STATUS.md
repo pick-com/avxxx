@@ -17,6 +17,7 @@
 - [x] 来源原始记录和字段历史证据
 - [x] performer/release slug 和 dedupe 基础逻辑
 - [x] DVD code 作用域和 Content ID 全局作用域
+- [x] 日文名 slug 与关联：假名→罗马字 / `dmm-actress-<id>` / `performer-<id>` 兜底、永不为空；DMM `performer_refs` 按 actress id / 名称解析并关联作品；厂商作用域 `dmm-maker:<id>` / `maker-name:<hash>`，migration 028 修复历史裸 `maker:`（FINAL_DATA_DESIGN 3.1.1–3.1.2）
 - [x] 字段冲突自动检测
 - [x] 冲突查询和审核 API
 - [x] 演员、作品、演员作品、作品演员公开 API
