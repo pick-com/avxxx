@@ -29,6 +29,7 @@ export default [
     route('admin/videos/:id', 'routes/admin-video.tsx'),
     route('admin/pipeline', 'routes/admin-pipeline.tsx'),
     route('admin/audit', 'routes/admin-audit.tsx'),
+    route('admin/moderation', 'routes/admin-moderation.tsx'),
     route('admin/review', 'routes/admin-review.tsx'),
     route('admin/dedupe', 'routes/admin-dedupe.tsx'),
   ]),
