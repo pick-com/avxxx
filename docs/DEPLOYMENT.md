@@ -13,6 +13,7 @@ Internet ──443──▶ Caddy（主机，TLS、压缩）
 docker compose（项目目录 /opt/avxxx，部署用户 avxxx）
   db (postgres:17, 卷 pgdata, 127.0.0.1:55434)   api   web   scheduler   scraper   audit   notifier
   monitoring profile：prometheus 127.0.0.1:9095 · alertmanager 127.0.0.1:9096 · node-exporter
+  storage profile（可选）：minio（目录图片，S3 兼容，仅 compose 网络）
 主机 cron：03:17 数据库备份（可选）· 05:15 SEO 检查 · 异地拷贝（需自行配置，见 §6.3）
 ```
 
@@ -150,7 +151,7 @@ reel.example {
 | `smtp_host` / `smtp_port` / `smtp_user` / `smtp_password` / `mail_from` | `SMTP_*`、`MAIL_FROM` | 可选 | 邮件通知与告警邮件（STARTTLS；465 为隐式 TLS） |
 | `alert_webhook_url`、`alert_warning_webhook_url`、`alert_email_to`、`alert_warning_email_to`、`alert_email_from`、`alert_slack_webhook_url`、`alert_telegram_bot_token`、`alert_telegram_chat_id` | `ALERT_*` | 生产必需至少一个 page 通道 | Alertmanager 接收器（`docs/PRODUCTION_OPERATIONS.md`「值班通知」）。全空时告警无人接收 |
 | `web_api_proxy` | `WEB_API_PROXY` | 否 | 默认 true；Caddy 已分流 `/api/` 时可设 false |
-| 图片存储（S3/MinIO）凭据 | 见 `docs/IMAGE_STORAGE.md` | 随该功能上线 | 同样只进 vault |
+| `s3_endpoint` / `s3_bucket` / `s3_access_key` / `s3_secret_key` / `s3_region` / `s3_public_base_url` | `S3_*` | 可选 | 目录图片存储（`docs/IMAGE_STORAGE.md`、`docs/DATA_RETENTION_AND_IMAGES.md`）；`S3_ENDPOINT` 为空时不存图。用自带 MinIO 时加 `-e storage_enabled=true`（compose profile `storage`，`S3_ENDPOINT=http://minio:9000`，不发布端口） |
 
 非密钥的部署开关（`-e` 传入或写在 vault 里）：`monitoring_enabled`、`backup_cron_enabled`、`backup_keep_days`（默认 14）、`backup_cron_hour` / `backup_cron_minute`、`seo_check_enabled`（默认 true）、`git_branch`。
 
@@ -234,6 +235,7 @@ cd /opt/avxxx && BACKUP_VIA_COMPOSE=1 OUTPUT_DIR=/opt/avxxx/backups BACKUP_KEEP_
 - `pg_dump --format=custom --no-owner --no-acl` 在 db 容器内执行（版本永远一致，主机无需客户端），先写 `.partial` 再改名，文件 0600，目录 0700。
 - 保留：本机保留 `backup_keep_days` 天（默认 14）。异地按「7 个日备份 + 4 个周备份 + 6 个月备份」保留（§6.3）。
 - 监控：脚本写 `avxxx_backup_last_success_timestamp_seconds` / `_size_bytes` / `_duration_seconds`；`BackupStale`（> 26 h）、`BackupTooSmall`（< 1 MiB）、`BackupMetricMissing` 告警。
+- 范围：只包含 PostgreSQL。目录图片在对象存储（自带 MinIO 的卷或外部 S3）里，不在 dump 中：外部 S3 开启版本控制，自带 MinIO 的数据按同样节奏单独拷贝到异地（如 `mc mirror`）。数据库与对象存储分别恢复时，以数据库为准，库里引用而存储里缺失的对象需按 `docs/IMAGE_STORAGE.md` 重新抓取。
 - 手动备份（发布前、破坏性操作前）：`ssh avxxx@<host> 'cd /opt/avxxx && BACKUP_VIA_COMPOSE=1 OUTPUT_DIR=/opt/avxxx/backups ./scripts/backup-db.sh'`。
 
 ### 6.2 恢复（生产）
