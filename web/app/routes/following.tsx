@@ -7,10 +7,11 @@ import {CardGridSkeleton, EmptyState, ErrorBanner} from '../components/States';
 import {getFollowingFeed, isMissingEndpoint, type FeedItem} from '../lib/api';
 import {useAuth} from '../lib/auth';
 import {formatDate, formatSchedule} from '../lib/format';
+import {t, useT} from '../lib/i18n';
 import {useSocial} from '../lib/social';
 import {usePaged} from '../lib/usePaged';
 
-export const meta = () => [{title: 'REEL · 关注'}];
+export const meta = () => [{title: t('title.following')}];
 
 const PAGE_SIZE = 20;
 
@@ -24,6 +25,7 @@ const PAGE_SIZE = 20;
 type Row = FeedItem & {id: string};
 
 export default function Following() {
+  const t = useT();
   const {status} = useAuth();
   const {follows, followsReady, available, refreshFollows} = useSocial();
   const [only, setOnly] = useState<string | null>(null);
@@ -56,9 +58,9 @@ export default function Following() {
       <div className="page">
         <EmptyState
           icon="following"
-          title="登录后关注演员"
-          body="关注演员后，他们的新作和即将上线的作品会出现在这里。"
-          actions={[{to: '/login?next=%2Ffollowing', label: '登录'}, {to: '/discover?tab=actors', label: '浏览演员库', primary: false}]}
+          title={t('following.anonTitle')}
+          body={t('following.anonBody')}
+          actions={[{to: '/login?next=%2Ffollowing', label: t('auth.login')}, {to: '/discover?tab=actors', label: t('common.browseActors'), primary: false}]}
         />
       </div>
     );
@@ -66,7 +68,7 @@ export default function Following() {
   if (available.follows === 'no' || (feed.error && isMissingEndpoint(feed.error))) {
     return (
       <div className="page">
-        <EmptyState icon="following" title="关注演员功能即将上线" body="上线后，你关注的演员有新作时会出现在这里。" actions={[{to: '/discover?tab=actors', label: '浏览演员库'}]} />
+        <EmptyState icon="following" title={t('following.soonTitle')} body={t('following.soonBody')} actions={[{to: '/discover?tab=actors', label: t('common.browseActors')}]} />
       </div>
     );
   }
@@ -74,20 +76,20 @@ export default function Following() {
   return (
     <div className="page following-page">
       <div className="section-head">
-        <h1 className="page-title">关注</h1>
+        <h1 className="page-title">{t('tabs.following')}</h1>
         <span className="section-spacer" />
         <Link to="/discover?tab=actors" className="text-btn">
-          发现更多演员
+          {t('following.discoverMore')}
         </Link>
       </div>
 
       {follows.length > 0 && (
-        <div className="chip-row follow-strip" role="group" aria-label="按演员筛选">
+        <div className="chip-row follow-strip" role="group" aria-label={t('following.filter')}>
           <button type="button" className={only === null ? 'follow-pick is-on' : 'follow-pick'} aria-pressed={only === null} onClick={() => setOnly(null)}>
             <span className="follow-pick-all" aria-hidden="true">
-              全部
+              {t('home.all')}
             </span>
-            <span className="follow-pick-name">全部</span>
+            <span className="follow-pick-name">{t('home.all')}</span>
           </button>
           {follows.map(f => (
             <button
@@ -95,7 +97,7 @@ export default function Following() {
               type="button"
               className={only === f.slug ? 'follow-pick is-on' : 'follow-pick'}
               aria-pressed={only === f.slug}
-              aria-label={newBefore.has(f.slug) ? `只看 ${f.name}（有新作）` : `只看 ${f.name}`}
+              aria-label={newBefore.has(f.slug) ? t('following.onlyNew', {name: f.name}) : t('following.only', {name: f.name})}
               onClick={() => setOnly(o => (o === f.slug ? null : f.slug))}
             >
               <span className="follow-pick-avatar">
@@ -113,9 +115,9 @@ export default function Following() {
       ) : feed.loading ? (
         feed.slow && <CardGridSkeleton count={6} variant="row" />
       ) : followsReady && follows.length === 0 ? (
-        <EmptyState icon="following" title="还没有关注演员" body="在演员页点「关注」，他们有新作时会出现在这里。" actions={[{to: '/discover?tab=actors', label: '浏览演员库'}]} />
+        <EmptyState icon="following" title={t('following.emptyTitle')} body={t('following.emptyBody')} actions={[{to: '/discover?tab=actors', label: t('common.browseActors')}]} />
       ) : shown.length === 0 ? (
-        <EmptyState icon="following" title="没有新的更新" body="你关注的演员有新作时，会出现在这里。" />
+        <EmptyState icon="following" title={t('following.noUpdates')} body={t('following.noUpdatesBody')} />
       ) : (
         <>
           <div className="row-list">
@@ -123,10 +125,10 @@ export default function Following() {
               <FeedRow key={item.slug} item={item} names={names} />
             ))}
           </div>
-          {!only && <LoadMore state={feed} label="更早的动态" />}
+          {!only && <LoadMore state={feed} label={t('following.older')} />}
           {only && feed.hasMore && (
             <button type="button" className="btn btn-secondary" onClick={feed.loadMore} disabled={feed.loadingMore}>
-              {feed.loadingMore ? '正在加载…' : '加载更早的动态'}
+              {feed.loadingMore ? t('common.loadingMore') : t('following.loadOlder')}
             </button>
           )}
         </>
@@ -136,14 +138,15 @@ export default function Following() {
 }
 
 function FeedRow({item, names}: {item: Row; names: Map<string, string>}) {
-  const who = (item.followed_performers ?? []).map(s => names.get(s) ?? s).join('、');
+  const t = useT();
+  const who = (item.followed_performers ?? []).map(s => names.get(s) ?? s).join(t('common.listSep'));
   if (item.status === 'upcoming') {
     return (
       <div className="release-row">
         <div className="release-row-link">
-          <Thumb seed={item.slug} badge="即将上线" className="thumb-row" />
+          <Thumb seed={item.slug} badge={t('following.upcoming')} className="thumb-row" />
           <span className="release-row-text">
-            <span className="card-meta">{who ? `${who} · 即将上线` : '即将上线'}</span>
+            <span className="card-meta">{who ? t('following.whoUpcoming', {who}) : t('following.upcoming')}</span>
             <span className="card-title">{item.title}</span>
             <span className="card-meta">{formatSchedule(item.scheduled_at, item.release_date)}</span>
           </span>
@@ -156,8 +159,8 @@ function FeedRow({item, names}: {item: Row; names: Map<string, string>}) {
     <ReleaseRow
       slug={item.slug}
       title={item.title}
-      meta={who ? `${who} · 新作` : '新作'}
-      sub={item.release_date ? `${formatDate(item.release_date)} 发行` : undefined}
+      meta={who ? t('following.whoNew', {who}) : t('following.newWork')}
+      sub={item.release_date ? t('following.released', {date: formatDate(item.release_date)}) : undefined}
     >
       <LaterButton slug={item.slug} title={item.title} variant="icon" />
     </ReleaseRow>

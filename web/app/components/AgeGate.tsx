@@ -1,4 +1,5 @@
 import {useEffect, useId, useState} from 'react';
+import {useT} from '../lib/i18n';
 import {Icon} from './Icon';
 
 // Age confirmation (PRD 15, AgeGate artboard).
@@ -31,6 +32,7 @@ export function BirthMonthPicker({year, month, onYear, onMonth, idPrefix}: {
   onMonth: (v: string) => void;
   idPrefix?: string;
 }) {
+  const t = useT();
   const auto = useId();
   const id = idPrefix ?? auto;
   const thisYear = new Date().getFullYear();
@@ -38,23 +40,23 @@ export function BirthMonthPicker({year, month, onYear, onMonth, idPrefix}: {
   return (
     <div className="birth-picker">
       <label className="field" htmlFor={`${id}-y`}>
-        <span>出生年份</span>
+        <span>{t('age.birthYear')}</span>
         <select id={`${id}-y`} className="set-select" value={year} onChange={e => onYear(e.target.value)} required>
-          <option value="">年</option>
+          <option value="">{t('age.yearPlaceholder')}</option>
           {years.map(y => (
             <option key={y} value={y}>
-              {y} 年
+              {t('common.year', {y})}
             </option>
           ))}
         </select>
       </label>
       <label className="field" htmlFor={`${id}-m`}>
-        <span>出生月份</span>
+        <span>{t('age.birthMonth')}</span>
         <select id={`${id}-m`} className="set-select" value={month} onChange={e => onMonth(e.target.value)} required>
-          <option value="">月</option>
+          <option value="">{t('age.monthPlaceholder')}</option>
           {Array.from({length: 12}, (_, i) => i + 1).map(m => (
             <option key={m} value={m}>
-              {m} 月
+              {t('age.month', {m})}
             </option>
           ))}
         </select>
@@ -76,6 +78,7 @@ function readLock(): Lock | null {
 
 /** Per-video confirmation for rated releases (unused until the API exposes a rating). */
 export function AgeConfirm({minAge = 18, reason, onConfirm, onBack}: {minAge?: number; reason?: string; onConfirm: () => void; onBack: () => void}) {
+  const t = useT();
   const [year, setYear] = useState('');
   const [month, setMonth] = useState('');
   const [blocked, setBlocked] = useState(false);
@@ -111,11 +114,11 @@ export function AgeConfirm({minAge = 18, reason, onConfirm, onBack}: {minAge?: n
   if (blocked) {
     return (
       <section className="age-gate" role="alert">
-        <h2>这部视频暂时不能观看</h2>
-        <p>根据你填写的年龄，这部视频不适合你。</p>
-        <p className="muted">同一设备 24 小时内不能修改出生年月。</p>
+        <h2>{t('age.blockedTitle')}</h2>
+        <p>{t('age.blockedBody')}</p>
+        <p className="muted">{t('age.lockNote')}</p>
         <button type="button" className="btn btn-secondary" onClick={onBack}>
-          返回
+          {t('common.back')}
         </button>
       </section>
     );
@@ -124,22 +127,23 @@ export function AgeConfirm({minAge = 18, reason, onConfirm, onBack}: {minAge?: n
   return (
     <section className="age-gate" aria-labelledby="age-gate-title">
       <span className="age-badge">{minAge}+</span>
-      <h2 id="age-gate-title">这部视频只适合 {minAge} 岁以上观看</h2>
+      <h2 id="age-gate-title">{t('age.title', {age: minAge})}</h2>
       <p>
-        {reason ? `${reason}。` : ''}请输入出生年月，我们只用它判断能否观看，不会公开。
+        {reason ? t('age.reason', {reason}) : ''}
+        {t('age.prompt')}
       </p>
       <BirthMonthPicker year={year} month={month} onYear={lock ? () => {} : setYear} onMonth={lock ? () => {} : setMonth} />
       {lock && (
         <p className="muted">
-          <Icon name="lock" size={14} /> 同一设备 24 小时内不能修改出生年月。
+          <Icon name="lock" size={14} /> {t('age.lockNote')}
         </p>
       )}
       <div className="action-row">
         <button type="button" className="btn btn-secondary" onClick={onBack}>
-          返回
+          {t('common.back')}
         </button>
         <button type="button" className="btn btn-primary" disabled={!year || !month} onClick={confirm}>
-          确认并观看
+          {t('age.confirm')}
         </button>
       </div>
     </section>

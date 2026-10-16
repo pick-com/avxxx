@@ -7,10 +7,11 @@ import {Player} from '../components/Player';
 import {Community} from '../components/Ratings';
 import {LaterButton, ReserveButton} from '../components/SocialButtons';
 import {BlockSkeleton, CardGridSkeleton, EmptyState, ErrorBanner} from '../components/States';
-import {getFavorites, getPerformerReleases, getWatchLater, getRelease, getReleasePerformers, getWatchHistory, setFavorite, type Performer, type ReleaseDetail} from '../lib/api';
+import {ApiError, getFavorites, getPerformerReleases, getWatchLater, getRelease, getReleasePerformers, getWatchHistory, setFavorite, type Performer, type ReleaseDetail} from '../lib/api';
 import {track} from '../lib/analytics';
 import {useAuth} from '../lib/auth';
-import {useT} from '../lib/i18n';
+import {t, useT} from '../lib/i18n';
+import type {MessageKey} from '../lib/messages.zh-CN';
 import {markAutoplayNavigation} from '../lib/playAnalytics';
 import {usePlayerPrefs} from '../lib/playerPrefs';
 import {ageAt, formatDate, formatRuntime} from '../lib/format';
@@ -22,7 +23,7 @@ import {readQueue} from '../lib/queue';
 import type {ShellHandle} from './shell';
 
 export const handle: ShellHandle = {immersive: true};
-export const meta = () => [{title: 'REEL · 视频'}];
+export const meta = () => [{title: t('title.release')}];
 
 // Video / VideoLight / MobileVideo.
 //
@@ -42,6 +43,7 @@ export const meta = () => [{title: 'REEL · 视频'}];
 // product codes come from the catalog-filters release detail and are simply
 // absent on older backends.
 export default function ReleasePage() {
+  const t = useT();
   const {slug = ''} = useParams();
   const navigate = useNavigate();
   const {status} = useAuth();
@@ -85,7 +87,7 @@ export default function ReleasePage() {
   useCanonicalSlug('releases', slug, release?.slug);
 
   useEffect(() => {
-    if (release) document.title = `${release.canonical_title} · REEL`;
+    if (release) document.title = t('title.named', {name: release.canonical_title});
   }, [release]);
 
   const back = () => {
@@ -94,15 +96,15 @@ export default function ReleasePage() {
   };
 
   if (detail.error) {
-    const missing = detail.error.message === '内容不存在或已下架';
+    const missing = detail.error instanceof ApiError && detail.error.status === 404;
     return (
       <div className="page">
         {missing ? (
           <EmptyState
             icon="film"
-            title="这个视频暂时无法观看"
-            body="作品不存在、已下架，或链接有误。你的观看记录和收藏会保留。"
-            actions={[{to: '/', label: '回到首页'}, {to: '/discover?tab=new', label: '看看新上线', primary: false}]}
+            title={t('release.unavailableTitle')}
+            body={t('release.unavailableBody')}
+            actions={[{to: '/', label: t('error.backHome')}, {to: '/discover?tab=new', label: t('release.seeNew'), primary: false}]}
           />
         ) : (
           <ErrorBanner error={detail.error} onRetry={detail.reload} />
@@ -121,7 +123,7 @@ export default function ReleasePage() {
           resumeAt={resumeAt}
           onBack={back}
           theater={theater}
-          onToggleTheater={() => setTheater(t => !t)}
+          onToggleTheater={() => setTheater(on => !on)}
           autoStart={autoStart}
           onEnded={() => setEnded(true)}
           overlay={
@@ -150,7 +152,7 @@ export default function ReleasePage() {
               {release.title_ja && release.title_ja !== release.canonical_title && <p className="video-alt-title">{release.title_ja}</p>}
               <div className="video-subrow">
                 <span className="muted">
-                  {[release.release_date && `发行 ${formatDate(release.release_date)}`, formatRuntime(release.runtime_minutes)].filter(Boolean).join(' · ')}
+                  {[release.release_date && t('release.releasedOn', {date: formatDate(release.release_date)}), formatRuntime(release.runtime_minutes)].filter(Boolean).join(' · ')}
                 </span>
                 <span className="section-spacer" />
                 <div className="action-row">
@@ -171,7 +173,7 @@ export default function ReleasePage() {
 
             {performers.length > 0 && (
               <section className="cast">
-                <SectionHeader title="主演" sub={useSheet ? '点击查看演员资料' : '鼠标悬停查看演员资料'} />
+                <SectionHeader title={t('release.cast')} sub={useSheet ? t('release.castTapHint') : t('release.castHoverHint')} />
                 <div className="avatar-row">
                   {performers.map(p =>
                     useSheet ? (
@@ -195,7 +197,7 @@ export default function ReleasePage() {
         )}
       </div>
 
-      <aside className="video-aside" aria-label="接下来播放">
+      <aside className="video-aside" aria-label={t('release.upNext')}>
         {queue && queueIndex >= 0 && <QueuePanel slugs={queue.slugs} index={queueIndex} />}
         {release && performers[0] && <SamePerformer performer={performers[0]} currentSlug={slug} onFirst={setRelated} />}
       </aside>
@@ -205,38 +207,39 @@ export default function ReleasePage() {
 
 // release_identifiers.identifier_type values written by the ingest
 // (store.SaveCatalogRecord); any other type shows under 编号.
-const IDENTIFIER_LABELS: Record<string, string> = {
-  dvd_code: '番号',
-  content_id: '品番',
+const IDENTIFIER_LABELS: Record<string, MessageKey> = {
+  dvd_code: 'release.idDvdCode',
+  content_id: 'release.idContentId',
 };
 
 function ReleaseMeta({release}: {release: ReleaseDetail}) {
+  const t = useT();
   const rows: [string, ReactNode][] = [
-    ['发行日期', formatDate(release.release_date)],
-    ['时长', formatRuntime(release.runtime_minutes)],
+    [t('release.metaDate'), formatDate(release.release_date)],
+    [t('release.metaRuntime'), formatRuntime(release.runtime_minutes)],
     [
-      '片商',
+      t('release.metaMaker'),
       release.maker_name ? (
         <Link to={discoverHref({maker: release.maker_name})} className="meta-link">
           {release.maker_name}
         </Link>
       ) : undefined,
     ],
-    ['发行商', release.label_name],
-    ['系列', release.series_name],
-    ['导演', release.director_name || undefined],
+    [t('release.metaLabel'), release.label_name],
+    [t('release.metaSeries'), release.series_name],
+    [t('release.metaDirector'), release.director_name || undefined],
   ];
   // Product codes (catalog-filters backend); one row per identifier type.
   const byType = new Map<string, string[]>();
   for (const id of release.identifiers ?? []) {
     if (!id?.value) continue;
-    const label = IDENTIFIER_LABELS[id.type] ?? '编号';
+    const label = t(IDENTIFIER_LABELS[id.type] ?? 'release.idOther');
     byType.set(label, [...(byType.get(label) ?? []), id.value]);
   }
   for (const [label, values] of byType) rows.push([label, <span className="mono">{Array.from(new Set(values)).join(' · ')}</span>]);
 
   const present = rows.filter(([, v]) => v);
-  const tags = (release.tags ?? []).filter(t => t?.slug && t.name);
+  const tags = (release.tags ?? []).filter(tag => tag?.slug && tag.name);
   if (present.length === 0 && tags.length === 0) return null;
   return (
     <section className="info-card">
@@ -251,10 +254,10 @@ function ReleaseMeta({release}: {release: ReleaseDetail}) {
         </dl>
       )}
       {tags.length > 0 && (
-        <div className="chip-row chip-row-wrap release-tags" aria-label="标签">
-          {tags.map(t => (
-            <Link key={t.slug} to={discoverHref({tag: t.slug})} className="chip chip-tag">
-              #{t.name}
+        <div className="chip-row chip-row-wrap release-tags" aria-label={t('release.tags')}>
+          {tags.map(tag => (
+            <Link key={tag.slug} to={discoverHref({tag: tag.slug})} className="chip chip-tag">
+              #{tag.name}
             </Link>
           ))}
         </div>
@@ -264,6 +267,7 @@ function ReleaseMeta({release}: {release: ReleaseDetail}) {
 }
 
 function CastMember({performer, releaseDate, onOpen}: {performer: Performer; releaseDate?: string; onOpen?: () => void}) {
+  const t = useT();
   // PRD 6.4: only a release date is known (no filming year), so always 「约」;
   // hidden when either date is missing.
   const age = ageAt(performer.birth_date, releaseDate);
@@ -286,7 +290,7 @@ function CastMember({performer, releaseDate, onOpen}: {performer: Performer; rel
       <Avatar seed={performer.slug} name={performer.canonical_name} size={88} />
       <span className="performer-chip-name">{performer.canonical_name}</span>
       {performer.canonical_name_ja && <span className="performer-chip-sub">{performer.canonical_name_ja}</span>}
-      {age !== null && <span className="age-pill">约 {age} 岁</span>}
+      {age !== null && <span className="age-pill">{t('release.age', {age})}</span>}
     </Link>
   );
 }
@@ -297,6 +301,7 @@ function SamePerformer({performer, currentSlug, onFirst}: {
   /** The autoplay candidate (first work in the list). */
   onFirst?: (next: {id: number; slug: string; title: string} | null) => void;
 }) {
+  const t = useT();
   const works = useAsync(signal => getPerformerReleases(performer.slug, 12, signal), [performer.slug]);
   const list = (works.data ?? []).filter(r => r.slug !== currentSlug).slice(0, 10);
   const first = list[0];
@@ -307,7 +312,7 @@ function SamePerformer({performer, currentSlug, onFirst}: {
   if (!works.loading && list.length === 0) return null;
   return (
     <section className="aside-section">
-      <SectionHeader title="接下来播放" sub={`同演员 · ${performer.canonical_name}`} />
+      <SectionHeader title={t('release.upNext')} sub={t('release.samePerformer', {name: performer.canonical_name})} />
       {works.slow ? (
         <CardGridSkeleton count={4} variant="row" />
       ) : (
@@ -317,8 +322,8 @@ function SamePerformer({performer, currentSlug, onFirst}: {
               key={r.id}
               slug={r.slug}
               title={r.canonical_title}
-              badge={r.runtime_minutes ? `${r.runtime_minutes} 分` : undefined}
-              meta={`同演员 · ${performer.canonical_name}`}
+              badge={r.runtime_minutes ? t('card.minutes', {n: r.runtime_minutes}) : undefined}
+              meta={t('release.samePerformer', {name: performer.canonical_name})}
               sub={formatDate(r.release_date)}
             />
           ))}
@@ -329,6 +334,7 @@ function SamePerformer({performer, currentSlug, onFirst}: {
 }
 
 function FavoriteButton({slug}: {slug: string}) {
+  const t = useT();
   const {status} = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
@@ -353,7 +359,7 @@ function FavoriteButton({slug}: {slug: string}) {
       await setFavorite(slug, next);
     } catch (cause) {
       setSaved(!next);
-      setError(cause instanceof Error ? cause.message : '收藏失败');
+      setError(cause instanceof Error ? cause.message : t('release.favoriteFailed'));
     } finally {
       setBusy(false);
     }
@@ -363,7 +369,7 @@ function FavoriteButton({slug}: {slug: string}) {
     <>
       <button type="button" className={isSaved ? 'pill-btn is-on' : 'pill-btn'} aria-pressed={isSaved} disabled={busy} onClick={toggle}>
         <Icon name="favorites" size={18} filled={isSaved} />
-        {isSaved ? '已收藏' : '收藏'}
+        {isSaved ? t('release.favorited') : t('release.favorite')}
       </button>
       {error && (
         <span className="inline-error" role="alert">
@@ -375,6 +381,7 @@ function FavoriteButton({slug}: {slug: string}) {
 }
 
 function ShareButton({title}: {title: string}) {
+  const t = useT();
   const [message, setMessage] = useState('');
   const share = async () => {
     const url = window.location.href;
@@ -384,7 +391,7 @@ function ShareButton({title}: {title: string}) {
         return;
       }
       await navigator.clipboard.writeText(url);
-      setMessage('链接已复制');
+      setMessage(t('release.linkCopied'));
     } catch {
       setMessage('');
     }
@@ -394,7 +401,7 @@ function ShareButton({title}: {title: string}) {
     <>
       <button type="button" className="pill-btn" onClick={share}>
         <Icon name="share" size={18} />
-        分享
+        {t('release.share')}
       </button>
       <span className="sr-status" role="status">
         {message}
@@ -467,23 +474,24 @@ function AutoplayNext({fromId, next, onGo, onCancel}: {
 
 /** 稍后观看 queue (全部播放 / 随机播放): position, 下一个, and the rest of the list. */
 function QueuePanel({slugs, index}: {slugs: string[]; index: number}) {
+  const t = useT();
   const later = useAsync(signal => getWatchLater(signal), []);
   const titles = new Map((later.data ?? []).map(i => [i.slug, i.title]));
   const rest = slugs.slice(index + 1);
   return (
-    <section className="aside-section queue-panel" aria-label="播放列表">
-      <SectionHeader title="稍后观看" sub={`${index + 1} / ${slugs.length}`} />
+    <section className="aside-section queue-panel" aria-label={t('release.queue')}>
+      <SectionHeader title={t('nav.later')} sub={`${index + 1} / ${slugs.length}`} />
       {rest.length === 0 ? (
-        <p className="muted">这是列表里的最后一个视频。</p>
+        <p className="muted">{t('release.queueLast')}</p>
       ) : (
         <div className="row-list">
           {rest.slice(0, 8).map((s, i) => (
-            <ReleaseRow key={s} slug={s} query="?list=later" title={titles.get(s) ?? s} meta={i === 0 ? '下一个 · 播完自动播放' : `第 ${index + i + 2} 个`} />
+            <ReleaseRow key={s} slug={s} query="?list=later" title={titles.get(s) ?? s} meta={i === 0 ? t('release.queueNext') : t('release.queueNth', {n: index + i + 2})} />
           ))}
         </div>
       )}
       <Link to="/later" className="text-btn">
-        管理稍后观看
+        {t('release.queueManage')}
       </Link>
     </section>
   );

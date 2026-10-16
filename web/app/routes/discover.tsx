@@ -6,17 +6,19 @@ import {FilterBar, ReleaseResults} from '../components/ReleaseFilters';
 import {CardGridSkeleton, EmptyState, ErrorBanner} from '../components/States';
 import {listMakers, listPerformerPage, listTags, type PerformerListItem, type PerformerSort, type ReleaseFilter} from '../lib/api';
 import {formatCount, formatYear} from '../lib/format';
+import {t, useT} from '../lib/i18n';
+import type {MessageKey} from '../lib/messages.zh-CN';
 import {DURATION_BUCKETS, RELEASE_SORTS, discoverHref, durationLabel, parseReleaseFilter, withFilter, yearOptions} from '../lib/releaseFilter';
 import {useAsync} from '../lib/useAsync';
 import {usePaged} from '../lib/usePaged';
 
-export const meta = () => [{title: 'REEL · 发现'}];
+export const meta = () => [{title: t('title.discover')}];
 
 type Tab = 'new' | 'categories' | 'actors';
-const tabs: {key: Tab; label: string}[] = [
-  {key: 'new', label: '新上线'},
-  {key: 'categories', label: '分类'},
-  {key: 'actors', label: '演员'},
+const tabs: {key: Tab; label: MessageKey}[] = [
+  {key: 'new', label: 'nav.new'},
+  {key: 'categories', label: 'nav.categories'},
+  {key: 'actors', label: 'nav.actors'},
 ];
 
 // MobileDiscover sub-tabs and the SideNav 新上线 / 分类 / 演员 destinations,
@@ -27,6 +29,7 @@ const tabs: {key: Tab; label: string}[] = [
 // TODO(tech plan 3.4): 类型方块 and 语言 facet (NavCategories) — no genre or language data yet.
 // TODO(PRD 18): 今晚看什么 entry.
 export default function Discover() {
+  const t = useT();
   const [params, setParams] = useSearchParams();
   const raw = params.get('tab');
   const tab: Tab = raw === 'categories' || raw === 'actors' ? raw : 'new';
@@ -35,19 +38,19 @@ export default function Discover() {
     <div className="page discover">
       <Link to="/search" className="fake-search show-mobile">
         <Icon name="search" size={16} />
-        搜索视频、演员
+        {t('discover.searchHint')}
       </Link>
-      <div className="tabbar" role="tablist" aria-label="发现">
-        {tabs.map(t => (
+      <div className="tabbar" role="tablist" aria-label={t('tabs.discover')}>
+        {tabs.map(item => (
           <button
-            key={t.key}
+            key={item.key}
             type="button"
             role="tab"
-            aria-selected={tab === t.key}
+            aria-selected={tab === item.key}
             className="tabbar-tab"
-            onClick={() => setParams(t.key === 'new' ? {} : {tab: t.key}, {replace: true})}
+            onClick={() => setParams(item.key === 'new' ? {} : {tab: item.key}, {replace: true})}
           >
-            {t.label}
+            {t(item.label)}
           </button>
         ))}
       </div>
@@ -59,11 +62,12 @@ export default function Discover() {
 }
 
 function BrowseReleases() {
+  const t = useT();
   const [params, setParams] = useSearchParams();
   const filter = parseReleaseFilter(params);
   // Tag names for the active-filter chip; the URL carries the tag slug.
   const tags = useAsync(signal => listTags(200, signal), [], !!filter.tag);
-  const tagName = tags.data?.find(t => t.slug === filter.tag)?.name;
+  const tagName = tags.data?.find(tag => tag.slug === filter.tag)?.name;
   const filtered = !!(filter.tag || filter.maker || filter.performer || filter.year || filter.min_runtime || filter.max_runtime);
 
   const update = (patch: Partial<Record<keyof ReleaseFilter, string | number | undefined>>) =>
@@ -73,20 +77,20 @@ function BrowseReleases() {
   const summary = [
     filter.tag && `#${tagName || filter.tag}`,
     filter.maker,
-    filter.year && `${filter.year} 年`,
+    filter.year && t('common.year', {y: filter.year}),
     durationLabel(filter),
   ].filter(Boolean);
-  const sortSub = filter.sort === 'oldest' ? '按发行日期，最早在前' : filter.sort === 'runtime' ? '按时长，最长在前' : '按发行日期，最新在前';
+  const sortSub = filter.sort === 'oldest' ? t('discover.sortOldest') : filter.sort === 'runtime' ? t('discover.sortRuntime') : t('discover.sortNewest');
 
   return (
     <section className="shelf">
       <SectionHeader
-        title={filtered ? '筛选结果' : '新上线'}
+        title={filtered ? t('discover.filtered') : t('nav.new')}
         sub={filtered ? summary.join(' · ') : sortSub}
         action={
           filtered ? (
             <button type="button" className="text-btn" onClick={clear}>
-              清除筛选
+              {t('common.clearFilters')}
             </button>
           ) : undefined
         }
@@ -105,13 +109,13 @@ function BrowseReleases() {
         empty={
           <EmptyState
             icon="search"
-            title={filtered ? '没有符合条件的作品' : '还没有已发布的作品'}
-            body={filtered ? '试试放宽时长或年份，或去掉一个筛选条件。' : undefined}
+            title={filtered ? t('discover.emptyFiltered') : t('discover.empty')}
+            body={filtered ? t('discover.emptyFilteredBody') : undefined}
           >
             {filtered && (
               <div className="empty-actions">
                 <button type="button" className="btn btn-primary" onClick={clear}>
-                  清除筛选
+                  {t('common.clearFilters')}
                 </button>
               </div>
             )}
@@ -123,14 +127,15 @@ function BrowseReleases() {
 }
 
 function Categories() {
+  const t = useT();
   const tags = useAsync(signal => listTags(100, signal), []);
   const makers = useAsync(signal => listMakers(50, signal), []);
-  const maxTag = Math.max(1, ...(tags.data ?? []).map(t => t.count));
+  const maxTag = Math.max(1, ...(tags.data ?? []).map(tag => tag.count));
   return (
     <>
-      <p className="muted">点击任一分类进入列表页，可继续叠加筛选。</p>
+      <p className="muted">{t('discover.categoriesHint')}</p>
       <section className="shelf">
-        <SectionHeader title="按时长" />
+        <SectionHeader title={t('discover.byDuration')} />
         <div className="chip-row chip-row-wrap">
           {DURATION_BUCKETS.map(b => (
             <Link key={b.key} to={discoverHref({min_runtime: b.min, max_runtime: b.max})} className="chip">
@@ -140,7 +145,7 @@ function Categories() {
         </div>
       </section>
       <section className="shelf">
-        <SectionHeader title="按年代" sub="发行年份" />
+        <SectionHeader title={t('discover.byYear')} sub={t('discover.byYearSub')} />
         <div className="chip-row chip-row-wrap">
           {yearOptions().map(y => (
             <Link key={y} to={discoverHref({year: y})} className="chip">
@@ -150,29 +155,29 @@ function Categories() {
         </div>
       </section>
       <section className="shelf">
-        <SectionHeader title="热门标签" sub="字号越大，作品越多" />
+        <SectionHeader title={t('home.tags')} sub={t('discover.tagsSub')} />
         {tags.error ? (
           <ErrorBanner error={tags.error} onRetry={tags.reload} />
         ) : tags.slow ? (
           <CardGridSkeleton count={6} variant="row" />
         ) : (
           <div className="chip-row chip-row-wrap tag-cloud">
-            {(tags.data ?? []).map(t => (
+            {(tags.data ?? []).map(tag => (
               <Link
-                key={t.slug}
-                to={discoverHref({tag: t.slug})}
+                key={tag.slug}
+                to={discoverHref({tag: tag.slug})}
                 className="chip"
-                style={{fontSize: `${13 + Math.round((t.count / maxTag) * 5)}px`}}
+                style={{fontSize: `${13 + Math.round((tag.count / maxTag) * 5)}px`}}
               >
-                #{t.name}
-                <span className="chip-count">{formatCount(t.count)}</span>
+                #{tag.name}
+                <span className="chip-count">{formatCount(tag.count)}</span>
               </Link>
             ))}
           </div>
         )}
       </section>
       <section className="shelf">
-        <SectionHeader title="片商" sub="按作品数" />
+        <SectionHeader title={t('discover.makers')} sub={t('discover.makersSub')} />
         {makers.error ? (
           <ErrorBanner error={makers.error} onRetry={makers.reload} />
         ) : makers.slow ? (
@@ -192,13 +197,14 @@ function Categories() {
   );
 }
 
-const PERFORMER_SORTS: {value: PerformerSort; label: string; sub: string}[] = [
-  {value: 'works', label: '作品数', sub: '作品最多在前'},
-  {value: 'newest_work', label: '新作', sub: '最近有新作在前'},
-  {value: 'name', label: '名字', sub: '按名字排序'},
+const PERFORMER_SORTS: {value: PerformerSort; label: MessageKey; sub: MessageKey}[] = [
+  {value: 'works', label: 'discover.sortWorks', sub: 'discover.sortWorksSub'},
+  {value: 'newest_work', label: 'discover.sortNewWork', sub: 'discover.sortNewWorkSub'},
+  {value: 'name', label: 'discover.sortName', sub: 'discover.sortNameSub'},
 ];
 
 function Actors() {
+  const t = useT();
   const [params, setParams] = useSearchParams();
   const raw = params.get('sort');
   const sort: PerformerSort = raw === 'name' || raw === 'newest_work' ? raw : 'works';
@@ -206,15 +212,16 @@ function Actors() {
   // A backend without cursor pagination ignores sort and answers by name.
   const sortable = list.paged !== false;
   const shown = sortable ? sort : 'name';
+  const shownSort = PERFORMER_SORTS.find(s => s.value === shown);
 
   return (
     <section className="shelf">
       <SectionHeader
-        title="演员库"
-        sub={PERFORMER_SORTS.find(s => s.value === shown)?.sub}
+        title={t('home.actorLibrary')}
+        sub={shownSort && t(shownSort.sub)}
         action={
           sortable ? (
-            <div className="segmented segmented-sm" role="radiogroup" aria-label="排序">
+            <div className="segmented segmented-sm" role="radiogroup" aria-label={t('common.sort')}>
               {PERFORMER_SORTS.map(s => (
                 <button
                   key={s.value}
@@ -230,7 +237,7 @@ function Actors() {
                     setParams(next, {replace: true});
                   }}
                 >
-                  {s.label}
+                  {t(s.label)}
                 </button>
               ))}
             </div>
@@ -242,7 +249,7 @@ function Actors() {
       ) : list.loading ? (
         list.slow && <CardGridSkeleton count={12} variant="avatar" />
       ) : list.items.length === 0 ? (
-        <EmptyState icon="me" title="演员库还是空的" body="演员资料还在整理中。" actions={[{to: '/', label: '去首页逛逛'}]} />
+        <EmptyState icon="me" title={t('discover.actorsEmpty')} body={t('discover.actorsEmptyBody')} actions={[{to: '/', label: t('common.goHome')}]} />
       ) : (
         <>
           <div className="avatar-grid">
@@ -258,7 +265,7 @@ function Actors() {
 }
 
 function performerSub(p: PerformerListItem, sort: PerformerSort): string | undefined {
-  const works = typeof p.works_count === 'number' ? `${formatCount(p.works_count)} 部作品` : '';
-  const latest = sort === 'newest_work' && p.latest_release_date ? `新作 ${formatYear(p.latest_release_date)}` : '';
+  const works = typeof p.works_count === 'number' ? t('home.worksCount', {n: formatCount(p.works_count)}) : '';
+  const latest = sort === 'newest_work' && p.latest_release_date ? t('discover.latestWork', {year: formatYear(p.latest_release_date)}) : '';
   return [works, latest].filter(Boolean).join(' · ') || p.canonical_name_ja || undefined;
 }

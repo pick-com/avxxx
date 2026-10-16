@@ -11,6 +11,8 @@
 // identity-merge). Callers feature-detect from the response shape and degrade
 // to the older behaviour instead of showing an error.
 
+import {t} from './i18n';
+
 const USER_TOKEN_KEY = 'user_token';
 const ADMIN_TOKEN_KEY = 'admin_token';
 
@@ -62,18 +64,18 @@ function tokenFor(path: string): string | null {
 }
 
 function fallbackMessage(status: number): string {
-  if (status === 401) return '需要登录后才能继续';
-  if (status === 404) return '内容不存在或已下架';
-  if (status === 409) return '请求冲突，请刷新后重试';
-  if (status === 501) return '该片源尚未配置';
-  if (status >= 500) return '服务暂时不可用，请稍后重试';
-  return `请求失败（${status}）`;
+  if (status === 401) return t('api.needLogin');
+  if (status === 404) return t('api.notFound');
+  if (status === 409) return t('api.conflict');
+  if (status === 501) return t('api.sourceMissing');
+  if (status >= 500) return t('api.unavailable');
+  return t('api.failed', {status});
 }
 
 // The API answers errors in three shapes: `{"error":"request failed"}` from the
 // catalog handlers, `{"error":{"code","message"}}` from internal/media, and a
 // plain-text body from the admin middleware. Only the media shape carries a
-// useful message; the others fall back to a status-based Chinese message.
+// useful message; the others fall back to a status-based message (t()).
 function errorMessage(data: unknown, status: number): string {
   if (data && typeof data === 'object' && 'error' in data) {
     const err = (data as {error: unknown}).error;
@@ -174,7 +176,7 @@ export async function api<T>(path: string, options: RequestOptions = {}): Promis
     });
   } catch (cause) {
     if (cause instanceof DOMException && cause.name === 'AbortError') throw cause;
-    throw new ApiError('网络连接失败，请检查网络后重试', 0);
+    throw new ApiError(t('api.network'), 0);
   }
   const text = await response.text();
   let data: unknown = null;
@@ -384,7 +386,7 @@ export const getPlayback = (slug: string, signal?: AbortSignal) =>
 export function resolvePlayback(resolvePath: string, signal?: AbortSignal) {
   // Only follow resolve paths the API hands out; never POST to arbitrary URLs.
   if (!/^\/api\/resolve\/[a-z0-9_-]+\//i.test(resolvePath)) {
-    return Promise.reject(new ApiError('播放地址无效', 400));
+    return Promise.reject(new ApiError(t('api.badPlayUrl'), 400));
   }
   return api<{streams: Stream[] | null}>(resolvePath, {method: 'POST', signal}).then(data => data.streams ?? []);
 }

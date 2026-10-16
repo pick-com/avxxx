@@ -1,14 +1,19 @@
+import {pagesZhCN} from './messages.pages.zh-CN';
+
 // Bundled zh-CN UI strings: the source language and the fallback for every
 // key (lib/i18n.tsx). Other languages come from GET /api/i18n/ui/{lang}
 // (ui_strings, same keys). {name} placeholders are filled by t(key, vars).
 //
 // Covered: app shell (top bar, side nav, bottom tabs, footer, network banner,
 // error pages), player controls and settings sheet, autoplay, home and the
-// settings page. Other pages still have inline zh-CN text.
+// settings page; page titles and the content pages (video, discover, search,
+// performer, login, welcome, me, notifications, library pages, cookie banner,
+// age gate) come from messages.pages.zh-CN.ts. Admin pages stay zh-CN only.
 
 import {communityZhCN} from './messages.community.zh-CN';
 
 export const zhCN = {
+  ...pagesZhCN,
   ...communityZhCN,
   // app / errors
   'app.loading': '正在加载',

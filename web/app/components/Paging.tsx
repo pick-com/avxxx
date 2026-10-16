@@ -1,4 +1,5 @@
 import {useEffect, useRef} from 'react';
+import {useT} from '../lib/i18n';
 import type {PagedState} from '../lib/usePaged';
 
 /**
@@ -7,7 +8,8 @@ import type {PagedState} from '../lib/usePaged';
  * and browsers without IntersectionObserver. A failed page stops auto-loading
  * until the user retries.
  */
-export function LoadMore({state, label = '加载更多'}: {state: PagedState<unknown>; label?: string}) {
+export function LoadMore({state, label}: {state: PagedState<unknown>; label?: string}) {
+  const t = useT();
   const ref = useRef<HTMLDivElement>(null);
   const {hasMore, loadingMore, moreError, loadMore} = state;
 
@@ -33,7 +35,7 @@ export function LoadMore({state, label = '加载更多'}: {state: PagedState<unk
         </span>
       )}
       <button type="button" className="btn btn-secondary" onClick={loadMore} disabled={loadingMore} aria-busy={loadingMore}>
-        {loadingMore ? '正在加载…' : moreError ? '重试' : label}
+        {loadingMore ? t('common.loadingMore') : moreError ? t('common.retry') : (label ?? t('common.loadMore'))}
       </button>
     </div>
   );
