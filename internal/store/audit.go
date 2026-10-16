@@ -27,7 +27,7 @@ type performerJSON struct {
 	BirthDate string `json:"birth_date"`
 }
 
-const releaseFactsSelect = `SELECT r.id,r.canonical_title,r.status,r.release_date,COALESCE(r.runtime_minutes,0),
+const releaseFactsSelect = `SELECT r.id,r.canonical_title,r.status,r.release_date,COALESCE(r.shoot_year,0),COALESCE(r.runtime_minutes,0),
 	(SELECT count(*) FROM watch_history w WHERE w.release_id=r.id),
 	COALESCE((SELECT json_agg(json_build_object('id',p.id,'name',p.canonical_name,'birth_date',p.birth_date) ORDER BY rp.billing_order NULLS LAST,p.id)
 		FROM release_performers rp JOIN performers p0 ON p0.id=rp.performer_id
@@ -38,7 +38,7 @@ const releaseFactsSelect = `SELECT r.id,r.canonical_title,r.status,r.release_dat
 func scanReleaseFacts(row pgx.Row) (audit.ReleaseFacts, error) {
 	var x audit.ReleaseFacts
 	var raw []byte
-	if err := row.Scan(&x.ID, &x.Title, &x.Status, &x.ReleaseDate, &x.RuntimeMinutes, &x.Popularity, &raw); err != nil {
+	if err := row.Scan(&x.ID, &x.Title, &x.Status, &x.ReleaseDate, &x.ShootYear, &x.RuntimeMinutes, &x.Popularity, &raw); err != nil {
 		return x, err
 	}
 	var ps []performerJSON
