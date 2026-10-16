@@ -91,6 +91,10 @@ export type EventProps = {
   comment_post: {release_id: number; reply: boolean; spoiler: boolean};
   comment_like: {comment_id: number};
   share: {release_id: number; method: 'native' | 'copy'; with_time: boolean};
+  // Guest sign-in prompt (components/AuthPrompt.tsx); action is its AuthAction
+  auth_prompt_shown: {action: string; method: 'sheet' | 'reminder'};
+  auth_prompt_closed: {action: string; method: 'skip' | 'dismiss' | 'navigate'};
+  auth_prompt_converted: {action: string; method: 'password' | 'register' | 'google' | 'apple'};
 };
 export type EventName = keyof EventProps;
 

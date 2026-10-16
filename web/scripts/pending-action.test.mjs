@@ -7,9 +7,10 @@ import {
   clearPending,
   parsePending,
   peekPending,
+  markPromptOAuth,
   savePending,
-  setPendingMethod,
   takePending,
+  takePromptOAuth,
 } from '../app/lib/pendingAction.ts';
 
 function memoryStore() {
@@ -52,15 +53,13 @@ test('malformed values are ignored', () => {
   }
 });
 
-test('drafts and the sign-in method are kept, drafts bounded', () => {
+test('drafts are kept, bounded', () => {
   const store = memoryStore();
   const now = 7_000;
   const long = '弹'.repeat(PENDING_DRAFT_MAX + 50);
   savePending({kind: 'danmaku', target: 'abc-1', payload: {draft: long, spoiler: true}}, now, store);
-  setPendingMethod('google', now + 5, store);
   const p = takePending('danmaku', 'abc-1', now + 10, store);
-  assert.equal(p.method, 'google');
-  assert.equal(p.created_at, now); // the method does not extend the expiry
+  assert.equal(p.created_at, now);
   assert.equal(Array.from(p.payload.draft).length, PENDING_DRAFT_MAX);
   assert.equal(p.payload.spoiler, true);
 });
@@ -77,4 +76,14 @@ test('clearPending and a missing store are safe', () => {
   assert.equal(peekPending(2, store), null);
   assert.equal(peekPending(2, null), null);
   savePending({kind: 'later', target: 'a'}, 1, null);
+});
+
+test('the provider sign-in marker is read once and expires', () => {
+  const store = memoryStore();
+  markPromptOAuth('favorite', 'google', 100, store);
+  assert.deepEqual(takePromptOAuth(200, store), {action: 'favorite', method: 'google'});
+  assert.equal(takePromptOAuth(300, store), null);
+  markPromptOAuth('later', 'google', 100, store);
+  assert.equal(takePromptOAuth(100 + PENDING_TTL_MS, store), null);
+  assert.equal(store.map.size, 0);
 });

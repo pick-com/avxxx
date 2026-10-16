@@ -1,4 +1,5 @@
 import {useEffect, useState} from 'react';
+import {track} from '../lib/analytics';
 import {useAuth} from '../lib/auth';
 import {guestHistory, guestResume} from '../lib/guestProgress';
 import {useT} from '../lib/i18n';
@@ -26,6 +27,7 @@ export function SyncReminder({slug}: {slug: string}) {
     if (!shouldRemind({lastShown: readLastShown(), now, watched, current: slug, resumed: guestResume(slug) > 0})) return;
     markShown(now);
     setShow(true);
+    track('auth_prompt_shown', {action: 'sync', method: 'reminder'});
   }, [status, slug]);
 
   if (!show || status !== 'anon') return null;
@@ -36,7 +38,15 @@ export function SyncReminder({slug}: {slug: string}) {
       <button type="button" className="btn btn-primary btn-sm" onClick={() => requireAuth('sync')}>
         {t('auth.login')}
       </button>
-      <button type="button" className="icon-btn sync-reminder-close" aria-label={t('common.close')} onClick={() => setShow(false)}>
+      <button
+        type="button"
+        className="icon-btn sync-reminder-close"
+        aria-label={t('common.close')}
+        onClick={() => {
+          setShow(false);
+          track('auth_prompt_closed', {action: 'sync', method: 'dismiss'});
+        }}
+      >
         <Icon name="close" size={18} />
       </button>
     </div>
