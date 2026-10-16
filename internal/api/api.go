@@ -59,6 +59,8 @@ type Server struct {
 	// weights and rebuild routes (recs.go).
 	recs      recsStore
 	recsAdmin recsAdmin
+	// recFeedback backs 推荐反馈 (rec_feedback.go).
+	recFeedback recFeedbackStore
 	// search backs /api/catalog/search, /api/search/hot|suggest and the
 	// AdminSearch routes (search.go).
 	search searchStore
@@ -203,6 +205,7 @@ func Register(mux *http.ServeMux, s *store.Store, mediaHandler *media.Handler) {
 		srv.editor = s
 		srv.recs = s
 		srv.recsAdmin = s
+		srv.recFeedback = s
 		srv.search = s
 		srv.searchHist = s
 		srv.performerEd = s

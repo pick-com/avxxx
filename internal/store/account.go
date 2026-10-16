@@ -554,6 +554,13 @@ var exportSections = []struct{ name, sql string }{
 	{"comment_likes", `SELECT COALESCE(json_agg(json_build_object('comment_id',comment_id,'created_at',created_at) ORDER BY created_at),'[]') FROM comment_likes WHERE user_id=$1`},
 	{"reactions", `SELECT COALESCE(json_agg(json_build_object('release',r.slug,'value',x.value,'created_at',x.created_at,'updated_at',x.updated_at) ORDER BY x.created_at),'[]')
 		FROM release_reactions x JOIN releases r ON r.id=x.release_id WHERE x.user_id=$1`},
+	// 推荐反馈 (migration 051), undone rows included with undone_at.
+	{"rec_feedback", `SELECT COALESCE(json_agg(json_build_object('kind',f.kind,'target',COALESCE(r.slug,p.slug,f.target_tag),'name',COALESCE(r.canonical_title,p.canonical_name,f.target_tag),
+		'created_at',f.created_at,'undone_at',f.undone_at) ORDER BY f.created_at),'[]')
+		FROM rec_feedback f
+		LEFT JOIN releases r ON f.kind='not_interested_release' AND r.id=f.target_id
+		LEFT JOIN performers p ON f.kind='not_interested_performer' AND p.id=f.target_id
+		WHERE f.user_id=$1`},
 	{"search_history", `SELECT COALESCE(json_agg(json_build_object('query',COALESCE(display,query),'searched_at',searched_at) ORDER BY searched_at DESC),'[]') FROM user_search_history WHERE user_id=$1`},
 	{"consent_records", `SELECT COALESCE(json_agg(json_build_object('categories',categories,'policy_version',policy_version,'gpc',gpc,'source',source,'created_at',created_at) ORDER BY id),'[]') FROM consent_records WHERE user_id=$1`},
 	{"push_devices", `SELECT COALESCE(json_agg(json_build_object('user_agent',user_agent,'created_at',created_at,'last_success_at',last_success_at) ORDER BY id),'[]') FROM push_subscriptions WHERE user_id=$1`},

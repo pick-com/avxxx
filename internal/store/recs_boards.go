@@ -133,8 +133,9 @@ func matchPercent(score float64) int { return int(score*100 + 0.5) }
 // RecommendedPerformers (演员库「为你推荐的演员」, PRD 6.2) aggregates
 // performer_similar over the user's followed performers (weight 1) and the
 // performers of the last 30 watched releases (0.5), excluding the seeds
-// themselves and performers already followed. Via is the seed contributing
-// most; match_percent is the best single similarity.
+// themselves, performers already followed and those marked 不推荐此演员
+// (rec_feedback). Via is the seed contributing most; match_percent is the
+// best single similarity.
 func (s *Store) RecommendedPerformers(ctx context.Context, userID int64, offset, limit int) ([]PerformerRec, error) {
 	rows, err := s.Query(ctx, `WITH seeds AS (
 		  SELECT performer_id, 1.0::float8 AS w, true AS followed FROM follows WHERE user_id=$1
@@ -153,7 +154,9 @@ func (s *Store) RecommendedPerformers(ctx context.Context, userID int64, offset,
 		JOIN performers vp ON vp.id=a.via
 		LEFT JOIN performer_similar ps ON ps.performer_id=a.via AND ps.similar_id=a.similar_id
 		WHERE NOT EXISTS (SELECT 1 FROM seeds x WHERE x.performer_id=a.similar_id)
-		ORDER BY a.score DESC, p.id OFFSET $2 LIMIT $3`, userID, offset, limit)
+		  AND NOT EXISTS (SELECT 1 FROM rec_feedback rf WHERE rf.owner_key=$4 AND rf.kind='`+recs.FeedbackPerformer+`'
+		    AND rf.target_id=a.similar_id AND rf.undone_at IS NULL)
+		ORDER BY a.score DESC, p.id OFFSET $2 LIMIT $3`, userID, offset, limit, RecFeedbackOwner{UserID: userID}.Key())
 	if err != nil {
 		return nil, err
 	}

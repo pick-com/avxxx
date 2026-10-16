@@ -29,6 +29,132 @@
   min-width: 0;
 }
 
+/* ---- Card 「⋯」 menu (CardMenu) and 推荐反馈 (RecFeedback) ---- */
+
+.card-menu {
+  position: absolute;
+  top: 6px;
+  left: 6px;
+  z-index: 3;
+}
+
+.card-menu .card-menu-btn {
+  position: static;
+  font-size: 22px;
+  line-height: 1;
+}
+
+.release-card-wrap:hover .card-menu-btn,
+.card-menu.is-open .card-menu-btn {
+  opacity: 1;
+}
+
+.release-row .card-menu {
+  position: relative;
+  top: auto;
+  left: auto;
+  flex-shrink: 0;
+}
+
+.card-menu-list {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  min-width: 180px;
+  padding: 6px;
+  border-radius: 12px;
+  background: var(--surface);
+  border: 1px solid var(--line2);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.3);
+  display: flex;
+  flex-direction: column;
+}
+
+.release-row .card-menu-list {
+  left: auto;
+  right: 0;
+}
+
+.card-menu-item {
+  min-height: 40px;
+  padding: 8px 10px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-size: 14px;
+  text-align: left;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  white-space: nowrap;
+}
+
+.card-menu-item:hover,
+.card-menu-item:focus-visible {
+  background: var(--surface2);
+}
+
+.rec-hidden {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 12px;
+  border-radius: 10px;
+  border: 1px dashed var(--line2);
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.rec-hidden-card {
+  aspect-ratio: 16 / 9;
+}
+
+.rec-hidden-row {
+  min-height: 64px;
+}
+
+.rec-feedback-error {
+  font-size: 12px;
+}
+
+.rec-feedback-list {
+  list-style: none;
+  margin: 8px 0 0;
+  padding: 0;
+  max-height: 320px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.rec-feedback-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 36px;
+}
+
+.rec-feedback-kind {
+  flex-shrink: 0;
+  font-size: 12px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: var(--surface2);
+}
+
+.rec-feedback-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 /* ---- Home: 今晚看什么 before the tag chips ---- */
 
 .home-chips {

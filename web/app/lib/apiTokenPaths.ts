@@ -5,8 +5,9 @@
 // play-config is public, but a user token adds `resume` (tech plan 3.3).
 const PLAY_CONFIG_PATH = /^releases\/[^/?]+\/play-config(\?|$)/;
 // Recommendations (internal/api/recs.go): public, but a user token adds the
-// viewer's history, follows and watched filter.
-const RECS_PATH = /^recs(\?|$)/;
+// viewer's history, follows and watched filter. 推荐反馈 (recs/feedback,
+// internal/api/rec_feedback.go) is the token's, else the X-Device-ID's.
+const RECS_PATH = /^recs(\/feedback)?(\?|$)/;
 // Upcoming (internal/api/catalog.go): public, but ?followed=1 needs the user
 // and a token adds each item's `reserved` state.
 const UPCOMING_PATH = /^upcoming(\?|$)/;

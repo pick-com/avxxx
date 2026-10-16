@@ -16,6 +16,7 @@ import {formatDate, formatRuntime} from '../lib/format';
 import {useAsync} from '../lib/useAsync';
 import {getPerformerHeat, getRecs, getTrending, performerName, reasonPerformer, reasonText, recTitle, useRecsAvailable, type RecItem} from '../lib/recs';
 import {HomeHero} from '../components/HomeHero';
+import {RecFeedbackCard} from '../components/RecFeedback';
 import {getHomeSlots, getTopRatedShort, releaseTitle, type HomeSlot, type HomeSlots, type TopRatedShort} from '../lib/home';
 
 export const handle: SeoHandle = {seo: true};
@@ -345,22 +346,26 @@ export default function Home() {
   );
 }
 
-/** Recommended releases with their one-line reason (PRD 10 可解释). */
+/** Recommended releases with their one-line reason (PRD 10 可解释) and the 推荐反馈 「⋯」 menu. */
 function RecGrid({items, slot}: {items: RecItem[]; slot: string}) {
   const t = useT();
   return (
     <div className="card-grid">
       {items.map((it, col) => (
-        <ReleaseCard
-          slot={`${slot}:c${col + 1}`}
-          key={it.id}
-          slug={it.slug}
-          title={recTitle(it)}
-          badge={it.runtime_minutes ? t('card.minutes', {n: it.runtime_minutes}) : undefined}
-          meta={[performerName(it.performer), formatDate(it.release_date)].filter(Boolean).join(' · ')}
-          reason={reasonText(it.reason, it)}
-          reasonCode={it.reason.code}
-        />
+        <RecFeedbackCard key={it.id} item={it} variant="card">
+          {menu => (
+            <ReleaseCard
+              slot={`${slot}:c${col + 1}`}
+              slug={it.slug}
+              title={recTitle(it)}
+              badge={it.runtime_minutes ? t('card.minutes', {n: it.runtime_minutes}) : undefined}
+              meta={[performerName(it.performer), formatDate(it.release_date)].filter(Boolean).join(' · ')}
+              reason={reasonText(it.reason, it)}
+              reasonCode={it.reason.code}
+              menu={menu}
+            />
+          )}
+        </RecFeedbackCard>
       ))}
     </div>
   );

@@ -19,6 +19,9 @@ package api
 // (or with an invalid one) the visitor recall (trending + new) is used.
 // Signed-in users with little history (cold start) also get releases tagged
 // with their onboarding interests, which are boosted in ranking too.
+// 推荐反馈 (rec_feedback.go; the user's, else the X-Device-ID's) drops
+// releases marked 不感兴趣 or led by a performer marked 不推荐 and demotes
+// marked tags on every slot; the trending boards stay global.
 
 import (
 	"avxxx/internal/i18n"
@@ -70,6 +73,10 @@ func (srv *Server) recsRoutes() []route {
 		{"GET /api/admin/similarity-weights", srv.admin(srv.withRecsAdmin(srv.getSimilarityWeights))},
 		{"PUT /api/admin/similarity-weights", srv.admin(srv.withRecsAdmin(srv.putSimilarityWeights))},
 		{"POST /api/admin/recs/rebuild", srv.admin(srv.withRecsAdmin(srv.rebuildRecs))},
+		// 推荐反馈 (rec_feedback.go).
+		{"POST /api/recs/feedback", srv.withRecFeedback(srv.postRecFeedback)},
+		{"DELETE /api/recs/feedback", srv.withRecFeedback(srv.deleteRecFeedback)},
+		{"GET /api/me/rec-feedback", srv.withRecFeedback(srv.listRecFeedback)},
 	}
 }
 
@@ -218,8 +225,9 @@ func (srv *Server) getRecs(w http.ResponseWriter, r *http.Request) {
 		reply(w, nil, err)
 		return
 	}
-	uid := srv.recsViewerID(r) // 0 when the viewer turned off personalize_recs (auth.go)
-	if uid != 0 {
+	uid := srv.recsViewerID(r)               // 0 when the viewer turned off personalize_recs (auth.go)
+	fbOwner := srv.recsFeedbackOwner(r, uid) // 推荐反馈: also visitors (X-Device-ID) and with personalize_recs off
+	if uid != 0 || fbOwner.Key() != "" {
 		w.Header().Set("Cache-Control", "private, no-store")
 	}
 	ctx := r.Context()
@@ -235,7 +243,7 @@ func (srv *Server) getRecs(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
-	rec, err := srv.recs.Recall(ctx, store.RecQuery{Slot: p.slot, UserID: uid, SeedID: seed, Period: p.period})
+	rec, err := srv.recs.Recall(ctx, store.RecQuery{Slot: p.slot, UserID: uid, SeedID: seed, Period: p.period, Feedback: fbOwner})
 	if err != nil {
 		reply(w, nil, err)
 		return
@@ -246,7 +254,7 @@ func (srv *Server) getRecs(w http.ResponseWriter, r *http.Request) {
 		reply(w, nil, err)
 		return
 	}
-	opt := recs.Options{Seed: seed, Watched: rec.Watched, RequirePlayable: rec.RequirePlayable, Exclude: map[int64]bool{}}
+	opt := recs.Options{Seed: seed, Watched: rec.Watched, RequirePlayable: rec.RequirePlayable, Exclude: map[int64]bool{}, Feedback: rec.Feedback}
 	for _, id := range p.exclude {
 		opt.Exclude[id] = true
 		if info, ok := infos[id]; ok {

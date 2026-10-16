@@ -14,6 +14,7 @@ import {useEffect, useSyncExternalStore} from 'react';
 import {api, ApiError, isMissingEndpoint, query, toPage, type Page} from './api';
 import {t, uiLang} from './i18n';
 import type {MessageKey} from './messages.zh-CN';
+import {recsDeviceHeaders} from './recFeedback';
 
 // ---- Types (mirror internal/api/recs.go) ----
 
@@ -108,9 +109,9 @@ export function recsMissing(error: unknown): boolean {
   return isMissingEndpoint(error) || (error instanceof ApiError && error.status === 503);
 }
 
-async function recsApi<T>(path: string, signal?: AbortSignal): Promise<T> {
+async function recsApi<T>(path: string, signal?: AbortSignal, headers?: Record<string, string>): Promise<T> {
   try {
-    const data = await api<T>(path, {signal});
+    const data = await api<T>(path, {signal, headers});
     setAvailability('yes');
     return data;
   } catch (error) {
@@ -151,6 +152,7 @@ export const getRecs = (
   recsApi<{items: RecItem[] | null; next_cursor?: string | null}>(
     `recs${query({slot, release: opts.release, limit: opts.limit, cursor: opts.cursor})}`,
     signal,
+    recsDeviceHeaders(), // a visitor's 推荐反馈 (lib/recFeedback.ts)
   ).then(toPage);
 
 export const getPerformerRecs = (
@@ -180,6 +182,7 @@ export const getTonight = (
       exclude: opts.exclude?.slice(-50).join(','),
     })}`,
     signal,
+    recsDeviceHeaders(),
   ).then(r => ({...r, alternates: r.alternates ?? [], exclude: r.exclude ?? []}));
 
 type TrendingBody = {

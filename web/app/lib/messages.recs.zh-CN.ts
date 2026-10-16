@@ -33,6 +33,13 @@ export const recsZhCN = {
   'reason.similarToFollowed': '与你关注的演员相似',
   'reason.similarToWatched': '因为你看过的演员',
 
+  // 推荐反馈: the 「⋯」 menu on recommendation cards (components/RecFeedback.tsx)
+  'recFeedback.menuLabel': '更多操作：{title}',
+  'recFeedback.notInterested': '不感兴趣',
+  'recFeedback.notPerformer': '不推荐此演员',
+  'recFeedback.hidden': '已隐藏',
+  'recFeedback.undo': '撤销',
+
   // 热门 (NavTrending)
   'trending.title': '热门',
   'trending.today': '今日',
