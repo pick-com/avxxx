@@ -7,7 +7,7 @@ const tabs: Tab[] = [
   {key: 'home', label: '首页', to: '/', icon: 'home', match: p => p === '/'},
   {key: 'discover', label: '发现', to: '/discover', icon: 'discover', match: p => p === '/discover' || p === '/search'},
   {key: 'following', label: '关注', to: '/following', icon: 'following', match: p => p === '/following'},
-  {key: 'me', label: '我的', to: '/me', icon: 'me', match: p => p === '/me' || p === '/history' || p === '/favorites'},
+  {key: 'me', label: '我的', to: '/me', icon: 'me', match: p => ['/me', '/history', '/favorites', '/later', '/reservations', '/settings', '/notifications'].includes(p)},
 ];
 
 /** Mobile bottom tab bar (MobileHome), shown under 768px. */

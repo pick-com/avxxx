@@ -15,16 +15,28 @@ function readPref(): ThemePref {
   }
 }
 
-type ThemeValue = {pref: ThemePref; setPref: (pref: ThemePref) => void};
-const ThemeContext = createContext<ThemeValue>({pref: 'system', setPref: () => {}});
+/**
+ * origin 'user' marks a choice made on this device (toggle, settings); the
+ * settings sync pushes those to GET/PATCH /api/me/settings. 'sync' applies a
+ * value that came from the server and is not echoed back.
+ */
+type ThemeValue = {
+  pref: ThemePref;
+  setPref: (pref: ThemePref, origin?: 'user' | 'sync') => void;
+  /** Bumps on every user-originated change. */
+  userChange: {pref: ThemePref; n: number} | null;
+};
+const ThemeContext = createContext<ThemeValue>({pref: 'system', setPref: () => {}, userChange: null});
 
 export function ThemeProvider({children}: {children: ReactNode}) {
   const [pref, setPrefState] = useState<ThemePref>('system');
+  const [userChange, setUserChange] = useState<ThemeValue['userChange']>(null);
 
   useEffect(() => setPrefState(readPref()), []);
 
-  const setPref = useCallback((next: ThemePref) => {
+  const setPref = useCallback((next: ThemePref, origin: 'user' | 'sync' = 'user') => {
     setPrefState(next);
+    if (origin === 'user') setUserChange(prev => ({pref: next, n: (prev?.n ?? 0) + 1}));
     const root = document.documentElement;
     if (next === 'system') root.removeAttribute('data-theme');
     else root.setAttribute('data-theme', next);
@@ -36,10 +48,13 @@ export function ThemeProvider({children}: {children: ReactNode}) {
     }
   }, []);
 
-  const value = useMemo(() => ({pref, setPref}), [pref, setPref]);
+  const value = useMemo(() => ({pref, setPref, userChange}), [pref, setPref, userChange]);
   return <ThemeContext.Provider value={value}>{children}</ThemeContext.Provider>;
 }
 
 export const useTheme = () => useContext(ThemeContext);
 
 export const themeLabels: Record<ThemePref, string> = {system: '跟随系统', dark: '深色', light: '浅色'};
+
+/** Local preference without React (for the first settings sync). */
+export const readThemePref = readPref;

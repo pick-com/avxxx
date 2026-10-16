@@ -1,5 +1,6 @@
 import {useState, type FormEvent} from 'react';
 import {Link, useNavigate, useSearchParams} from 'react-router';
+import {BirthMonthPicker, MIN_REGISTER_AGE, ageFromYearMonth} from '../components/AgeGate';
 import {ThemeToggle} from '../components/TopBar';
 import {ApiError, login, register} from '../lib/api';
 import {useAuth} from '../lib/auth';
@@ -15,6 +16,26 @@ function safeNext(value: string | null): string {
 
 // Account artboard. Email + password against POST /api/auth/login and /register.
 // TODO(tech plan 3.6): Google / Apple sign-in, 记住我, 忘记密码, terms acceptance (terms_acceptances).
+//
+// Registration asks for birth year and month (PRD 15) and refuses under-13s
+// before anything is sent. The birth date is not sent to the API (no field
+// for it yet; TODO age_verifications). A refusal is remembered on this device
+// for 24 hours so the form cannot simply be retried with another year.
+// A new account goes to /welcome (Onboarding) before `next`.
+
+const AGE_BLOCK_KEY = 'register_age_block';
+const AGE_BLOCK_MS = 24 * 60 * 60 * 1000;
+
+function ageBlocked(): boolean {
+  try {
+    const at = Number(window.localStorage.getItem(AGE_BLOCK_KEY) ?? 0);
+    return at > 0 && Date.now() - at < AGE_BLOCK_MS;
+  } catch {
+    return false;
+  }
+}
+
+const UNDER_AGE = `抱歉，REEL 不面向 ${MIN_REGISTER_AGE} 岁以下的用户，暂时无法注册。不登录也可以浏览公开内容。`;
 export default function LoginPage() {
   const [params] = useSearchParams();
   const navigate = useNavigate();
@@ -23,6 +44,8 @@ export default function LoginPage() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [displayName, setDisplayName] = useState('');
+  const [birthYear, setBirthYear] = useState('');
+  const [birthMonth, setBirthMonth] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const next = safeNext(params.get('next'));
@@ -30,6 +53,25 @@ export default function LoginPage() {
   const submit = async (event: FormEvent) => {
     event.preventDefault();
     setError('');
+    if (mode === 'register') {
+      if (ageBlocked()) {
+        setError(UNDER_AGE);
+        return;
+      }
+      if (!birthYear || !birthMonth) {
+        setError('请选择出生年月');
+        return;
+      }
+      if (ageFromYearMonth(Number(birthYear), Number(birthMonth)) < MIN_REGISTER_AGE) {
+        try {
+          window.localStorage.setItem(AGE_BLOCK_KEY, String(Date.now()));
+        } catch {
+          /* not persisted */
+        }
+        setError(UNDER_AGE);
+        return;
+      }
+    }
     if (password.length < 8) {
       setError('密码至少 8 位');
       return;
@@ -38,7 +80,8 @@ export default function LoginPage() {
     try {
       const result = mode === 'login' ? await login(email, password) : await register(email, password, displayName);
       signIn(result);
-      navigate(next, {replace: true});
+      if (mode === 'register') navigate(`/welcome?next=${encodeURIComponent(next)}`, {replace: true});
+      else navigate(next, {replace: true});
     } catch (cause) {
       // The API reports every auth failure as a generic 500/409 without a reason.
       if (cause instanceof ApiError && cause.status === 0) setError(cause.message);
@@ -95,6 +138,12 @@ export default function LoginPage() {
               <span>邮箱</span>
               <input type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="name@example.com" autoComplete="email" required />
             </label>
+            {mode === 'register' && (
+              <div className="field">
+                <BirthMonthPicker year={birthYear} month={birthMonth} onYear={setBirthYear} onMonth={setBirthMonth} idPrefix="reg-birth" />
+                <span className="field-hint">只用来确认年龄，不会公开。</span>
+              </div>
+            )}
             <label className="field">
               <span>密码</span>
               <input

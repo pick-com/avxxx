@@ -53,13 +53,15 @@ type LockableOrientation = ScreenOrientation & {lock?: (orientation: string) => 
  * alternate version would otherwise overwrite the main version's position
  * (watch_history has one row per release).
  */
-export function Player({slug, title, resumeAt, onBack, theater = false, onToggleTheater}: {
+export function Player({slug, title, resumeAt, onBack, theater = false, onToggleTheater, onEnded}: {
   slug: string;
   title: string;
   resumeAt?: number;
   onBack?: () => void;
   theater?: boolean;
   onToggleTheater?: () => void;
+  /** Called when a <video> source plays to the end (play queues). */
+  onEnded?: () => void;
 }) {
   const {status} = useAuth();
   // play-config first; null (404 / not deployed / any failure) means legacy.
@@ -538,7 +540,10 @@ export function Player({slug, title, resumeAt, onBack, theater = false, onToggle
                 if (Date.now() - lastSaved.current.at >= SAVE_INTERVAL_MS) save(false);
               }}
               onPause={() => save(true)}
-              onEnded={() => save(true)}
+              onEnded={() => {
+                save(true);
+                onEnded?.();
+              }}
               onError={onVideoError}
               onDoubleClick={event => {
                 // Desktop double click: our shell fullscreen, so the bar stays.

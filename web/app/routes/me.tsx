@@ -7,8 +7,7 @@ import {themeLabels, useTheme, type ThemePref} from '../lib/theme';
 export const meta = () => [{title: 'REEL · 我的'}];
 
 // MobileLibrary (我的 tab): account, library links, appearance.
-// TODO(tech plan 3.13 watch_later / playlists): 稍后观看 and multiple 收藏夹.
-// TODO(PRD 20 Settings): full settings page.
+// TODO(tech plan 3.13 playlists): multiple 收藏夹.
 export default function Me() {
   const {status, user, signOut} = useAuth();
   const {pref, setPref} = useTheme();
@@ -40,6 +39,22 @@ export default function Me() {
             <Link to="/favorites" className="list-link">
               <Icon name="favorites" />
               收藏夹
+            </Link>
+            <Link to="/later" className="list-link">
+              <Icon name="later" />
+              稍后观看
+            </Link>
+            <Link to="/reservations" className="list-link">
+              <Icon name="calendar" />
+              我的预约
+            </Link>
+            <Link to="/notifications" className="list-link">
+              <Icon name="bell" />
+              通知
+            </Link>
+            <Link to="/settings" className="list-link">
+              <Icon name="settings" />
+              设置
             </Link>
           </nav>
         </>

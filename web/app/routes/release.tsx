@@ -1,17 +1,19 @@
-import {useEffect, useState, type ReactNode} from 'react';
-import {Link, useLocation, useNavigate, useParams} from 'react-router';
+import {useEffect, useMemo, useState, type ReactNode} from 'react';
+import {Link, useLocation, useNavigate, useParams, useSearchParams} from 'react-router';
 import {Avatar, ReleaseRow, SectionHeader} from '../components/Cards';
 import {Icon} from '../components/Icon';
 import {PerformerHoverCard, PerformerSheet} from '../components/PerformerPeek';
 import {Player} from '../components/Player';
+import {LaterButton, ReserveButton} from '../components/SocialButtons';
 import {BlockSkeleton, CardGridSkeleton, EmptyState, ErrorBanner} from '../components/States';
-import {getFavorites, getPerformerReleases, getRelease, getReleasePerformers, getWatchHistory, setFavorite, type Performer, type ReleaseDetail} from '../lib/api';
+import {getFavorites, getPerformerReleases, getWatchLater, getRelease, getReleasePerformers, getWatchHistory, setFavorite, type Performer, type ReleaseDetail} from '../lib/api';
 import {useAuth} from '../lib/auth';
 import {ageAt, formatDate, formatRuntime} from '../lib/format';
 import {discoverHref} from '../lib/releaseFilter';
 import {useAsync} from '../lib/useAsync';
 import {useCanonicalSlug} from '../lib/useCanonicalSlug';
 import {useMediaQuery} from '../lib/useMediaQuery';
+import {readQueue} from '../lib/queue';
 import type {ShellHandle} from './shell';
 
 export const handle: ShellHandle = {immersive: true};
@@ -20,7 +22,12 @@ export const meta = () => [{title: 'REEL · 视频'}];
 // Video / VideoLight / MobileVideo.
 //
 // Omitted for lack of backend (never filled with sample data):
-// TODO(tech plan 3.13): 赞 / 踩, 稍后观看, 评论 (V1.1), 自动连播 switch.
+// TODO(tech plan 3.13): 赞 / 踩, 评论 (V1.1), 自动连播 switch.
+// 稍后观看 toggles here; ?list=later follows the 全部播放 / 随机播放 queue.
+// 预约 shows for status 'upcoming', but GET /api/releases/{slug} only serves
+// published works today, so upcoming works are reserved from the feed.
+// TODO(PRD 15 AgeGate): gate playback with <AgeConfirm> once releases carry an
+// age rating; the API has no rating field yet, so the gate is not mounted.
 // TODO(tech plan 2.4 / 3.2 release_assets): 章节 · 截屏 strip.
 // TODO(tech plan 3.5 GET /api/recs?slot=related): 相关推荐 / 同系列 tabs.
 // 片源 row and versions live in Player (GET play-config). Tags, director and
@@ -38,6 +45,11 @@ export default function ReleasePage() {
   const useSheet = mobile || !canHover;
   const [theater, setTheater] = useState(false);
   const [sheetPerformer, setSheetPerformer] = useState<Performer | null>(null);
+  const [params] = useSearchParams();
+  const listName = params.get('list');
+  const queue = useMemo(() => (listName === 'later' && typeof window !== 'undefined' ? readQueue('later') : null), [listName]);
+  const queueIndex = queue ? queue.slugs.indexOf(slug) : -1;
+  const nextSlug = queue && queueIndex >= 0 ? queue.slugs[queueIndex + 1] : undefined;
 
   useEffect(() => setSheetPerformer(null), [slug]);
 
@@ -84,6 +96,7 @@ export default function ReleasePage() {
           onBack={back}
           theater={theater}
           onToggleTheater={() => setTheater(t => !t)}
+          onEnded={nextSlug ? () => navigate(`/releases/${encodeURIComponent(nextSlug)}?list=later`) : undefined}
         />
 
         {!release ? (
@@ -99,6 +112,11 @@ export default function ReleasePage() {
                 </span>
                 <span className="section-spacer" />
                 <div className="action-row">
+                  {release.status === 'upcoming' ? (
+                    <ReserveButton slug={slug} title={release.canonical_title} />
+                  ) : (
+                    <LaterButton slug={slug} title={release.canonical_title} />
+                  )}
                   <FavoriteButton slug={slug} />
                   <ShareButton title={release.canonical_title} />
                 </div>
@@ -134,6 +152,7 @@ export default function ReleasePage() {
       </div>
 
       <aside className="video-aside" aria-label="接下来播放">
+        {queue && queueIndex >= 0 && <QueuePanel slugs={queue.slugs} index={queueIndex} />}
         {release && performers[0] && <SamePerformer performer={performers[0]} currentSlug={slug} />}
       </aside>
     </div>
@@ -328,5 +347,29 @@ function ShareButton({title}: {title: string}) {
         {message}
       </span>
     </>
+  );
+}
+
+/** 稍后观看 queue (全部播放 / 随机播放): position, 下一个, and the rest of the list. */
+function QueuePanel({slugs, index}: {slugs: string[]; index: number}) {
+  const later = useAsync(signal => getWatchLater(signal), []);
+  const titles = new Map((later.data ?? []).map(i => [i.slug, i.title]));
+  const rest = slugs.slice(index + 1);
+  return (
+    <section className="aside-section queue-panel" aria-label="播放列表">
+      <SectionHeader title="稍后观看" sub={`${index + 1} / ${slugs.length}`} />
+      {rest.length === 0 ? (
+        <p className="muted">这是列表里的最后一个视频。</p>
+      ) : (
+        <div className="row-list">
+          {rest.slice(0, 8).map((s, i) => (
+            <ReleaseRow key={s} slug={s} query="?list=later" title={titles.get(s) ?? s} meta={i === 0 ? '下一个 · 播完自动播放' : `第 ${index + i + 2} 个`} />
+          ))}
+        </div>
+      )}
+      <Link to="/later" className="text-btn">
+        管理稍后观看
+      </Link>
+    </section>
   );
 }
