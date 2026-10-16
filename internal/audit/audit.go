@@ -27,7 +27,7 @@ const (
 	RuleAge          Rule = "R-AGE"        // age at filming < 18 → hold (tech plan 2.2.3, PRD 6.4)
 	RuleMeta         Rule = "R-META"       // C: missing metadata (PRD 6.4.4)
 	RuleTitle        Rule = "R-TITLE"      // E: 繁简与标题 – whitespace normalization
-	RuleStats        Rule = "R-STATS"      // G: statistics rebuild
+	RuleStats        Rule = "R-STATS"      // G: 统计重建 / statistics rebuild (stats.go)
 	RuleSourceHealth Rule = "R-SOURCE"     // A: playback source health (sourcehealth.go)
 	RuleWatermark    Rule = "R-WATERMARK"  // B: watermark (stub)
 	RuleSubtitles    Rule = "R-SUBTITLE"   // D: subtitles (stub)
@@ -194,4 +194,6 @@ type Store interface {
 	SEOSite(ctx context.Context) (SEOSiteFacts, error)
 	// LatestRun returns the newest nightly_runs row of job, or ok=false.
 	LatestRun(ctx context.Context, job string) (Run, bool, error)
+	// StatsStore holds the R-STATS inputs and repairs (stats.go).
+	StatsStore
 }
