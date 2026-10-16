@@ -74,6 +74,19 @@ var expectedRoutes = []string{
 	"POST /api/admin/audit/issues/{id}/dismiss",
 	"POST /api/admin/audit/run",
 	"GET /api/admin/dashboard",
+	"GET /api/i18n/ui/{lang}",
+	"GET /api/admin/i18n/translations",
+	"GET /api/admin/i18n/stats",
+	"POST /api/admin/i18n/translations/mark-stale",
+	"PUT /api/admin/i18n/translations/{entity_type}/{entity_id}/{field}/{lang}",
+	"POST /api/admin/i18n/translations/{entity_type}/{entity_id}/{field}/{lang}/submit",
+	"POST /api/admin/i18n/translations/{entity_type}/{entity_id}/{field}/{lang}/review",
+	"GET /api/admin/i18n/glossary",
+	"POST /api/admin/i18n/glossary",
+	"PUT /api/admin/i18n/glossary/{id}",
+	"DELETE /api/admin/i18n/glossary/{id}",
+	"GET /api/admin/i18n/ui",
+	"PUT /api/admin/i18n/ui/{lang}/{key}",
 }
 
 var (
