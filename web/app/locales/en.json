@@ -187,6 +187,7 @@
   "review.notWatched": "Not watched",
   "review.spoilerFolded": "Contains spoilers. Tap to expand",
   "review.spoilerTag": "Spoiler",
+  "review.seekTo": "Play from {time}",
   "review.helpful": "Helpful",
   "review.like": "Helpful ({n})",
   "review.unlike": "Undo helpful ({n})",

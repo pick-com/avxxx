@@ -23,6 +23,7 @@ import {useGoogleCast} from '../lib/useGoogleCast';
 import {useDanmakuPrefs} from '../lib/danmakuPrefs';
 import {useOnline} from '../lib/useOnline';
 import {applyVolume, writeVolume} from '../lib/volumePrefs';
+import {registerSeeker} from '../lib/playerSeek';
 import {DanmakuBar, DanmakuLayer, DanmakuListSheet, DanmakuSettings, useDanmakuFeed, type DanmakuLayerHandle} from './Danmaku';
 import {EpisodesSheet, type PlayerEpisodes} from './Episodes';
 import {Icon} from './Icon';
@@ -856,6 +857,25 @@ export function Player({slug, releaseId, title, resumeAt, startAt, onBack, theat
     },
     [showFlash],
   );
+
+  // Clickable timestamps in comments / reviews (components/Timestamps): seek
+  // and play; before the video loads, at its metadata. false: no video yet.
+  useEffect(() => {
+    if (mini) return;
+    return registerSeeker(slug, seconds => {
+      const video = videoRef.current;
+      if (!video) return false;
+      if (video.readyState < 1) {
+        pendingSeek.current = seconds;
+        return true;
+      }
+      if (Number.isFinite(video.duration) && seconds >= video.duration) return true;
+      video.dataset.seekMethod = 'skip';
+      video.currentTime = seconds;
+      void video.play().catch(() => undefined);
+      return true;
+    });
+  }, [slug, mini]);
 
   // ↑ / ↓ (YouTube): ±5 % volume; raising it unmutes. Remembered like the slider.
   const stepVolume = useCallback(

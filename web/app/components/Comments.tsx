@@ -23,6 +23,7 @@ import type {MessageKey} from '../lib/messages.zh-CN';
 import {Icon} from './Icon';
 import {ReportPicker} from './ReportPicker';
 import {ErrorBanner} from './States';
+import {TimestampText} from './Timestamps';
 
 // 评论 (PRD 5.4 · Video / MobileVideo; tech plan 3.13; internal/api/interactions.go).
 //
@@ -225,7 +226,7 @@ function CommentItem({comment, onChange, onRemove, onReply}: {
       ) : (
         <p className="review-body">
           {comment.spoiler && <span className="review-spoiler-tag">{t('review.spoilerTag')}</span>}
-          {comment.body}
+          <TimestampText text={comment.body} />
         </p>
       )}
       <div className="review-actions">

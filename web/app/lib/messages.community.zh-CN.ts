@@ -206,6 +206,7 @@ export const communityZhCN = {
   'review.notWatched': '未观看',
   'review.spoilerFolded': '含剧透，点击展开',
   'review.spoilerTag': '剧透',
+  'review.seekTo': '跳到 {time} 播放',
   'review.helpful': '有用',
   'review.like': '有用（{n}）',
   'review.unlike': '取消有用（{n}）',

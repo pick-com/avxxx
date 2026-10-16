@@ -9,6 +9,7 @@ import {SeriesEpisodesPanel, type PlayerEpisodes} from '../components/Episodes';
 import type {EndItem} from '../components/PlayerStates';
 import {Community} from '../components/Ratings';
 import {Comments} from '../components/Comments';
+import {TimestampScope} from '../components/Timestamps';
 import {ShareButton, VoteButtons} from '../components/ReleaseActions';
 import {SourceCredits} from '../components/SourceCredits';
 import {OtherVersions} from '../components/OtherVersions';
@@ -171,6 +172,8 @@ export const meta: MetaFunction<typeof loader> = ({data: d, params, matches}) =>
 //
 // 赞 / 踩 and 分享 (with ?t= start time) sit in the action row; 评论 (PRD
 // V1.1, COMMENTS_ENABLED) follow the cast, apart from 短评 in <Community>.
+// Times like 12:34 in 短评 / 评论 seek the player (TimestampScope; ?t=
+// elsewhere), up to the runtime.
 // 稍后观看 toggles here; ?list=later (or performer, or playlist:<id> for a
 // 收藏夹) follows the 全部播放 / 随机播放 queue.
 // 自动连播 (PRD 5.4, settings.autoplay, default on): when a video ends, the
@@ -397,7 +400,9 @@ export default function ReleasePage() {
             )}
             <OtherVersions items={release.other_versions} />
 
-            {release.status !== 'upcoming' && <Community slug={release.slug} releaseId={release.id} watched={!!resumeAt && resumeAt > 0} />}
+            <TimestampScope slug={release.slug} maxSeconds={release.runtime_minutes ? (release.runtime_minutes + 1) * 60 : undefined}>
+              {release.status !== 'upcoming' && <Community slug={release.slug} releaseId={release.id} watched={!!resumeAt && resumeAt > 0} />}
+            </TimestampScope>
 
             {performers.length > 0 && (
               <section className="cast">
@@ -421,7 +426,9 @@ export default function ReleasePage() {
               currentSlug={slug}
               onClose={() => setSheetPerformer(null)}
             />
-            <Comments slug={release.slug} releaseId={release.id} />
+            <TimestampScope slug={release.slug} maxSeconds={release.runtime_minutes ? (release.runtime_minutes + 1) * 60 : undefined}>
+              <Comments slug={release.slug} releaseId={release.id} />
+            </TimestampScope>
             <SourceEvidence kind="release" slug={release.slug} />
           </>
         )}
