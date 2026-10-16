@@ -171,7 +171,7 @@ func (s *Store) EnqueueDue(ctx context.Context) (int, error) {
 		return 0, err
 	}
 	defer tx.Rollback(ctx)
-	r, err := tx.Query(ctx, `SELECT s.id FROM sources s LEFT JOIN source_crawl_policies p ON p.source_id=s.id WHERE s.enabled AND (s.next_run_at IS NULL OR s.next_run_at<=now()) ORDER BY COALESCE(s.next_run_at,now()),s.id FOR UPDATE OF s SKIP LOCKED`)
+	r, err := tx.Query(ctx, `SELECT s.id FROM sources s LEFT JOIN source_crawl_policies p ON p.source_id=s.id WHERE s.enabled AND (s.blocked_until IS NULL OR s.blocked_until<=now()) AND (s.next_run_at IS NULL OR s.next_run_at<=now()) ORDER BY COALESCE(s.next_run_at,now()),s.id FOR UPDATE OF s SKIP LOCKED`)
 	if err != nil {
 		return 0, err
 	}
@@ -691,7 +691,7 @@ func (s *Store) Claim(ctx context.Context) (int64, model.Source, error) {
 	var id int64
 	var x model.Source
 	worker := s.workerID
-	e := s.QueryRow(ctx, `WITH picked AS (SELECT j.id FROM jobs j JOIN sources s ON s.id=j.source_id WHERE j.status='pending' AND j.available_at<=now() AND s.enabled ORDER BY j.id FOR UPDATE OF j SKIP LOCKED LIMIT 1), claimed AS (UPDATE jobs j SET status='running',started_at=COALESCE(started_at,now()),attempt=attempt+1,worker_id=$1,lease_until=now()+interval '90 seconds',heartbeat_at=now(),execution_version=execution_version+1 WHERE j.id IN (SELECT id FROM picked) RETURNING j.id,j.source_id) SELECT c.id,s.id,s.name,s.url,s.enabled,s.version,s.adapter,s.source_kind,s.license_status,s.egress_policy FROM claimed c JOIN sources s ON s.id=c.source_id`, worker).Scan(&id, &x.ID, &x.Name, &x.URL, &x.Enabled, &x.Version, &x.Adapter, &x.SourceKind, &x.LicenseStatus, &x.EgressPolicy)
+	e := s.QueryRow(ctx, `WITH picked AS (SELECT j.id FROM jobs j JOIN sources s ON s.id=j.source_id WHERE j.status='pending' AND j.available_at<=now() AND s.enabled AND (s.blocked_until IS NULL OR s.blocked_until<=now()) ORDER BY j.id FOR UPDATE OF j SKIP LOCKED LIMIT 1), claimed AS (UPDATE jobs j SET status='running',started_at=COALESCE(started_at,now()),attempt=attempt+1,worker_id=$1,lease_until=now()+interval '90 seconds',heartbeat_at=now(),execution_version=execution_version+1 WHERE j.id IN (SELECT id FROM picked) RETURNING j.id,j.source_id) SELECT c.id,s.id,s.name,s.url,s.enabled,s.version,s.adapter,s.source_kind,s.license_status,s.egress_policy FROM claimed c JOIN sources s ON s.id=c.source_id`, worker).Scan(&id, &x.ID, &x.Name, &x.URL, &x.Enabled, &x.Version, &x.Adapter, &x.SourceKind, &x.LicenseStatus, &x.EgressPolicy)
 	return id, x, e
 }
 func (s *Store) Heartbeat(ctx context.Context, id int64, worker string, version int64) error {
@@ -706,6 +706,12 @@ func (s *Store) ReapExpired(ctx context.Context) error {
 	return e
 }
 func (s *Store) Finish(ctx context.Context, id int64, items []model.Item, cause error) error {
+	if b, blocked := catalog.IsBlocked(cause); blocked {
+		// A blocked source is not retried by the job queue: BlockSource parks
+		// the source and the scheduler creates a fresh job after Retry-After.
+		_, e := s.Exec(ctx, "UPDATE jobs SET status='failed',error=$2,error_code='source_blocked',finished_at=now(),worker_id=NULL,lease_until=NULL WHERE id=$1 AND status='running'", id, b.Error())
+		return e
+	}
 	if cause != nil {
 		_, e := s.Exec(ctx, "UPDATE jobs SET status=CASE WHEN attempt<max_attempts THEN 'pending' ELSE 'failed' END,error=$2,error_code='fetch_failed',available_at=now()+interval '5 seconds',finished_at=CASE WHEN attempt>=max_attempts THEN now() ELSE NULL END,worker_id=NULL,lease_until=NULL WHERE id=$1 AND status='running'", id, cause.Error())
 		return e
