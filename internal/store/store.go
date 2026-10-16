@@ -817,10 +817,18 @@ func writeFieldValues(ctx context.Context, tx pgx.Tx, sourceRecordID int64, fiel
 		if err != nil {
 			return nil, err
 		}
-		if _, err = tx.Exec(ctx, `UPDATE source_field_values SET is_current=false WHERE source_record_id=$1 AND field_name=$2 AND is_current`, sourceRecordID, field); err != nil {
+		// Field history records changes: an unchanged value keeps its current
+		// row (captured_at = when the value was first seen; the record's
+		// last_seen_at says when it was last confirmed). Without this every
+		// re-crawl appended one row per field (a full baseline pass doubled
+		// the table).
+		if _, err = tx.Exec(ctx, `UPDATE source_field_values SET is_current=false WHERE source_record_id=$1 AND field_name=$2 AND is_current
+			AND normalized_value IS DISTINCT FROM $3::jsonb`, sourceRecordID, field, string(raw)); err != nil {
 			return nil, err
 		}
-		if _, err = tx.Exec(ctx, `INSERT INTO source_field_values(source_record_id,field_name,raw_value,normalized_value,confidence,captured_at,is_current) VALUES($1,$2,$3::jsonb,$3::jsonb,'verified',now(),true)`, sourceRecordID, field, string(raw)); err != nil {
+		if _, err = tx.Exec(ctx, `INSERT INTO source_field_values(source_record_id,field_name,raw_value,normalized_value,confidence,captured_at,is_current)
+			SELECT $1,$2,$3::jsonb,$3::jsonb,'verified',now(),true
+			WHERE NOT EXISTS (SELECT 1 FROM source_field_values WHERE source_record_id=$1 AND field_name=$2 AND is_current)`, sourceRecordID, field, string(raw)); err != nil {
 			return nil, err
 		}
 		if field == catalog.FieldPageTitle {
