@@ -1,6 +1,6 @@
 # AVXXX Roadmap 状态
 
-> 状态更新时间：2026-10-15
+> 状态更新时间：2026-10-16
 >
 > 当前基础能力完成度约为 **92%**。基础架构、目录采集、调度、WebApp 浏览、Javtiful 播放映射、审核后台、生产 smoke/备份和 Ansible 部署已经可运行，剩余工作主要集中在来源覆盖、分页增量执行、图片存储和正式生产验收。
 
@@ -73,15 +73,15 @@
 - [ ] 合并、拆分、人工覆盖和撤销审计
 - [ ] 来源可信度和字段优先级策略
 - [ ] 目录 source record 与 Javtiful media record 自动关联
-- [ ] 作品、演员和字段完整性报告
+- [x] 作品、演员和字段完整性报告（`GET /api/admin/reports/completeness?entity=release|performer&source=&group_by=field|source|maker&format=csv`，`internal/completeness`；夜间 `completeness_snapshot` 任务写 `completeness_snapshots` 作趋势）
 
 ### Web 和 API
 
 - [ ] 演员列表、详情和作品页
 - [ ] 作品列表、详情和演员页
 - [ ] 搜索、筛选、排序和游标分页
-- [ ] 系列查询 API
-- [ ] 来源证据和更新时间展示
+- [x] 系列查询 API（`series` 实体与 `releases.series_id`，迁移 027 回填和触发器；`GET /api/series`、`/api/series/{slug}`、`/api/series/{slug}/releases?sort=episode|newest|oldest`；作品详情带 `series`）
+- [x] 来源证据和更新时间展示（API：`GET /api/releases/{slug}/evidence`、`GET /api/performers/{slug}/evidence`，按字段给出本站值、来源层级、采集/最近抓取时间和是否人工覆盖；不含 raw_data、覆盖原因和隐藏生日；前端展示待做）
 - [ ] 管理后台冲突审核页面
 - [ ] 管理后台任务、来源和 checkpoint 页面
 
@@ -91,7 +91,7 @@
 - [ ] robots、terms、授权和配额门禁
 - [ ] 数据保留和图片使用策略
 - [ ] 部署、备份和恢复文档
-- [ ] 全量验收：重复抓取不重复实体、阻断不清空数据、公开 API 不泄露 raw_data
+- [ ] 全量验收：重复抓取不重复实体、阻断不清空数据、公开 API 不泄露 raw_data（最后一项已有集成测试 `TestPublicAPINoRawDataIntegration` 遍历全部公开 GET 路由）
 
 ## 阶段完成标记
 
