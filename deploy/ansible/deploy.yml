@@ -34,6 +34,7 @@
           CATALOG_CONTACT={{ catalog_contact | default('') }}
           DMM_API_ID={{ dmm_api_id | default('') }}
           DMM_AFFILIATE_ID={{ dmm_affiliate_id | default('') }}
+          THEPORNDB_API_TOKEN={{ theporndb_api_token | default('') }}
           LOG_HASH_KEY={{ log_hash_key | default('') }}
           # Alertmanager receivers (monitoring profile); empty = not configured.
           ALERT_WEBHOOK_URL={{ alert_webhook_url | default('') }}

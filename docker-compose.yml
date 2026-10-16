@@ -79,6 +79,7 @@ services:
       LOG_FORMAT: ${LOG_FORMAT:-json}
       LOG_LEVEL: ${LOG_LEVEL:-info}
       MEDIA_LINK_EVERY: ${MEDIA_LINK_EVERY:-1h}
+      CROSSCHECK_EVERY: ${CROSSCHECK_EVERY:-1h}
     depends_on:
       db:
         condition: service_healthy
@@ -93,6 +94,7 @@ services:
       CATALOG_USER_AGENT: ${CATALOG_USER_AGENT:-}
       DMM_API_ID: ${DMM_API_ID:-}
       DMM_AFFILIATE_ID: ${DMM_AFFILIATE_ID:-}
+      THEPORNDB_API_TOKEN: ${THEPORNDB_API_TOKEN:-}
       METRICS_ADDR: 0.0.0.0:9092
       LOG_FORMAT: ${LOG_FORMAT:-json}
       LOG_LEVEL: ${LOG_LEVEL:-info}
@@ -112,6 +114,12 @@ services:
       MEDIA_LINK_MIN_INTERVAL: ${MEDIA_LINK_MIN_INTERVAL:-2s}
       MEDIA_LINK_MAX_PER_RUN: ${MEDIA_LINK_MAX_PER_RUN:-200}
       MEDIA_LINK_DAILY_CAP: ${MEDIA_LINK_DAILY_CAP:-2000}
+      # Third-party cross-check (crosscheck job): crawler contact and token.
+      CATALOG_CONTACT: ${CATALOG_CONTACT:-}
+      CATALOG_USER_AGENT: ${CATALOG_USER_AGENT:-}
+      THEPORNDB_API_TOKEN: ${THEPORNDB_API_TOKEN:-}
+      CROSSCHECK_MAX_PER_RUN: ${CROSSCHECK_MAX_PER_RUN:-100}
+      CROSSCHECK_DAILY_CAP: ${CROSSCHECK_DAILY_CAP:-1000}
     depends_on:
       db:
         condition: service_healthy

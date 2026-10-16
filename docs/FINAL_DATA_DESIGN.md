@@ -63,6 +63,8 @@
 | `third_party_api` | javinfo、ThePornDB API | 批量查询、缺失字段 fallback，不作为唯一事实源 |
 | `manual_review` | 管理员确认或人工录入 | 冲突裁决和本站覆盖值 |
 
+`third_party_api` 来源的写入规则（已实现：`internal/store/fallback.go`、`internal/crosscheck`，migration 032）：记录只附着到已有作品（品番 slug）或已有演员（来源 ID、拉丁名 slug、唯一名称匹配），匹配不到时只保存为 `resolution_status='unresolved'` 的证据，不新建实体；字段按层级 50 参与字段策略，只补缺失字段，没有显式字段策略时不单独开冲突（其它来源开出的冲突中作为候选出现）；作品已有其它来源或人工署名时不加署名，署名也只连到已存在的演员。
+
 `sources` 增加 `source_kind`、`license_status`、`terms_url`、`egress_policy` 和 `priority`。没有确认条款、授权或 API 使用范围的来源只能用于人工验证，不能直接进入自动全量 cron。来源总优先级只决定默认排序；字段采用 `source_field_policies` 按实体类型和字段单独选择优先来源，避免让“作品品番可靠”的来源意外覆盖其它来源的演员简介。
 
 ## 3. 统一 slug 规则
