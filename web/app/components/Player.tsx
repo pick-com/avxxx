@@ -1242,7 +1242,9 @@ export function Player({slug, releaseId, title, resumeAt, startAt, onBack, theat
           </div>
         )}
 
-        {stream && !touchMode && !mini && (
+        {/* Fullscreen is the picture only: no 弹幕 input row under the video
+            (danmaku settings and the list stay in the settings sheet). */}
+        {stream && !touchMode && !mini && !fullscreen && (
           <DanmakuBar
             slug={slug}
             releaseId={releaseId}
