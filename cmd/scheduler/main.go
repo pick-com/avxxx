@@ -25,6 +25,13 @@ func main() {
 		} else if n > 0 {
 			log.Printf("enqueued %d source jobs", n)
 		}
+		// New-work notifications: publish due upcoming releases, then fan out
+		// each newly published release once (no network I/O; DB writes only).
+		if res, err := s.NotifyFanout(ctx, 200); err != nil {
+			log.Printf("notify fan-out: %v", err)
+		} else if res.Promoted > 0 || res.Releases > 0 {
+			log.Printf("notify fan-out: promoted=%d releases=%d notifications=%d outbox=%d", res.Promoted, res.Releases, res.Notifications, res.Outbox)
+		}
 		select {
 		case <-ctx.Done():
 			return
