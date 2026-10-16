@@ -17,6 +17,9 @@ import {useMediaQuery} from '../lib/useMediaQuery';
 import {useMediaSession} from '../lib/useMediaSession';
 import {castableSource} from '../lib/remotePlayback';
 import {useRemotePlayback} from '../lib/useRemotePlayback';
+import {castVariantUrl, hlsSegmentFormatOf} from '../lib/googleCast';
+import {isCastShadowed} from '../lib/castShadow';
+import {useGoogleCast} from '../lib/useGoogleCast';
 import {useDanmakuPrefs} from '../lib/danmakuPrefs';
 import {useOnline} from '../lib/useOnline';
 import {applyVolume, writeVolume} from '../lib/volumePrefs';
@@ -117,8 +120,14 @@ type LockableOrientation = ScreenOrientation & {lock?: (orientation: string) => 
  * the controls stay up so the progress remains visible. hls.js (MSE)
  * sources cannot be cast and set disableRemotePlayback (castableSource).
  * Limit: the receiver fetches the stream itself, so a source bound to our
- * Referer, cookies or a viewer-bound signature may fail there. The Google
- * Cast SDK (custom receiver) is a follow-up, not built.
+ * Referer, cookies or a viewer-bound signature may fail there.
+ *
+ * Google Cast (lib/useGoogleCast.ts) replaces that button in Chrome-family
+ * browsers once the Cast SDK loads: the TV plays the stream URL itself
+ * (hls.js sources too) and the <video> stands in for it (lib/castShadow.ts),
+ * so the controls, Media Session and progress saving follow the TV and its
+ * remote. Remote Playback stays for Safari / AirPlay and as the fallback
+ * when the SDK cannot load; never both.
  */
 export type PlayerProps = Parameters<typeof Player>[0];
 
@@ -291,9 +300,36 @@ export function Player({slug, releaseId, title, resumeAt, startAt, onBack, theat
   const [nativeHls, setNativeHls] = useState(false);
   useEffect(() => setNativeHls(document.createElement('video').canPlayType('application/vnd.apple.mpegurl') !== ''), []);
   const castable = castableSource(stream ? {hls: isHlsEntry(stream), nativeHls} : null);
-  const cast = useRemotePlayback(stream ? videoEl : null, castable);
-  const casting = cast.state === 'connecting' || cast.state === 'connected';
-  const castControl = cast.state !== 'hidden' ? {state: cast.state, prompt: cast.prompt} : undefined;
+  // Google Cast: the stream URL (an hls.js quality pick casts that variant),
+  // played and controlled on the TV. Nothing castable will come once the
+  // page failed or shows an embed / partner page: that ends a session.
+  const hlsLevel = level !== AUTO ? hlsRef.current?.levels?.[level] : undefined;
+  const hlsPlaying = hlsRef.current?.levels?.[playingLevel >= 0 ? playingLevel : 0];
+  const castMedia = stream
+    ? {
+        url: castVariantUrl(stream.url, hlsLevel ? {url: hlsLevel.uri, hasAudioGroup: !!hlsLevel.audioGroups?.some(Boolean)} : null),
+        hls: isHlsEntry(stream),
+        title,
+        artist,
+        album,
+        artwork: posterImage ?? (poster ? {url: poster} : null),
+        segmentFormat: hlsSegmentFormatOf(hlsPlaying?.details?.fragments?.[0]?.url),
+      }
+    : null;
+  const castDead = phase === 'failed' || (phase === 'ready' && !stream) || regionBlocked || (mode === 'legacy' && !!info.error);
+  const gcast = useGoogleCast({
+    video: stream ? videoEl : null,
+    media: castMedia,
+    dead: castDead,
+    startTime: () => pendingSeek.current,
+    hls: hlsRef,
+    onMessage: kind => setNotice(t(kind === 'sourceFailed' ? 'player.castSourceFailed' : kind === 'noStream' ? 'player.castNoStream' : 'player.castFailed')),
+  });
+  // Remote Playback only where the Cast SDK is not used (Safari, Firefox, load failure).
+  const cast = useRemotePlayback(stream ? videoEl : null, castable && gcast.sdk === 'unavailable');
+  const castUi = gcast.sdk === 'ready' ? {state: gcast.state, prompt: gcast.prompt} : gcast.sdk === 'unavailable' ? {state: cast.state, prompt: cast.prompt} : null;
+  const casting = castUi?.state === 'connecting' || castUi?.state === 'connected';
+  const castControl = castUi && castUi.state !== 'hidden' ? {state: castUi.state, prompt: castUi.prompt} : undefined;
   useMediaSession(
     stream ? videoEl : null,
     {title, artist, album, artwork: posterImage ?? (poster ? {url: poster} : null)},
@@ -661,7 +697,8 @@ export function Player({slug, releaseId, title, resumeAt, startAt, onBack, theat
           onVideoErrorRef.current({kind: 'other'});
           return;
         }
-        const instance = new Hls({capLevelToPlayerSize: true});
+        // While a Cast session plays on the TV, nothing loads here until it ends.
+        const instance = new Hls({capLevelToPlayerSize: true, autoStartLoad: !gcast.connectedRef.current});
         hls = instance;
         hlsRef.current = instance;
         let mediaRecovered = false;
@@ -755,7 +792,10 @@ export function Player({slug, releaseId, title, resumeAt, startAt, onBack, theat
   // Volume / mute are remembered in this browser, whatever changed them.
   useEffect(() => {
     if (!videoEl) return;
-    const onVolume = () => writeVolume({volume: videoEl.volume, muted: videoEl.muted});
+    // While casting these are the TV's volume, not this browser's.
+    const onVolume = () => {
+      if (!isCastShadowed(videoEl)) writeVolume({volume: videoEl.volume, muted: videoEl.muted});
+    };
     videoEl.addEventListener('volumechange', onVolume);
     return () => videoEl.removeEventListener('volumechange', onVolume);
   }, [videoEl]);
@@ -1180,7 +1220,8 @@ export function Player({slug, releaseId, title, resumeAt, startAt, onBack, theat
               className="player-video"
               // Our controls everywhere; iPhone fullscreen uses the native player.
               controls={false}
-              autoPlay
+              // A source shown while casting plays on the TV, not here.
+              autoPlay={!gcast.connected}
               playsInline
               // AirPlay (Safari) only for castable sources; see castableSource.
               x-webkit-airplay={castable ? 'allow' : 'deny'}
@@ -1321,9 +1362,9 @@ export function Player({slug, releaseId, title, resumeAt, startAt, onBack, theat
 
           {showControls && buffering && !clock.paused && <BufferingSpinner offline={!online} />}
           {stream && !mini && casting && (
-            <div className="pc-cast" role="status" data-state={cast.state}>
+            <div className="pc-cast" role="status" data-state={castUi?.state}>
               <Icon name="cast" size={18} />
-              {cast.state === 'connecting' ? t('player.castConnecting') : t('player.casting')}
+              {castUi?.state === 'connecting' ? t('player.castConnecting') : gcast.device ? t('player.castingTo', {device: gcast.device}) : t('player.casting')}
             </div>
           )}
           {showControls && !online && !buffering && !clock.paused && (

@@ -275,7 +275,18 @@ health = 0.7 × 可播放率 + 0.3 × 首帧 ≤ 3s 的比例
 - Remote Playback（`web/app/lib/useRemotePlayback.ts`）：浏览器报告有可用设备时，控制栏和全屏触控层出现「投屏」按钮（Chrome / Android 投放菜单、Safari AirPlay，Safari 旧接口 `webkitShowPlaybackTargetPicker` 兜底），连接中 / 已连接显示在按钮和「正在投屏到设备」浮层上，进度条保持可见。
 - hls.js 播放的 HLS 是 MediaSource（blob: URL），接收端拿不到，因此这类片源设 `disableRemotePlayback` 并隐藏按钮；直链 MP4 和浏览器原生播放的 HLS（Safari、Android Chrome、较新的桌面 Chrome）可以投屏。
 - 已知限制：投屏设备自己去拉流，不带本站的 Referer、Cookie 和会话。依赖 Referer 防盗链、Cookie 鉴权或绑定观看者 IP / 会话的签名 URL 的片源，在设备上可能播放失败，而本机播放正常。[B] 自营转码的签名 URL 如要支持投屏，签名不能绑定观看者 IP，且有效期要覆盖整场播放（或改为按分片续签）。
-- 后续：Google Cast SDK（自定义接收端、由发送端刷新签名）不在本期范围，按需求再评估。
+- Remote Playback 只把 `<video>` 交给设备，没有控制和状态通道：Chrome 投到 Google TV 后电视遥控器和 Google Home 都控制不了页面，页面也不知道电视上的进度。因此 Chrome 系浏览器改走 Google Cast SDK（下一条），Remote Playback 只留给 Safari / AirPlay 以及 Cast SDK 加载失败时兜底；两个按钮不会同时出现。
+
+**Google Cast（已实现，web 端，`web/app/lib/useGoogleCast.ts`、`googleCast.ts`、`castShadow.ts`）**：
+
+- 加载：只在有播放器的页面、客户端、Chrome 系浏览器（存在 `window.chrome`）且为安全上下文（https 或 localhost）时，懒加载 `https://www.gstatic.com/cv/js/sender/v1/cast_sender.js?loadCastFramework=1`（全站只加载一次）。脚本被拦截、离线或 15 秒内没有回调都静默视为不可用，回退到 Remote Playback。接收端是 Default Media Receiver（`chrome.cast.media.DEFAULT_MEDIA_RECEIVER_APP_ID`），不注册自定义接收端；`autoJoinPolicy` 为 `ORIGIN_SCOPED`，刷新页面后自动接回同一会话。
+- 按钮：`CastContext` 的 `CAST_STATE_CHANGED` 决定显示（有设备才显示，连接中 / 已连接保持），点按调用 `requestSession()`（未连接时选设备，已连接时是 Chrome 的停止 / 切换对话框）。浮层显示「正在投屏到 <设备名>」。
+- 加载媒体：会话建立后对当前片源发 LOAD：`contentId` 为片源的绝对 URL（hls.js 片源同样可以投，接收端自己拉 .m3u8；手动选了清晰度时投该档的子播放列表，但子播放列表依赖独立音轨组时仍投主播放列表），`contentType` 为 `application/x-mpegURL`（HLS，hls.js 已知分片为 fMP4 时带 `hlsSegmentFormat` / `hlsVideoSegmentFormat = fmp4`）或按扩展名的 `video/mp4` / `video/webm`；`MovieMediaMetadata` 带标题、主演（subtitle）、厂牌或系列（studio）和封面（绝对 URL，大图在前）；`currentTime` 为本机当前位置，`autoplay`。本机 `<video>` 暂停并静音，hls.js 停止加载。
+- 双向控制：投屏期间本机 `<video>` 被「影子化」（`castShadow.ts`）：`currentTime` / `paused` / `duration` / `volume` / `muted` / `play()` / `pause()` 改为读写 `RemotePlayer` / `RemotePlayerController`，电视端的变化（`isPaused`、`currentTime`、`duration`、音量、播完）以普通媒体事件派发到这个 `<video>` 上。于是页面上的播放 / 暂停、进度条、±10 秒、音量、键盘快捷键、触控层都控制电视；电视遥控器和 Google Home 的暂停 / 拖动也会同步回页面；Media Session 的 playbackState 和位置、观看进度保存（登录用户走 `saveWatchProgress`，访客走 `lib/guestProgress`）都按电视上的位置进行。可见性变化不会给接收端发暂停，页面切到后台时电视继续播放、进度照常保存。会话结束时本机从电视最后的位置继续播放。
+- 切换：投屏中切换片源或清晰度，接收端在当前位置重新 LOAD（另一版本从 0 开始，与本机规则一致）；自动连播 / 队列进入下一部时，在接收端加载下一部；下一页没有可投的流（只有嵌入页 / 合作方页面、全部失败、地区不可用）时结束会话并提示。
+- 失败：接收端 LOAD 失败（`load_media_failed`，或 loadMedia 以 `session_error` 拒绝）或播放中出现媒体错误（`IDLE` + `ERROR`）时提示「该片源无法投屏到电视（源站限制）」，结束会话并在本机继续，不重试。
+- 限制（CORS / Referer）：接收端自己拉流，不带本站 Referer、Cookie 和会话；依赖 Referer 防盗链、Cookie 鉴权或绑定观看者 IP 的签名 URL 会在电视上失败。Default Media Receiver 播放 HLS 走 MSE，**播放列表和每个分片都必须带 CORS 头**（`Access-Control-Allow-Origin: *` 或允许 `https://www.gstatic.com` 等接收端来源），MP4 直链一般不需要 CORS。片源若是相对路径，会按页面地址补全：在 localhost 开发时电视无法访问这个地址。我们无法替第三方源站加 CORS；自营 [B] 的 CDN 需要开启 CORS，签名 URL 不绑定 IP 且有效期覆盖整场播放。倍速、字幕、音轨不同步到电视（接收端用默认值）。离开播放页（播放器卸载）后电视继续播放，但页面上不再有控制，可用 Chrome 投放菜单、电视遥控器或 Google Home 控制。
+- 真机测试：电脑和 Google TV / Chromecast 在同一局域网（同一 Wi-Fi，不在访客网络、没有 AP 隔离）；Cast SDK 只在安全上下文工作，`http://localhost` 可以，局域网 IP 或其他主机名必须用 https；桌面 Chrome 打开播放页 → 播放 → 控制栏出现投屏按钮 → 选择电视 → 电视开始从当前位置播放；用电视遥控器暂停 / 快进，页面状态应跟随；断开后页面从电视的位置继续。若电视报错「该片源无法投屏到电视」，先用 DevTools 检查片源的 CORS 头。
 
 ### 3.4 搜索
 
