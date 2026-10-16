@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 )
@@ -11,10 +12,13 @@ import (
 // resetStore is a fakeStore that also mints reset tokens.
 type resetStore struct {
 	*fakeStore
+	mu     sync.Mutex // the worker delivers concurrently
 	issued []int64
 }
 
 func (r *resetStore) IssuePasswordReset(_ context.Context, uid int64) (string, time.Time, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
 	r.issued = append(r.issued, uid)
 	return strings.Repeat("ab", 32), t0.Add(time.Hour), nil
 }
