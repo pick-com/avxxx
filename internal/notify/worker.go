@@ -20,11 +20,12 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log"
+	"log/slog"
 	"sync"
 	"time"
 
 	"avxxx/internal/mailer"
+	"avxxx/internal/obs"
 	"avxxx/internal/store"
 	"avxxx/internal/webpush"
 )
@@ -96,7 +97,7 @@ type Worker struct {
 	Renderer *Renderer
 	Opts     Options
 	Now      func() time.Time
-	Logf     func(format string, args ...any)
+	Logf     func(format string, args ...any) // nil: slog (redacted, see internal/obs)
 }
 
 func (w *Worker) now() time.Time {
@@ -111,7 +112,7 @@ func (w *Worker) logf(format string, args ...any) {
 		w.Logf(format, args...)
 		return
 	}
-	log.Printf(format, args...)
+	slog.Info(fmt.Sprintf(format, args...))
 }
 
 // Channels are the outbox channels this worker delivers.
@@ -189,14 +190,20 @@ func (w *Worker) process(ctx context.Context, it store.OutboxItem) {
 	fctx, fcancel := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
 	defer fcancel()
 	ok, err := w.Store.FinishOutbox(fctx, it, res)
+	d := w.now().Sub(start)
+	obs.NotifierDuration.WithLabelValues(it.Channel).Observe(d.Seconds())
 	switch {
 	case err != nil:
+		obs.NotifierDeliveries.WithLabelValues(it.Channel, "error").Inc()
 		w.logf("notifier: finish outbox id=%d: %v", it.ID, err)
 	case !ok:
+		obs.NotifierDeliveries.WithLabelValues(it.Channel, "lease_lost").Inc()
 		w.logf("notifier: outbox id=%d lease lost; result %s dropped", it.ID, res.Status)
 	default:
-		w.logf("notifier: outbox id=%d user=%d channel=%s attempt=%d status=%s duration=%s error=%q",
-			it.ID, it.UserID, it.Channel, it.Attempt, res.Status, w.now().Sub(start).Round(time.Millisecond), res.Error)
+		obs.NotifierDeliveries.WithLabelValues(it.Channel, string(res.Status)).Inc()
+		// The user is logged as a keyed hash (tech plan 3.12), never the id.
+		w.logf("notifier: outbox id=%d user=%s channel=%s attempt=%d status=%s duration=%s error=%q",
+			it.ID, obs.HashID("user", it.UserID), it.Channel, it.Attempt, res.Status, d.Round(time.Millisecond), res.Error)
 	}
 }
 
@@ -286,21 +293,25 @@ func (w *Worker) deliverPush(ctx context.Context, it store.OutboxItem, p Payload
 			Keys: webpush.Keys{P256dh: sub.P256dh, Auth: sub.Auth}}, body)
 		switch res.Outcome {
 		case webpush.Delivered:
+			obs.NotifierPushSends.WithLabelValues("delivered").Inc()
 			delivered++
 			if err := w.Store.PushDelivered(ctx, sub.ID); err != nil {
 				w.logf("notifier: push sub=%d delivered bookkeeping: %v", sub.ID, err)
 			}
 		case webpush.Gone:
+			obs.NotifierPushSends.WithLabelValues("gone").Inc()
 			gone++
 			w.logf("notifier: push sub=%d host=%s status=%d: subscription gone, deleting", sub.ID, host, res.Status)
 			if err := w.Store.PushGone(ctx, sub.ID); err != nil {
 				w.logf("notifier: delete push sub=%d: %v", sub.ID, err)
 			}
 		case webpush.Retry:
+			obs.NotifierPushSends.WithLabelValues("retry").Inc()
 			transient++
 			retryAfter = max(retryAfter, res.RetryAfter)
 			retryErr = pushErr(host, res, err)
 		case webpush.Rejected:
+			obs.NotifierPushSends.WithLabelValues("rejected").Inc()
 			rejectErr = pushErr(host, res, err)
 			dropped, ferr := w.Store.PushFailed(ctx, sub.ID, w.Opts.MaxPushFailures)
 			if ferr != nil {

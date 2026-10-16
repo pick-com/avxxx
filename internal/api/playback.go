@@ -2,12 +2,12 @@ package api
 
 import (
 	"avxxx/internal/community"
+	"avxxx/internal/obs"
 	"avxxx/internal/playcurve"
 	"avxxx/internal/store"
 	"context"
 	"encoding/json"
 	"errors"
-	"log"
 	"net/http"
 	"regexp"
 	"strconv"
@@ -91,7 +91,7 @@ func servePlayConfig(w http.ResponseWriter, r *http.Request, ps playbackStore) {
 		return
 	}
 	if err != nil {
-		log.Print(err)
+		obs.RecordError(w, err)
 		writePlayJSON(w, http.StatusInternalServerError, map[string]string{"error": "request failed"})
 		return
 	}
@@ -125,7 +125,7 @@ func servePlayConfig(w http.ResponseWriter, r *http.Request, ps playbackStore) {
 			if sourceID, ok := store.ResumeSource(plan.Sources); ok {
 				pos, found, err := ps.ResumePosition(r.Context(), uid, rel.ID)
 				if err != nil {
-					log.Print(err)
+					obs.L(r.Context()).Warn("play-config resume position", "err", err)
 				} else if found {
 					resp.Resume = &playResume{SourceID: sourceID, PositionSeconds: pos}
 				}
@@ -142,7 +142,7 @@ func danmakuCurves(ctx context.Context, ps playbackStore, releaseID int64, sourc
 	alt := map[string][]int16{}
 	curves, err := ps.DanmakuCurves(ctx, releaseID)
 	if err != nil {
-		log.Print(err)
+		obs.L(ctx).Warn("play-config danmaku curves", "err", err)
 		return nil, alt
 	}
 	for _, x := range sources {
@@ -157,7 +157,7 @@ func danmakuCurves(ctx context.Context, ps playbackStore, releaseID int64, sourc
 func replayCurve(ctx context.Context, ps playbackStore, releaseID int64) []int16 {
 	curves, err := ps.ReplayCurves(ctx, releaseID)
 	if err != nil {
-		log.Print(err)
+		obs.L(ctx).Warn("play-config replay curve", "err", err)
 		return nil
 	}
 	return curves[community.DefaultVersion]

@@ -3,39 +3,47 @@ package main
 import (
 	"avxxx/internal/catalog"
 	"avxxx/internal/model"
+	"avxxx/internal/obs"
 	"avxxx/internal/scraper"
 	"avxxx/internal/store"
 	"context"
 	"errors"
 	"github.com/jackc/pgx/v5"
-	"log"
+	"log/slog"
 	"net/http"
 	"os/signal"
+	"strconv"
 	"syscall"
 	"time"
 )
 
 func main() {
+	obs.SetupLogging("scraper")
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 	s, e := store.Open(ctx)
 	if e != nil {
-		log.Fatal(e)
+		obs.Fatal("open store", e)
 	}
 	defer s.Close()
+	obs.RegisterPool(s.Stat)
+	if e := obs.ServeMetrics(ctx, obs.MetricsAddr("127.0.0.1:9092")); e != nil {
+		obs.Fatal("metrics listener", e)
+	}
 	registry := catalog.NewRegistry()
 	if e := registry.Register(catalog.NewJAVDatabaseAdapter()); e != nil {
-		log.Fatal(e)
+		obs.Fatal("register adapter", e)
 	}
 	if e := registry.Register(catalog.NewXCITYAdapter()); e != nil {
-		log.Fatal(e)
+		obs.Fatal("register adapter", e)
 	}
 	if e := registry.Register(catalog.NewJavGuruAdapter()); e != nil {
-		log.Fatal(e)
+		obs.Fatal("register adapter", e)
 	}
 	for ctx.Err() == nil {
 		if e := s.ReapExpired(ctx); e != nil {
-			log.Printf("reap expired jobs: %v", e)
+			obs.JobClaimErrors.WithLabelValues("crawl", "reap").Inc()
+			slog.Error("reap expired jobs", "err", e)
 		}
 		id, source, e := s.Claim(ctx)
 		if errors.Is(e, pgx.ErrNoRows) {
@@ -46,14 +54,17 @@ func main() {
 			continue
 		}
 		if e != nil {
-			log.Printf("claim: %v", e)
+			obs.JobClaimErrors.WithLabelValues("crawl", "claim").Inc()
+			slog.Error("claim crawl job", "err", e)
 			select {
 			case <-ctx.Done():
 			case <-time.After(5 * time.Second):
 			}
 			continue
 		}
-		fetchCtx, stopHeartbeat := context.WithCancel(ctx)
+		start := time.Now()
+		jl := slog.With("job_id", id, "kind", "crawl", "source_id", source.ID, "adapter", source.Adapter)
+		fetchCtx, stopHeartbeat := context.WithCancel(obs.WithLogger(ctx, jl))
 		doneHeartbeat := make(chan struct{})
 		go func() {
 			t := time.NewTicker(20 * time.Second)
@@ -65,7 +76,8 @@ func main() {
 					return
 				case <-t.C:
 					if e := s.Heartbeat(fetchCtx, id, s.WorkerID(), 0); e != nil {
-						log.Printf("job %d heartbeat: %v", id, e)
+						obs.JobLeaseLost.WithLabelValues("crawl").Inc()
+						jl.Warn("job heartbeat failed", "err", e)
 						return
 					}
 				}
@@ -77,6 +89,7 @@ func main() {
 			cause = runCatalog(fetchCtx, s, registry, source)
 		} else {
 			items, cause = scraper.Fetch(fetchCtx, source)
+			obs.CrawlRecords.WithLabelValues(strconv.FormatInt(source.ID, 10)).Add(float64(len(items)))
 		}
 		stopHeartbeat()
 		<-doneHeartbeat
@@ -84,9 +97,15 @@ func main() {
 		e = s.Finish(finish, id, items, cause)
 		cancel()
 		if e != nil {
-			log.Printf("finish job %d: %v", id, e)
+			obs.JobClaimErrors.WithLabelValues("crawl", "finish").Inc()
+			jl.Error("finish job", "err", e)
 		}
-		log.Printf("job=%d items=%d error=%v", id, len(items), cause)
+		obs.ObserveJob("crawl", time.Since(start), cause)
+		lvl := slog.LevelInfo
+		if cause != nil {
+			lvl = slog.LevelWarn
+		}
+		jl.Log(ctx, lvl, "job finished", "items", len(items), "duration_ms", time.Since(start).Milliseconds(), "err", cause)
 	}
 }
 
@@ -99,8 +118,11 @@ func runCatalog(ctx context.Context, st *store.Store, registry *catalog.Registry
 	if err != nil {
 		return err
 	}
+	sid := strconv.FormatInt(source.ID, 10)
+	jl := obs.L(ctx)
 	if exhausted {
-		log.Printf("source=%d daily request budget exhausted; skipping run", source.ID)
+		obs.CrawlBudgetExhausted.WithLabelValues(sid).Inc()
+		jl.Info("daily request budget exhausted; skipping run")
 		return nil
 	}
 	policy.MaxRetryWait = maxInlineRetryWait
@@ -118,19 +140,23 @@ func runCatalog(ctx context.Context, st *store.Store, registry *catalog.Registry
 	bg, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	pages, bytes := fetcher.Usage()
+	obs.CrawlPages.WithLabelValues(sid).Add(float64(pages))
+	obs.CrawlBytes.WithLabelValues(sid).Add(float64(bytes))
+	obs.CrawlRecords.WithLabelValues(sid).Add(float64(res.Records))
 	if uerr := st.RecordCrawlUsage(bg, source.ID, pages, bytes); uerr != nil {
-		log.Printf("source=%d record usage: %v", source.ID, uerr)
+		jl.Error("record crawl usage", "err", uerr)
 	}
 	if b, blocked := catalog.IsBlocked(err); blocked {
+		obs.CrawlBlocked.WithLabelValues(sid).Inc()
 		if berr := st.BlockSource(bg, source.ID, b.RetryAfter, b.Reason); berr != nil {
-			log.Printf("source=%d mark blocked: %v", source.ID, berr)
+			jl.Error("mark source blocked", "err", berr)
 		}
 	} else if err == nil {
 		if cerr := st.ClearSourceBlock(bg, source.ID); cerr != nil {
-			log.Printf("source=%d clear block: %v", source.ID, cerr)
+			jl.Error("clear source block", "err", cerr)
 		}
 	}
-	log.Printf("source=%d catalog pages=%d records=%d stop=%s cursor=%q requests=%d bytes=%d err=%v", source.ID, res.Pages, res.Records, res.Stop, res.Cursor, pages, bytes, err)
+	jl.Info("catalog crawl", "pages", res.Pages, "records", res.Records, "stop", res.Stop, "cursor", res.Cursor, "requests", pages, "bytes", bytes, "err", err)
 	return err
 }
 
