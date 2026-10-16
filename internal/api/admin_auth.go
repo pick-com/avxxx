@@ -9,6 +9,10 @@ package api
 //     "Authorization: Bearer $ADMIN_TOKEN" (scripts, emergencies); it acts as
 //     super_admin with actor "token:<X-Admin-User label>", is logged with the
 //     hashed client IP on every use, and is off with ADMIN_TOKEN_DISABLED=true.
+//     Automation sends a scoped service token instead ("Authorization:
+//     Bearer svc_…", service_tokens.go): it acts as "service:<name>" only on
+//     the routes its scopes name, never on admin accounts, the op log,
+//     approvals or dual-approval routes, and every request is in the op log.
 //  2. Permission. The route pattern (r.Pattern) is looked up in
 //     adminRoutePerms (admin_perms.go): group + read/write. Unknown patterns
 //     need super_admin.
@@ -96,10 +100,13 @@ type adminAccountStore interface {
 // adminPrincipal is who an admin request runs as.
 type adminPrincipal struct {
 	store.AdminPrincipal
-	// Auth is "session" or "token" (break-glass).
+	// Auth is "session", "token" (break-glass) or "service" (service token).
 	Auth string
-	// Label is the break-glass label (X-Admin-User), "" for sessions.
+	// Label is the break-glass label (X-Admin-User) or the service token
+	// name, "" for sessions.
 	Label string
+	// Scopes are a service token's scopes (service_tokens.go).
+	Scopes []string
 	// ApprovalID / ApprovedBy are set while an approved request is replayed.
 	ApprovalID int64
 	ApprovedBy string
@@ -107,8 +114,11 @@ type adminPrincipal struct {
 
 // Actor is the review_events / updated_by actor.
 func (p adminPrincipal) Actor() string {
-	if p.Auth == "token" {
+	switch p.Auth {
+	case "token":
 		return "token:" + p.Label
+	case "service":
+		return "service:" + p.Label
 	}
 	return p.Username
 }
@@ -118,6 +128,9 @@ func (p adminPrincipal) Actor() string {
 func (p adminPrincipal) can(rp routePerm, known bool) bool {
 	if p.Auth == "token" {
 		return true // break-glass is super_admin
+	}
+	if p.Auth == "service" {
+		return false // per pattern: serviceAllowed (srv.admin); never approvals
 	}
 	if !known {
 		return adminauth.IsSuper(p.Roles)
@@ -175,6 +188,9 @@ func (e *adminAuthError) Error() string { return e.msg }
 // authenticateAdmin resolves the request's credential.
 func (srv *Server) authenticateAdmin(r *http.Request) (adminPrincipal, error) {
 	if tok := bearerToken(r); tok != "" {
+		if strings.HasPrefix(tok, store.ServiceTokenPrefix) {
+			return srv.serviceToken(r, tok)
+		}
 		return srv.breakGlass(r, tok)
 	}
 	c, err := r.Cookie(adminCookie)
@@ -260,13 +276,20 @@ func (srv *Server) admin(h http.HandlerFunc) http.HandlerFunc {
 				return
 			}
 		}
-		if !p.can(rp, known) {
+		allowed := p.can(rp, known)
+		if p.Auth == "service" {
+			allowed = serviceAllowed(p.Scopes, r.Pattern)
+		}
+		if !allowed {
 			srv.auditRoute(r, p, rp, http.StatusForbidden, "denied", nil)
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusForbidden)
 			need := "super_admin"
 			if known {
 				need = string(rp.Group) + ":" + rp.Access.String()
+			}
+			if p.Auth == "service" {
+				need = "service token scope for " + r.Pattern
 			}
 			json.NewEncoder(w).Encode(map[string]string{"error": "forbidden", "need": need})
 			return
@@ -280,7 +303,7 @@ func (srv *Server) admin(h http.HandlerFunc) http.HandlerFunc {
 		if rec.status == 0 {
 			rec.status = http.StatusOK
 		}
-		if p.Auth == "token" || r.Method != http.MethodGet || rp.LogReads || replay {
+		if p.Auth == "token" || p.Auth == "service" || r.Method != http.MethodGet || rp.LogReads || replay {
 			srv.auditRoute(r, p, rp, rec.status, "", nil)
 		}
 	}

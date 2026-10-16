@@ -31,7 +31,7 @@ DMM/FANZA Affiliate API 凭据（`dmm` 目录适配器）同样放进 vault：`d
 
 ThePornDB API token（`theporndb` 适配器，third_party_api 层级）放进 vault：`theporndb_api_token`（theporndb.net 账户的个人 API token，只以 `Authorization: Bearer` 发往 `api.theporndb.net`，不写日志、不入库）。默认空值时 ThePornDB 来源什么都不做（抓取任务以 “not configured” 失败，`crosscheck` 任务在 nightly_runs 记录 `not_configured`）。部署后先执行 `docker compose run --rm scraper /usr/local/bin/scraper -dry-run -adapter theporndb` 核对一页 `GET /jav` 映射结果，再记录条款审核并启用来源；`audit` 服务需要同一个 token 和 `catalog_contact` 才能跑交叉验证查询（`docker compose run --rm audit /usr/local/bin/audit -crosscheck` 可手动跑一次）。
 
-Web 前端（SSR，compose 服务 `web`，主机 `127.0.0.1:3000`）随部署一起构建和启动。传入 `-e public_base_url=https://<域名>`（不传时用 `base_url`）作为 canonical / hreflang / 站点地图的对外地址；主机反向代理把 `/api/` 转给 `127.0.0.1:8080`、其余转给 `127.0.0.1:3000`（见 `docs/PRODUCTION_OPERATIONS.md`「Web 前端（SSR）与反向代理」）。部署还会安装每日 SEO 检查 cron（写入后台「收录健康分」），`-e seo_check_enabled=false` 可关闭。
+Web 前端（SSR，compose 服务 `web`，主机 `127.0.0.1:3000`）随部署一起构建和启动。传入 `-e public_base_url=https://<域名>`（不传时用 `base_url`）作为 canonical / hreflang / 站点地图的对外地址；主机反向代理把 `/api/` 转给 `127.0.0.1:8080`、其余转给 `127.0.0.1:3000`（见 `docs/PRODUCTION_OPERATIONS.md`「Web 前端（SSR）与反向代理」）。部署还会安装每日 SEO 检查 cron（写入后台「收录健康分」），`-e seo_check_enabled=false` 可关闭。它用 vault 里的 `seo_report_token`（后台「用户与权限 → 服务令牌」创建、范围只有 `POST /api/admin/seo/report` 的 `svc_…` 令牌，渲染为 `.env` 的 `SEO_REPORT_TOKEN`）上报；该变量为空时才回退用 `admin_token`。
 
 可观测性（`docs/PRODUCTION_OPERATIONS.md`「日志、指标与告警」）：传入 `-e log_hash_key=<随机长字符串>` 让日志中的用户哈希在重启后保持稳定；传入 `-e monitoring_enabled=true` 额外启动 compose `monitoring` profile 中的 Prometheus（只监听 `127.0.0.1:9095`，通过 `ssh -L 9095:127.0.0.1:9095` 访问）。各服务的 `/metrics` 只在 compose 网络内可达，不对外发布端口。
 

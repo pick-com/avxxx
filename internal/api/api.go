@@ -116,8 +116,10 @@ type Server struct {
 	adminAuth          adminAuthStore
 	adminAccts         adminAccountStore
 	adminSecureCookie  bool
-	approvalOnce       sync.Once
-	approvalMux        *http.ServeMux
+	// svcTokens backs scoped service tokens for automation (service_tokens.go).
+	svcTokens    serviceTokenStore
+	approvalOnce sync.Once
+	approvalMux  *http.ServeMux
 	// auth backs logout, password reset, OAuth and the /api/me account
 	// routes (auth.go); oidc holds the configured Google / Apple providers
 	// (GOOGLE_* / APPLE_*; empty = buttons hidden, routes 404). oauthHTTPS:
@@ -166,6 +168,7 @@ func Register(mux *http.ServeMux, s *store.Store, mediaHandler *media.Handler) {
 		srv.auth = s
 		srv.adminAuth = s
 		srv.adminAccts = s
+		srv.svcTokens = s
 		srv.push = s
 		srv.accounts = s
 		srv.identity = s
@@ -252,6 +255,7 @@ func (srv *Server) routes() []route {
 	rs = append(rs, srv.feedbackRoutes()...)
 	rs = append(rs, srv.takedownRoutes()...)
 	rs = append(rs, srv.interactionRoutes()...)
+	rs = append(rs, srv.serviceTokenRoutes()...)
 	return srv.followMerges(rs)
 }
 

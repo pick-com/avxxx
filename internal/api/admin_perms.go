@@ -69,6 +69,10 @@ var adminRoutePerms = map[string]routePerm{
 	"POST /api/admin/admin-users/{id}/enable":    dual(gAdminUsers),
 	"POST /api/admin/admin-users/{id}/reset-2fa": dual(gAdminUsers),
 	"GET /api/admin/audit-log":                   pii(rd(gAuditLog)),
+	// Service tokens (service_tokens.go): super_admin only, like accounts.
+	"GET /api/admin/service-tokens":              rd(gAdminUsers),
+	"POST /api/admin/service-tokens":             wr(gAdminUsers),
+	"POST /api/admin/service-tokens/{id}/revoke": wr(gAdminUsers),
 	"GET /api/admin/site-users":                  pii(rd(gSiteUsers)),
 	"GET /api/admin/site-users/{id}":             pii(rd(gSiteUsers)),
 	"POST /api/admin/site-users/{id}/ban":        wr(gSiteUsers),

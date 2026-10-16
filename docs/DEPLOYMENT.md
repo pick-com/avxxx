@@ -154,9 +154,16 @@ reel.example {
 5. **手机丢失**：用恢复码登录后在「用户与权限 → 我的账号」重新生成恢复码；没有恢复码时，请另一位超级管理员在「后台账号」里重置两步验证（双人审批），批准后得到新的启用链接。
 6. **账号被锁**：等锁定时间过去，或在主机上 `docker compose run --rm api /usr/local/bin/admin unlock -username nc`；`admin list` 查看所有账号、角色和锁定状态。
 
-**紧急令牌（break-glass）**：`ADMIN_TOKEN` 仍可作为 `Authorization: Bearer` 使用，权限等同超级管理员、不走双人审批，用于账号体系不可用时和运维脚本（`npm run seo:check` 的上报）。每次使用（含只读请求）都写入操作日志（`admin_audit_log`，身份「紧急令牌」，记录路由、对象和来源 IP 的密钥哈希），API 日志也有一条 `admin break-glass token used`（含 `ip_hash`，不含令牌）。写操作的操作人记为 `token:<标签>`，标签取 `X-Admin-User` 头（只用可打印 ASCII，最多 64 字符，缺省 `unlabelled`）；该头不再作为个人账号的操作人。后台登录页下方「紧急令牌」链接可在浏览器里临时使用它（只存在当前标签页）。
+**服务令牌（自动化脚本用）**：脚本不再用紧急令牌，而是用超级管理员在「用户与权限 → 服务令牌」（`/admin/users?tab=service`）创建的服务令牌（`svc_` 开头，`Authorization: Bearer svc_…`）。
 
-- **停用**：建立至少两位超级管理员后，在 vault 设 `admin_token_disabled: true` 并重新部署（`.env` 中 `ADMIN_TOKEN_DISABLED=true`），令牌立即全部 401（尝试会记一条警告日志）。注意每日 SEO 检查也用该令牌上报收录健康分；停用后它的上报会被拒绝（页面检查仍会运行），需要时临时打开或暂停 `seo_check_enabled`。
+- 创建时选择范围（scope）：具体路由（如 `POST /api/admin/seo/report`）或「路由组:read / write」（如 `dashboard:read`），并设有效期（1–730 天，默认 365）。令牌值只在创建时显示一次，库里只存 SHA-256 哈希和前几个字符。
+- 无论范围怎么写，服务令牌都**不能**访问后台账号与角色、操作日志、自己的会话 / 待审批队列，也不能调用任何双人审批路由；这类范围在创建时就会被拒绝。
+- 每个请求（含只读和被拒绝的）都写入操作日志，身份「服务令牌」、操作人 `service:<名称>`，带来源 IP 的密钥哈希；列表里显示最近使用时间。撤销立即生效，到期自动失效。
+- **每日 SEO 检查**：创建名为 `seo-check`、范围只有 `POST /api/admin/seo/report` 的令牌，把值放进 vault 的 `seo_report_token` 并重新部署（`.env` 中 `SEO_REPORT_TOKEN`）。cron 只在 `seo_report_token` 为空时才回退使用 `ADMIN_TOKEN`；手动运行 `npm run seo:check` 时同样优先用 `SEO_REPORT_TOKEN`。
+
+**紧急令牌（break-glass）**：`ADMIN_TOKEN` 仍可作为 `Authorization: Bearer` 使用，权限等同超级管理员、不走双人审批，用于账号体系不可用时（自动化脚本改用上面的服务令牌；`npm run seo:check` 只在未设置 `SEO_REPORT_TOKEN` 时回退用它上报）。每次使用（含只读请求）都写入操作日志（`admin_audit_log`，身份「紧急令牌」，记录路由、对象和来源 IP 的密钥哈希），API 日志也有一条 `admin break-glass token used`（含 `ip_hash`，不含令牌）。写操作的操作人记为 `token:<标签>`，标签取 `X-Admin-User` 头（只用可打印 ASCII，最多 64 字符，缺省 `unlabelled`）；该头不再作为个人账号的操作人。后台登录页下方「紧急令牌」链接可在浏览器里临时使用它（只存在当前标签页）。
+
+- **停用**：建立至少两位超级管理员后，在 vault 设 `admin_token_disabled: true` 并重新部署（`.env` 中 `ADMIN_TOKEN_DISABLED=true`），令牌立即全部 401（尝试会记一条警告日志）。停用前先按上文给每日 SEO 检查配置 `seo_report_token`；否则它回退用紧急令牌，上报会被拒绝（页面检查仍会运行）。
 - **轮换**：改 vault 的 `admin_token` 后重新部署；用 `GET /api/admin/audit-log?auth=token` 或后台「操作日志」按身份「紧急令牌」检查最近的使用记录。
 
 **操作日志**：后台「操作日志」（`/admin/oplog`，仅超级管理员）可按关键词、操作人、身份、对象和时间搜索；内容包括所有写操作、所有紧急令牌请求、读取前台用户和版权投诉等个人数据的请求、登录成功与失败。字段级的修改前后值仍在 `review_events`。
@@ -168,7 +175,8 @@ reel.example {
 | vault 变量 | `.env` 变量 | 必需 | 用途 / 说明 |
 | --- | --- | --- | --- |
 | `postgres_password` | `POSTGRES_PASSWORD`、`DATABASE_URL` | 是 | 数据库密码。只在 `pgdata` 卷**首次初始化**时生效；`database_url` 默认由它派生（vars.yml），已初始化的库改密码需 `ALTER USER` 后再改 vault |
-| `admin_token` | `ADMIN_TOKEN` | 建议 | 紧急令牌（break-glass，2.7）：`/api/admin/*` 的 Bearer，等同超级管理员，每次使用记入操作日志。SEO 检查 cron 用它上报；为空时只能用个人账号登录 |
+| `admin_token` | `ADMIN_TOKEN` | 建议 | 紧急令牌（break-glass，2.7）：`/api/admin/*` 的 Bearer，等同超级管理员，每次使用记入操作日志。SEO 检查 cron 仅在 `seo_report_token` 为空时用它上报；为空时只能用个人账号登录 |
+| `seo_report_token` | `SEO_REPORT_TOKEN` | 建议 | 每日 SEO 检查上报收录健康分用的服务令牌（`svc_…`，范围 `POST /api/admin/seo/report`，2.7）；为空时 cron 回退用 `ADMIN_TOKEN` |
 | `admin_token_disabled` | `ADMIN_TOKEN_DISABLED` | 否 | `true` 时紧急令牌全部 401（默认 false）；有两位以上超级管理员后建议开启 |
 | `admin_totp_key` | `ADMIN_TOTP_KEY` | 是 | 加密管理员 TOTP 密钥的键（AES-256-GCM）；api 与 `admin` 命令用同一值。更换后需重置所有人的两步验证 |
 | `public_base_url` / `base_url` | `PUBLIC_BASE_URL` / `BASE_URL` | 是 | 对外 origin（`https://reel.example`）；SSR canonical/站点地图、通知里的链接 |
@@ -184,7 +192,7 @@ reel.example {
 
 非密钥的部署开关（`-e` 传入或写在 vault 里）：`monitoring_enabled`、`backup_cron_enabled`、`backup_keep_days`（默认 14）、`backup_cron_hour` / `backup_cron_minute`、`seo_check_enabled`（默认 true）、`git_branch`、`trusted_proxies`（`TRUSTED_PROXIES`，默认空；见 2.5）。
 
-轮换：改 vault → 重新执行 deploy.yml（重新渲染 `.env`，`docker compose up -d` 只重建配置变化的服务）。`ADMIN_TOKEN` 轮换后同步更新使用它的脚本（2.7）；`LOG_HASH_KEY` 轮换会断开新旧日志的用户哈希关联。
+轮换：改 vault → 重新执行 deploy.yml（重新渲染 `.env`，`docker compose up -d` 只重建配置变化的服务）。`ADMIN_TOKEN` 轮换后同步更新仍使用它的脚本（2.7）；服务令牌轮换：后台新建同范围、新名称的令牌（如 `seo-check-2`）→ 改 vault → 重新部署 → 撤销旧令牌；`LOG_HASH_KEY` 轮换会断开新旧日志的用户哈希关联。
 
 ## 4. 发布与回滚
 
@@ -243,7 +251,7 @@ API_URL=http://127.0.0.1:8080 DB_CONTAINER=avxxx-db-1 ./scripts/smoke.sh
 curl -fsS http://127.0.0.1:3000/healthz && curl -fsSI https://<域名>/ | head -1
 docker compose logs --since 10m api scheduler scraper audit notifier | grep -E '"level":"(ERROR|WARN)"' | head
 set -a; . ./.env; set +a
-docker compose run --rm --no-deps -e WEB_URL=http://web:3000 -e API_URL=http://api:8080 -e ADMIN_TOKEN web node scripts/seo-check.mjs | tail -5   # 收录健康分 ≥ 90
+docker compose run --rm --no-deps -e WEB_URL=http://web:3000 -e API_URL=http://api:8080 -e SEO_REPORT_TOKEN -e ADMIN_TOKEN web node scripts/seo-check.mjs | tail -5   # 收录健康分 ≥ 90（优先用服务令牌上报）
 ```
 
 - **监控**：`ssh -L 9095:127.0.0.1:9095 -L 9096:127.0.0.1:9096 <host>` → Prometheus `/targets` 全部 up、`/alerts` 无新的 firing；`docker compose logs alertmanager | grep render-config` 显示 `receivers configured`。首次部署发一条测试告警（`docs/PRODUCTION_OPERATIONS.md`「发送测试告警」）。
