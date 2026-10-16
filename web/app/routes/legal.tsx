@@ -1,5 +1,6 @@
 import {useEffect} from 'react';
 import {Link, useParams} from 'react-router';
+import {PerformerRequestForm} from '../components/PerformerRequestForm';
 import {EmptyState} from '../components/States';
 import {t, useT} from '../lib/i18n';
 import {LEGAL_DOCS, legalDoc} from '../lib/legal';
@@ -15,6 +16,12 @@ export default function LegalPage() {
 
   useEffect(() => {
     if (current) document.title = t('title.named', {name: current.title});
+  }, [current]);
+
+  // Client-side navigation to /legal/x#section: scroll once the section exists.
+  useEffect(() => {
+    const id = decodeURIComponent(window.location.hash.slice(1));
+    if (id) document.getElementById(id)?.scrollIntoView();
   }, [current]);
 
   if (!current) {
@@ -64,6 +71,14 @@ export default function LegalPage() {
             <p>{s.body}</p>
           </section>
         ))}
+        {current.slug === 'copyright' && (
+          <aside className="legal-other" aria-labelledby="legal-other-title">
+            <h2 id="legal-other-title">{t('performerReq.otherCases')}</h2>
+            <span className="muted">{t('performerReq.copyrightLink')}</span>
+            <Link to="/legal/performer-info#request-form">{t('performerReq.cta')}</Link>
+          </aside>
+        )}
+        {current.slug === 'performer-info' && <PerformerRequestForm />}
       </article>
     </div>
   );
