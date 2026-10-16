@@ -59,8 +59,11 @@ export function PlayerSettingsSheet({open, onClose, container, initialTab = 'qua
   onClose: () => void;
   container?: HTMLElement | null;
   initialTab?: SettingsTab;
-  /** versioned: options come from play-config (正片 / 高画质 / 配音 / 其他版本). */
-  source: {options: Choice<number>[]; value: number; onChange: (value: number) => void; versioned: boolean};
+  /**
+   * versioned: options come from play-config (正片 / 高画质 / 配音 / 其他版本).
+   * details: the current source's metadata (清晰度, 字幕, 音轨…), shown as a card.
+   */
+  source: {options: Choice<number>[]; value: number; onChange: (value: number) => void; versioned: boolean; details?: {label: string; value: string}[]};
   quality: {options: Choice<number>[]; value: number; onChange: (value: number) => void};
   rate: {options: Choice<number>[]; value: number; onChange: (value: number) => void};
   captions: {options: Choice<number>[]; value: number; onChange: (value: number) => void};
@@ -75,6 +78,19 @@ export function PlayerSettingsSheet({open, onClose, container, initialTab = 'qua
     if (open) setTab(initialTab);
   }, [open, initialTab]);
 
+  const details = source.details ?? [];
+  const detailsCard =
+    details.length > 0 ? (
+      <dl className="source-meta" aria-label={t('player.meta.title')}>
+        {details.map(d => (
+          <div key={d.label} className="source-meta-row">
+            <dt>{d.label}</dt>
+            <dd>{d.value}</dd>
+          </div>
+        ))}
+      </dl>
+    ) : null;
+
   let body;
   switch (tab) {
     case 'source':
@@ -86,9 +102,13 @@ export function PlayerSettingsSheet({open, onClose, container, initialTab = 'qua
               {t('player.autoSwitchNote')}
             </p>
             <ChoiceList label={t('player.source')} options={source.options} value={source.value} onChange={source.onChange} />
+            {detailsCard}
           </>
         ) : (
-          <p className="sheet-note">{t('player.oneSource')}</p>
+          <>
+            {detailsCard}
+            <p className="sheet-note">{t('player.oneSource')}</p>
+          </>
         );
       break;
     case 'quality':

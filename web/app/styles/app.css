@@ -2547,6 +2547,37 @@ a.chip {
   color: var(--muted);
 }
 
+/* 片源 details card (清晰度 / 字幕 / 音轨…) in the player settings sheet. */
+.source-meta {
+  margin: 10px 20px 0;
+  padding: 4px 14px;
+  border-radius: 10px;
+  background: var(--surface);
+  font-size: 13px;
+}
+
+.source-meta-row {
+  display: flex;
+  gap: 12px;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--line, rgba(127, 127, 127, 0.18));
+}
+
+.source-meta-row:last-child {
+  border-bottom: 0;
+}
+
+.source-meta dt {
+  flex: 0 0 5.5em;
+  color: var(--muted);
+}
+
+.source-meta dd {
+  margin: 0;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
 .choice-list {
   display: flex;
   flex-direction: column;

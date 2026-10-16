@@ -8,7 +8,7 @@ import {useT} from '../lib/i18n';
 import {formatClock} from '../lib/format';
 import {PlayTracker, takeEndReason, takeEntryOverride} from '../lib/playAnalytics';
 import {heightCap, prefHeight, qualityParam, rememberRate, rememberedRate, usePlayerPrefs} from '../lib/playerPrefs';
-import {entriesFromConfig, entriesFromStreams, isHlsEntry, type PlayEntry} from '../lib/playSources';
+import {entriesFromConfig, entriesFromStreams, isHlsEntry, type PlayEntry, type SourceDetailKey} from '../lib/playSources';
 import {useAsync} from '../lib/useAsync';
 import {useMediaQuery} from '../lib/useMediaQuery';
 import {useDanmakuPrefs} from '../lib/danmakuPrefs';
@@ -397,7 +397,7 @@ export function Player({slug, releaseId, title, resumeAt, startAt, onBack, theat
       if (result.length === 0) throw new Error(t('player.noStream'));
       pendingSeek.current = resumeFrom;
       resumeToastArmed.current = resumeFrom > 0;
-      setEntries(entriesFromStreams(result));
+      setEntries(entriesFromStreams(result, info.data.source === 'javtiful' ? 'Javtiful' : info.data.source));
       setCurrent(0);
       setPhase('ready');
     } catch (cause) {
@@ -914,6 +914,27 @@ export function Player({slug, releaseId, title, resumeAt, startAt, onBack, theat
     hint: [e.hint, e.render === 'external' ? t('player.openInNewTab') : ''].filter(Boolean).join(' · '),
   });
   const sourceOptions: Choice<number>[] = entries.map(toChoice);
+  // 片源 details card: the source's declared metadata, then what the stream
+  // actually exposes once loaded (playing height, caption / audio tracks).
+  const currentEntry = entries[current] ?? configEntries[current];
+  const metaLabel: Record<SourceDetailKey | 'playing', string> = {
+    provider: t('player.meta.provider'),
+    version: t('player.meta.version'),
+    resolution: t('player.meta.resolution'),
+    duration: t('player.meta.duration'),
+    audio: t('player.meta.audio'),
+    subtitles: t('player.meta.subtitles'),
+    format: t('player.meta.format'),
+    playing: t('player.meta.playing'),
+  };
+  const sourceDetails: {label: string; value: string}[] = (currentEntry?.details ?? []).map(d => ({label: metaLabel[d.key], value: d.value}));
+  if (playing?.height) sourceDetails.push({label: metaLabel.playing, value: levelLabel(playing)});
+  if (textTracks.length && !currentEntry?.details.some(d => d.key === 'subtitles')) {
+    sourceDetails.push({label: metaLabel.subtitles, value: textTracks.join('、')});
+  }
+  if (audioTracks.length > 1 && !currentEntry?.details.some(d => d.key === 'audio')) {
+    sourceDetails.push({label: metaLabel.audio, value: audioTracks.map(a => a.name).join('、')});
+  }
   // Before the first start (or once every source failed in config mode) the
   // sheet still lists play-config's sources.
   const configSourceOptions: Choice<number>[] = configEntries.map(toChoice);
@@ -1252,6 +1273,7 @@ export function Player({slug, releaseId, title, resumeAt, startAt, onBack, theat
                   if (!wasReady) setSettings(s => ({...s, open: false}));
                 },
                 versioned: mode === 'config',
+                details: sourceDetails,
               }}
               quality={{options: qualityOptions, value: level, onChange: chooseLevel}}
               rate={{options: rateOptions, value: rate, onChange: chooseRate}}

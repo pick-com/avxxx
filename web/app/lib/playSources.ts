@@ -2,7 +2,7 @@
 // 3.3) or, on the legacy path, from resolved javtiful streams.
 
 import type {PlayConfig, PlaySource, Stream} from './api';
-import {formatClock} from './format';
+import {formatClock, languageName} from './format';
 import {t} from './i18n';
 
 export type EntryRender = 'video' | 'embed' | 'external';
@@ -21,9 +21,42 @@ export type PlayEntry = {
   alt: boolean;
   /** Short spec line: provider label, height, duration, audio, subtitles. */
   hint: string;
+  /** Source metadata for the 片源 details card (labelled rows, never sample data). */
+  details: SourceDetail[];
   provider?: string;
   sourceId?: number;
 };
+
+export type SourceDetailKey = 'provider' | 'version' | 'resolution' | 'duration' | 'audio' | 'subtitles' | 'format';
+export type SourceDetail = {key: SourceDetailKey; value: string};
+
+const langList = (codes: string[] | null | undefined) =>
+  (codes ?? [])
+    .filter(Boolean)
+    .map(c => languageName(c))
+    .join('、');
+
+const formatName = (protocol: string, url: string) =>
+  protocol === 'hls' || HLS_FILE.test(url) ? 'HLS' : /\.(mp4|m4v)(\?|#|$)/i.test(url) ? 'MP4' : /\.webm(\?|#|$)/i.test(url) ? 'WebM' : '';
+
+function resolutionLabel(height: number | null | undefined, hdr: boolean): string {
+  if (!height) return hdr ? 'HDR' : '';
+  const name = height >= 2160 ? `4K (${height}p)` : `${height}p`;
+  return hdr ? `${name} HDR` : name;
+}
+
+function sourceDetails(s: PlaySource, version: string, protocol: string, url: string): SourceDetail[] {
+  const rows: SourceDetail[] = [
+    {key: 'provider', value: s.label || s.provider || ''},
+    {key: 'version', value: version},
+    {key: 'resolution', value: resolutionLabel(s.max_height, s.has_hdr)},
+    {key: 'duration', value: s.duration_seconds ? formatClock(s.duration_seconds) : ''},
+    {key: 'audio', value: langList(s.audio_langs)},
+    {key: 'subtitles', value: langList(s.subtitle_langs)},
+    {key: 'format', value: formatName(protocol, url)},
+  ];
+  return rows.filter(r => r.value);
+}
 
 // Getters, so labels follow the current UI language.
 export const VERSION_LABELS: Record<string, string> = {
@@ -98,15 +131,18 @@ export function entriesFromConfig(config: PlayConfig | null | undefined): PlayEn
     const render = renderFor(s, url);
     if (!render) continue;
     const alt = s.is_alt_version === true || s.version_kind === 'alt';
+    const protocol = render === 'video' ? (HLS_FILE.test(url) || s.kind === 'hls_owned' ? 'hls' : 'file') : render;
+    const version = alt ? VERSION_LABELS.alt : VERSION_LABELS[s.version_kind] ?? VERSION_LABELS.main;
     out.push({
       key: `src-${s.id}`,
       render,
       url,
-      protocol: render === 'video' ? (HLS_FILE.test(url) || s.kind === 'hls_owned' ? 'hls' : 'file') : render,
+      protocol,
       name: t('play.sourceName', {id: letter(out.length)}),
-      version: alt ? VERSION_LABELS.alt : VERSION_LABELS[s.version_kind] ?? VERSION_LABELS.main,
+      version,
       alt,
       hint: sourceHint(s, alt),
+      details: sourceDetails(s, version, protocol, url),
       provider: s.provider,
       sourceId: s.id,
     });
@@ -114,7 +150,7 @@ export function entriesFromConfig(config: PlayConfig | null | undefined): PlayEn
   return out;
 }
 
-export function entriesFromStreams(streams: Stream[]): PlayEntry[] {
+export function entriesFromStreams(streams: Stream[], provider = ''): PlayEntry[] {
   return streams.map((s, i) => ({
     key: `stream-${i}-${s.url}`,
     render: 'video' as const,
@@ -124,6 +160,12 @@ export function entriesFromStreams(streams: Stream[]): PlayEntry[] {
     version: '',
     alt: false,
     hint: s.quality || s.protocol.toUpperCase() || '',
+    details: [
+      {key: 'provider' as const, value: provider},
+      {key: 'resolution' as const, value: s.quality ?? ''},
+      {key: 'format' as const, value: formatName(s.protocol, s.url)},
+    ].filter(r => r.value),
+    provider: provider || undefined,
   }));
 }
 
