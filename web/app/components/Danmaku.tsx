@@ -33,6 +33,7 @@ import {Icon} from './Icon';
 import {ReportPicker} from './ReportPicker';
 import {Sheet} from './Sheet';
 import {Switch} from './Switch';
+import {TimestampText} from './Timestamps';
 
 // 弹幕 (PRD 5.5 · DanmakuPlayer / MobileDanmaku; internal/api/community.go).
 //
@@ -511,7 +512,16 @@ export function DanmakuListSheet({open, onClose, feed, video, container}: {
                     </button>
                   ) : (
                     <span className="dm-body">
-                      {d.body}
+                      <TimestampText
+                        text={d.body}
+                        maxSeconds={video && Number.isFinite(video.duration) ? video.duration : undefined}
+                        onSeek={s => {
+                          if (video) {
+                            video.dataset.seekMethod = 'drag';
+                            video.currentTime = s;
+                          }
+                        }}
+                      />
                       {d.mine && <span className="dm-tag">{t('danmaku.mine')}</span>}
                     </span>
                   )}

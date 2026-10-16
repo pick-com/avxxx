@@ -26,6 +26,7 @@ import {Icon} from './Icon';
 import {ReportPicker} from './ReportPicker';
 import {Sheet} from './Sheet';
 import {ErrorBanner} from './States';
+import {TimestampText} from './Timestamps';
 
 // 评分与短评 (PRD 19 · Ratings / MobileRatings; internal/api/community.go).
 //
@@ -254,7 +255,7 @@ function ReviewItem({review, onChange, onRemove}: {review: Review; onChange: (r:
       ) : (
         <p className="review-body">
           {review.spoiler && <span className="review-spoiler-tag">{t('review.spoilerTag')}</span>}
-          {review.body}
+          <TimestampText text={review.body} />
         </p>
       )}
       <div className="review-actions">

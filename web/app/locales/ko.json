@@ -187,6 +187,7 @@
   "review.notWatched": "시청 안 함",
   "review.spoilerFolded": "스포일러 포함, 눌러서 펼치기",
   "review.spoilerTag": "스포일러",
+  "review.seekTo": "{time}부터 재생",
   "review.helpful": "도움돼요",
   "review.like": "도움돼요({n})",
   "review.unlike": "도움돼요 취소({n})",

@@ -803,6 +803,24 @@ span.dm-form {
   white-space: pre-wrap;
 }
 
+/* Clickable 12:34 in review / comment bodies and the danmaku list (Timestamps.tsx). */
+.timestamp-link {
+  display: inline;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--accent);
+  font: inherit;
+  font-variant-numeric: tabular-nums;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.timestamp-link:hover,
+.timestamp-link:focus-visible {
+  text-decoration: underline;
+}
+
 .review-actions .text-btn {
   min-width: 44px;
 }

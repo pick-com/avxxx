@@ -187,6 +187,7 @@
   "review.notWatched": "Sin ver",
   "review.spoilerFolded": "Contiene spoilers. Toca para ver",
   "review.spoilerTag": "Spoiler",
+  "review.seekTo": "Reproducir desde {time}",
   "review.helpful": "Útil",
   "review.like": "Útil ({n})",
   "review.unlike": "Quitar útil ({n})",

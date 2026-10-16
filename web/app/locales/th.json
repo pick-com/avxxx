@@ -187,6 +187,7 @@
   "review.notWatched": "ยังไม่ได้ดู",
   "review.spoilerFolded": "มีสปอยล์ แตะเพื่อขยาย",
   "review.spoilerTag": "สปอยล์",
+  "review.seekTo": "เล่นตั้งแต่ {time}",
   "review.helpful": "มีประโยชน์",
   "review.like": "มีประโยชน์ ({n})",
   "review.unlike": "เลิกกดมีประโยชน์ ({n})",

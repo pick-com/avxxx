@@ -187,6 +187,7 @@
   "review.notWatched": "未視聴",
   "review.spoilerFolded": "ネタバレあり。タップで表示",
   "review.spoilerTag": "ネタバレ",
+  "review.seekTo": "{time} から再生",
   "review.helpful": "参考になった",
   "review.like": "参考になった（{n}）",
   "review.unlike": "「参考になった」を取り消す（{n}）",

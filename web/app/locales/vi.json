@@ -187,6 +187,7 @@
   "review.notWatched": "Chưa xem",
   "review.spoilerFolded": "Có tiết lộ nội dung, nhấn để mở",
   "review.spoilerTag": "Tiết lộ",
+  "review.seekTo": "Phát từ {time}",
   "review.helpful": "Hữu ích",
   "review.like": "Hữu ích ({n})",
   "review.unlike": "Bỏ hữu ích ({n})",
