@@ -20,12 +20,23 @@ type Source struct {
 	SourceKind    string `json:"source_kind"`
 	LicenseStatus string `json:"license_status"`
 	EgressPolicy  string `json:"egress_policy"`
+	// Governance (migrations/024): terms review and the automatic-crawl gate.
+	TermsURL            string     `json:"terms_url,omitempty"`
+	TermsReviewedAt     *time.Time `json:"terms_reviewed_at,omitempty"`
+	TermsReviewedBy     string     `json:"terms_reviewed_by,omitempty"`
+	LicenseNote         string     `json:"license_note,omitempty"`
+	BaselineRequestedAt *time.Time `json:"baseline_requested_at,omitempty"`
+	AutomaticAllowed    bool       `json:"automatic_allowed"`
+	GateReason          string     `json:"gate_reason,omitempty"`
 }
 type Job struct {
 	ID               int64      `json:"id"`
 	SourceID         int64      `json:"source_id"`
+	Phase            string     `json:"phase"`
+	PageCap          *int       `json:"page_cap,omitempty"`
 	Status           string     `json:"status"`
 	Error            string     `json:"error"`
+	ErrorCode        string     `json:"error_code"`
 	CreatedAt        time.Time  `json:"created_at"`
 	Attempt          int        `json:"attempt"`
 	LeaseUntil       *time.Time `json:"lease_until,omitempty"`

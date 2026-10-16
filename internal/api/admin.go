@@ -30,7 +30,6 @@ func (srv *Server) adminRoutes() []route {
 		{"GET /api/admin/conflicts", srv.admin(srv.conflicts)},
 		{"POST /api/admin/conflicts/{id}/resolve", srv.admin(srv.resolveConflict)},
 		{"POST /api/admin/sources", srv.admin(srv.addSource)},
-		{"POST /api/admin/sources/{id}/jobs", srv.admin(srv.enqueue)},
 	}
 }
 
@@ -226,19 +225,14 @@ func (srv *Server) upsertCrawlPolicy(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "invalid id", 400)
 		return
 	}
-	var req struct {
-		DiscoveryInterval     string `json:"discovery_interval"`
-		DetailRefreshInterval string `json:"detail_refresh_interval"`
-		MinRequestInterval    string `json:"min_request_interval"`
-		DailyPageBudget       int64  `json:"daily_page_budget"`
-		DailyByteBudget       int64  `json:"daily_byte_budget"`
-	}
+	var req store.CrawlPolicy
 	r.Body = http.MaxBytesReader(w, r.Body, 16384)
 	if json.NewDecoder(r.Body).Decode(&req) != nil || req.MinRequestInterval == "" {
 		http.Error(w, "min_request_interval is required", 400)
 		return
 	}
-	reply(w, map[string]bool{"ok": true}, srv.store.UpsertCrawlPolicy(r.Context(), id, req.DiscoveryInterval, req.DetailRefreshInterval, req.MinRequestInterval, req.DailyPageBudget, req.DailyByteBudget))
+	req.SourceID = id
+	reply(w, map[string]bool{"ok": true}, srv.store.UpsertCrawlPolicy(r.Context(), req))
 }
 
 func (srv *Server) conflicts(w http.ResponseWriter, r *http.Request) {
@@ -293,13 +287,4 @@ func (srv *Server) addSource(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	reply(w, map[string]bool{"ok": true}, srv.store.AddSource(r.Context(), x))
-}
-
-func (srv *Server) enqueue(w http.ResponseWriter, r *http.Request) {
-	id, e := strconv.ParseInt(r.PathValue("id"), 10, 64)
-	if e != nil || id <= 0 {
-		http.Error(w, "invalid id", 400)
-		return
-	}
-	reply(w, map[string]bool{"ok": true}, srv.store.Enqueue(r.Context(), id))
 }

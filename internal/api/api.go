@@ -54,6 +54,9 @@ type Server struct {
 	// performers backs the admin performer editor, performer requests and
 	// the similarity weights preview (admin_performer.go).
 	performerEd performerAdmin
+	// governance backs source license review, phased jobs, checkpoints and
+	// field priority policies (admin_governance.go).
+	governance governanceStore
 	// adminToken is ADMIN_TOKEN, read once at construction. Empty disables
 	// every admin route (they all return 401).
 	adminToken string
@@ -88,6 +91,7 @@ func Register(mux *http.ServeMux, s *store.Store, mediaHandler *media.Handler) {
 		srv.recsAdmin = s
 		srv.search = s
 		srv.performerEd = s
+		srv.governance = s
 	}
 	for _, rt := range srv.routes() {
 		mux.HandleFunc(rt.pattern, rt.handler)
@@ -106,6 +110,7 @@ func (srv *Server) routes() []route {
 	rs = append(rs, srv.mediaRoutes()...)
 	rs = append(rs, srv.playbackRoutes()...)
 	rs = append(rs, srv.adminRoutes()...)
+	rs = append(rs, srv.adminGovernanceRoutes()...)
 	rs = append(rs, srv.adminReleaseRoutes()...)
 	rs = append(rs, srv.eventRoutes()...)
 	rs = append(rs, srv.adminAuditRoutes()...)

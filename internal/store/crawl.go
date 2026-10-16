@@ -42,46 +42,131 @@ func (c CatalogCheckpoints) FailCheckpoint(ctx context.Context, k catalog.Checkp
 // and applies to sources without a policy row.
 const defaultMinRequestInterval = 5 * time.Second
 
-// FetchPolicy builds today's remaining request budget for a source from
-// source_crawl_policies and source_crawl_usage. exhausted is true when a
-// configured daily budget has already been spent.
-func (s *Store) FetchPolicy(ctx context.Context, sourceID int64) (policy catalog.FetchPolicy, exhausted bool, err error) {
+// defaultBaselinePagesPerRun matches the migration 024 column default: a
+// baseline job yields after this many discovery pages so queued incremental
+// jobs for the source run in between.
+const defaultBaselinePagesPerRun = 20
+
+// CrawlPolicy is one source's crawl schedule and per-phase budgets.
+type CrawlPolicy struct {
+	SourceID                int64      `json:"source_id"`
+	DiscoveryInterval       string     `json:"discovery_interval"`
+	DetailRefreshInterval   string     `json:"detail_refresh_interval"`
+	MinRequestInterval      string     `json:"min_request_interval"`
+	DailyPageBudget         int64      `json:"daily_page_budget"`
+	DailyByteBudget         int64      `json:"daily_byte_budget"`
+	BaselineDailyPageBudget int64      `json:"baseline_daily_page_budget"`
+	BaselineDailyByteBudget int64      `json:"baseline_daily_byte_budget"`
+	BaselinePagesPerRun     int64      `json:"baseline_pages_per_run"`
+	EnabledAt               *time.Time `json:"enabled_at"`
+	BaselineCompletedAt     *time.Time `json:"baseline_completed_at"`
+}
+
+func (s *Store) CrawlPolicies(ctx context.Context) ([]CrawlPolicy, error) {
+	r, err := s.Query(ctx, `SELECT source_id,COALESCE(discovery_interval::text,''),COALESCE(detail_refresh_interval::text,''),min_request_interval::text,
+		daily_page_budget,daily_byte_budget,baseline_daily_page_budget,baseline_daily_byte_budget,baseline_pages_per_run,enabled_at,baseline_completed_at
+		FROM source_crawl_policies ORDER BY source_id`)
+	if err != nil {
+		return nil, err
+	}
+	defer r.Close()
+	out := []CrawlPolicy{}
+	for r.Next() {
+		var p CrawlPolicy
+		if err = r.Scan(&p.SourceID, &p.DiscoveryInterval, &p.DetailRefreshInterval, &p.MinRequestInterval, &p.DailyPageBudget, &p.DailyByteBudget,
+			&p.BaselineDailyPageBudget, &p.BaselineDailyByteBudget, &p.BaselinePagesPerRun, &p.EnabledAt, &p.BaselineCompletedAt); err != nil {
+			return nil, err
+		}
+		out = append(out, p)
+	}
+	return out, r.Err()
+}
+
+// UpsertCrawlPolicy writes a source's schedule and budgets. Empty intervals
+// are NULL (no schedule); BaselinePagesPerRun <= 0 keeps the default.
+func (s *Store) UpsertCrawlPolicy(ctx context.Context, p CrawlPolicy) error {
+	if p.BaselinePagesPerRun <= 0 {
+		p.BaselinePagesPerRun = defaultBaselinePagesPerRun
+	}
+	if p.DailyPageBudget < 0 || p.DailyByteBudget < 0 || p.BaselineDailyPageBudget < 0 || p.BaselineDailyByteBudget < 0 {
+		return invalid("budgets must not be negative")
+	}
+	_, err := s.Exec(ctx, `INSERT INTO source_crawl_policies(source_id,discovery_interval,detail_refresh_interval,min_request_interval,daily_page_budget,daily_byte_budget,
+		baseline_daily_page_budget,baseline_daily_byte_budget,baseline_pages_per_run)
+		VALUES($1,NULLIF($2,'')::interval,NULLIF($3,'')::interval,$4::interval,$5,$6,$7,$8,$9)
+		ON CONFLICT(source_id) DO UPDATE SET discovery_interval=EXCLUDED.discovery_interval,detail_refresh_interval=EXCLUDED.detail_refresh_interval,
+		min_request_interval=EXCLUDED.min_request_interval,daily_page_budget=EXCLUDED.daily_page_budget,daily_byte_budget=EXCLUDED.daily_byte_budget,
+		baseline_daily_page_budget=EXCLUDED.baseline_daily_page_budget,baseline_daily_byte_budget=EXCLUDED.baseline_daily_byte_budget,
+		baseline_pages_per_run=EXCLUDED.baseline_pages_per_run`,
+		p.SourceID, p.DiscoveryInterval, p.DetailRefreshInterval, p.MinRequestInterval, p.DailyPageBudget, p.DailyByteBudget,
+		p.BaselineDailyPageBudget, p.BaselineDailyByteBudget, p.BaselinePagesPerRun)
+	return err
+}
+
+// RunPolicy is the fetch policy and discovery page cap for one run.
+type RunPolicy struct {
+	Fetch    catalog.FetchPolicy
+	MaxPages int
+	// Exhausted is true when the phase's daily budget is already spent.
+	Exhausted bool
+}
+
+// FetchPolicy builds today's remaining request budget for one phase of a
+// source from source_crawl_policies and source_crawl_usage. Budgets are
+// separate per phase: incremental spends daily_*_budget, baseline spends
+// baseline_daily_*_budget and yields after baseline_pages_per_run pages, so
+// a baseline can never starve the incremental pass. Verify runs are capped by
+// catalog.VerifyMaxRequests and count against neither.
+func (s *Store) FetchPolicy(ctx context.Context, sourceID int64, phase catalog.Phase) (RunPolicy, error) {
+	var out RunPolicy
 	var minSeconds *float64
-	var pageBudget, byteBudget, pagesUsed, bytesUsed int64
-	err = s.QueryRow(ctx, `SELECT EXTRACT(EPOCH FROM p.min_request_interval)::float8, COALESCE(p.daily_page_budget,0), COALESCE(p.daily_byte_budget,0), COALESCE(u.pages,0), COALESCE(u.bytes,0)
+	var pageBudget, byteBudget, basePages, baseBytes, perRun, pagesUsed, bytesUsed int64
+	err := s.QueryRow(ctx, `SELECT EXTRACT(EPOCH FROM p.min_request_interval)::float8, COALESCE(p.daily_page_budget,0), COALESCE(p.daily_byte_budget,0),
+		COALESCE(p.baseline_daily_page_budget,0), COALESCE(p.baseline_daily_byte_budget,0), COALESCE(p.baseline_pages_per_run,$3),
+		COALESCE(u.pages,0), COALESCE(u.bytes,0)
 FROM sources s
 LEFT JOIN source_crawl_policies p ON p.source_id=s.id
-LEFT JOIN source_crawl_usage u ON u.source_id=s.id AND u.usage_date=current_date
-WHERE s.id=$1`, sourceID).Scan(&minSeconds, &pageBudget, &byteBudget, &pagesUsed, &bytesUsed)
+LEFT JOIN source_crawl_usage u ON u.source_id=s.id AND u.usage_date=current_date AND u.phase=$2
+WHERE s.id=$1`, sourceID, string(phase), defaultBaselinePagesPerRun).Scan(&minSeconds, &pageBudget, &byteBudget, &basePages, &baseBytes, &perRun, &pagesUsed, &bytesUsed)
 	if err != nil {
-		return policy, false, err
+		return out, err
 	}
-	policy.MinInterval = defaultMinRequestInterval
+	out.Fetch.MinInterval = defaultMinRequestInterval
 	if minSeconds != nil {
-		policy.MinInterval = time.Duration(*minSeconds * float64(time.Second))
+		out.Fetch.MinInterval = time.Duration(*minSeconds * float64(time.Second))
+	}
+	switch phase {
+	case catalog.PhaseVerify:
+		out.Fetch.MaxPages = catalog.VerifyMaxRequests
+		return out, nil
+	case catalog.PhaseBaseline:
+		pageBudget, byteBudget = basePages, baseBytes
+		out.MaxPages = int(perRun)
 	}
 	if pageBudget > 0 {
-		policy.MaxPages = pageBudget - pagesUsed
-		if policy.MaxPages <= 0 {
-			return policy, true, nil
+		out.Fetch.MaxPages = pageBudget - pagesUsed
+		if out.Fetch.MaxPages <= 0 {
+			out.Exhausted = true
+			return out, nil
 		}
 	}
 	if byteBudget > 0 {
-		policy.MaxBytes = byteBudget - bytesUsed
-		if policy.MaxBytes <= 0 {
-			return policy, true, nil
+		out.Fetch.MaxBytes = byteBudget - bytesUsed
+		if out.Fetch.MaxBytes <= 0 {
+			out.Exhausted = true
+			return out, nil
 		}
 	}
-	return policy, false, nil
+	return out, nil
 }
 
-// RecordCrawlUsage adds a run's request usage to today's counters.
-func (s *Store) RecordCrawlUsage(ctx context.Context, sourceID, pages, bytes int64) error {
+// RecordCrawlUsage adds a run's request usage to today's counters for phase.
+func (s *Store) RecordCrawlUsage(ctx context.Context, sourceID int64, phase catalog.Phase, pages, bytes int64) error {
 	if pages == 0 && bytes == 0 {
 		return nil
 	}
-	_, err := s.Exec(ctx, `INSERT INTO source_crawl_usage(source_id,usage_date,pages,bytes) VALUES($1,current_date,$2,$3)
-ON CONFLICT(source_id,usage_date) DO UPDATE SET pages=source_crawl_usage.pages+EXCLUDED.pages,bytes=source_crawl_usage.bytes+EXCLUDED.bytes,updated_at=now()`, sourceID, pages, bytes)
+	_, err := s.Exec(ctx, `INSERT INTO source_crawl_usage(source_id,usage_date,phase,pages,bytes) VALUES($1,current_date,$2,$3,$4)
+ON CONFLICT(source_id,usage_date,phase) DO UPDATE SET pages=source_crawl_usage.pages+EXCLUDED.pages,bytes=source_crawl_usage.bytes+EXCLUDED.bytes,updated_at=now()`, sourceID, string(phase), pages, bytes)
 	return err
 }
 

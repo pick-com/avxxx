@@ -24,11 +24,15 @@ type Store struct {
 }
 
 type CrawlCheckpoint struct {
-	SourceID                                                     int64
-	TaskType, PartitionKey, Cursor, ParserVersion, LastErrorCode string
-	Watermark                                                    *time.Time
-	CompletedPages                                               int64
-	LastSuccessAt                                                *time.Time
+	SourceID       int64      `json:"source_id"`
+	TaskType       string     `json:"task_type"`
+	PartitionKey   string     `json:"partition_key"`
+	Cursor         string     `json:"cursor"`
+	ParserVersion  string     `json:"parser_version"`
+	LastErrorCode  string     `json:"last_error_code"`
+	Watermark      *time.Time `json:"watermark"`
+	CompletedPages int64      `json:"completed_pages"`
+	LastSuccessAt  *time.Time `json:"last_success_at"`
 }
 
 func (s *Store) WorkerID() string { return s.workerID }
@@ -53,31 +57,6 @@ func (s *Store) AdvanceCheckpoint(ctx context.Context, c CrawlCheckpoint, cursor
 
 func (s *Store) FailCheckpoint(ctx context.Context, c CrawlCheckpoint, code string) error {
 	_, err := s.Exec(ctx, `INSERT INTO crawl_checkpoints(source_id,task_type,partition_key,last_error_code,parser_version) VALUES($1,$2,$3,$4,$5) ON CONFLICT(source_id,task_type,partition_key) DO UPDATE SET last_error_code=EXCLUDED.last_error_code,parser_version=EXCLUDED.parser_version`, c.SourceID, c.TaskType, c.PartitionKey, code, c.ParserVersion)
-	return err
-}
-
-func (s *Store) CrawlPolicies(ctx context.Context) ([]map[string]any, error) {
-	r, err := s.Query(ctx, `SELECT source_id,COALESCE(discovery_interval::text,''),COALESCE(detail_refresh_interval::text,''),min_request_interval::text,daily_page_budget,daily_byte_budget,enabled_at,baseline_completed_at FROM source_crawl_policies ORDER BY source_id`)
-	if err != nil {
-		return nil, err
-	}
-	defer r.Close()
-	out := []map[string]any{}
-	for r.Next() {
-		var id, pages int64
-		var discovery, detail, min string
-		var bytes int64
-		var enabled, baseline *time.Time
-		if err = r.Scan(&id, &discovery, &detail, &min, &pages, &bytes, &enabled, &baseline); err != nil {
-			return nil, err
-		}
-		out = append(out, map[string]any{"source_id": id, "discovery_interval": discovery, "detail_refresh_interval": detail, "min_request_interval": min, "daily_page_budget": pages, "daily_byte_budget": bytes, "enabled_at": enabled, "baseline_completed_at": baseline})
-	}
-	return out, r.Err()
-}
-
-func (s *Store) UpsertCrawlPolicy(ctx context.Context, sourceID int64, discovery, detail, min string, pages, bytes int64) error {
-	_, err := s.Exec(ctx, `INSERT INTO source_crawl_policies(source_id,discovery_interval,detail_refresh_interval,min_request_interval,daily_page_budget,daily_byte_budget) VALUES($1,$2::interval,$3::interval,$4::interval,$5,$6) ON CONFLICT(source_id) DO UPDATE SET discovery_interval=EXCLUDED.discovery_interval,detail_refresh_interval=EXCLUDED.detail_refresh_interval,min_request_interval=EXCLUDED.min_request_interval,daily_page_budget=EXCLUDED.daily_page_budget,daily_byte_budget=EXCLUDED.daily_byte_budget`, sourceID, discovery, detail, min, pages, bytes)
 	return err
 }
 
@@ -136,74 +115,9 @@ func Open(ctx context.Context) (*Store, error) {
 	}
 	return s, nil
 }
-func (s *Store) Sources(ctx context.Context) ([]model.Source, error) {
-	r, e := s.Query(ctx, "SELECT id,name,url,enabled,version,adapter,source_kind,license_status,egress_policy FROM sources ORDER BY id")
-	if e != nil {
-		return nil, e
-	}
-	defer r.Close()
-	out := []model.Source{}
-	for r.Next() {
-		var x model.Source
-		if e = r.Scan(&x.ID, &x.Name, &x.URL, &x.Enabled, &x.Version, &x.Adapter, &x.SourceKind, &x.LicenseStatus, &x.EgressPolicy); e != nil {
-			return nil, e
-		}
-		out = append(out, x)
-	}
-	return out, r.Err()
-}
 func (s *Store) AddSource(ctx context.Context, x model.Source) error {
 	_, e := s.Exec(ctx, "INSERT INTO sources(name,url) VALUES($1,$2) ON CONFLICT(url) DO UPDATE SET name=excluded.name", x.Name, x.URL)
 	return e
-}
-func (s *Store) Enqueue(ctx context.Context, id int64) error {
-	var enabled bool
-	if e := s.QueryRow(ctx, "SELECT enabled FROM sources WHERE id=$1", id).Scan(&enabled); e != nil {
-		return e
-	}
-	if !enabled {
-		return fmt.Errorf("source disabled")
-	}
-	_, e := s.Exec(ctx, "INSERT INTO jobs(source_id) VALUES($1)", id)
-	return e
-}
-
-// EnqueueDue creates at most one job per due source and advances its schedule.
-// The scheduler never performs network I/O; workers claim the resulting jobs.
-func (s *Store) EnqueueDue(ctx context.Context) (int, error) {
-	tx, err := s.Begin(ctx)
-	if err != nil {
-		return 0, err
-	}
-	defer tx.Rollback(ctx)
-	r, err := tx.Query(ctx, `SELECT s.id FROM sources s LEFT JOIN source_crawl_policies p ON p.source_id=s.id WHERE s.enabled AND (s.blocked_until IS NULL OR s.blocked_until<=now()) AND (s.next_run_at IS NULL OR s.next_run_at<=now()) ORDER BY COALESCE(s.next_run_at,now()),s.id FOR UPDATE OF s SKIP LOCKED`)
-	if err != nil {
-		return 0, err
-	}
-	defer r.Close()
-	ids := []int64{}
-	for r.Next() {
-		var id int64
-		if err = r.Scan(&id); err != nil {
-			return 0, err
-		}
-		ids = append(ids, id)
-	}
-	if err = r.Err(); err != nil {
-		return 0, err
-	}
-	for _, id := range ids {
-		if _, err = tx.Exec(ctx, `INSERT INTO jobs(source_id) SELECT $1 WHERE NOT EXISTS (SELECT 1 FROM jobs WHERE source_id=$1 AND status IN ('pending','running'))`, id); err != nil {
-			return 0, err
-		}
-		if _, err = tx.Exec(ctx, `UPDATE sources SET next_run_at=now()+COALESCE((SELECT discovery_interval FROM source_crawl_policies WHERE source_id=$1),interval '1 hour') WHERE id=$1`, id); err != nil {
-			return 0, err
-		}
-	}
-	if err = tx.Commit(ctx); err != nil {
-		return 0, err
-	}
-	return len(ids), nil
 }
 func (s *Store) Items(ctx context.Context, q string) ([]model.Item, error) {
 	r, e := s.Query(ctx, "SELECT id,source_id,title,url,summary,updated_at FROM items WHERE title ILIKE '%'||$1||'%' ORDER BY updated_at DESC LIMIT 100", q)
@@ -782,6 +696,7 @@ func (s *Store) SaveCatalogRecord(ctx context.Context, sourceID int64, parserVer
 			}
 		}
 	}
+	fieldNames := make([]string, 0, len(rec.Fields))
 	for field, value := range rec.Fields {
 		raw, marshalErr := json.Marshal(value)
 		if marshalErr != nil {
@@ -793,54 +708,23 @@ func (s *Store) SaveCatalogRecord(ctx context.Context, sourceID int64, parserVer
 		if _, err = tx.Exec(ctx, `INSERT INTO source_field_values(source_record_id,field_name,raw_value,normalized_value,confidence,captured_at,is_current) VALUES($1,$2,$3::jsonb,$3::jsonb,'verified',now(),true)`, sourceRecordID, field, string(raw)); err != nil {
 			return 0, err
 		}
-		if fieldOverridden(string(rec.EntityType), field, overridden) {
-			continue // the admin's value stands; no new conflict for it
-		}
 		if field == catalog.FieldPageTitle {
-			continue // evidence for R-PERFORMER-NAME; differs per source by design
+			// Evidence for R-PERFORMER-NAME only: it differs per source by
+			// design, so it never competes for a canonical value or opens a
+			// conflict.
+			continue
 		}
-		var distinct int
-		var candidates []byte
-		if err = tx.QueryRow(ctx, `SELECT count(DISTINCT sf.normalized_value), COALESCE(jsonb_agg(jsonb_build_object('source_record_id',sf.source_record_id,'value',sf.normalized_value)),'[]'::jsonb)
-			FROM source_field_values sf JOIN source_records sr ON sr.id=sf.source_record_id
-			WHERE sf.is_current AND sf.field_name=$1 AND sr.entity_type=$2 AND (($2='performer' AND sr.performer_id=$3) OR ($2='release' AND sr.release_id=$3))`, field, string(rec.EntityType), *entityID).Scan(&distinct, &candidates); err != nil {
-			return 0, err
-		}
-		if distinct > 1 {
-			if _, err = tx.Exec(ctx, `INSERT INTO field_conflicts(entity_type,entity_id,field_name,current_value,candidates,severity,status)
-				VALUES($1,$2,$3,NULL,$4,'medium','pending')
-				ON CONFLICT DO NOTHING`, string(rec.EntityType), *entityID, field, candidates); err != nil {
-				return 0, err
-			}
-		}
+		fieldNames = append(fieldNames, field)
+	}
+	// Canonical columns follow source_field_policies / source_kind tiers;
+	// conflicts open only where a source disagrees with the winning value.
+	if err = applyFieldPolicy(ctx, tx, string(rec.EntityType), *entityID, fieldNames, overridden); err != nil {
+		return 0, err
 	}
 	if err = tx.Commit(ctx); err != nil {
 		return 0, err
 	}
 	return sourceRecordID, nil
-}
-func (s *Store) Jobs(ctx context.Context) ([]model.Job, error) {
-	r, e := s.Query(ctx, "SELECT id,COALESCE(source_id,0),status,error,created_at,attempt,lease_until,execution_version FROM jobs ORDER BY id DESC LIMIT 100")
-	if e != nil {
-		return nil, e
-	}
-	defer r.Close()
-	out := []model.Job{}
-	for r.Next() {
-		var x model.Job
-		if e = r.Scan(&x.ID, &x.SourceID, &x.Status, &x.Error, &x.CreatedAt, &x.Attempt, &x.LeaseUntil, &x.ExecutionVersion); e != nil {
-			return nil, e
-		}
-		out = append(out, x)
-	}
-	return out, r.Err()
-}
-func (s *Store) Claim(ctx context.Context) (int64, model.Source, error) {
-	var id int64
-	var x model.Source
-	worker := s.workerID
-	e := s.QueryRow(ctx, `WITH picked AS (SELECT j.id FROM jobs j JOIN sources s ON s.id=j.source_id WHERE j.status='pending' AND j.available_at<=now() AND s.enabled AND (s.blocked_until IS NULL OR s.blocked_until<=now()) ORDER BY j.id FOR UPDATE OF j SKIP LOCKED LIMIT 1), claimed AS (UPDATE jobs j SET status='running',started_at=COALESCE(started_at,now()),attempt=attempt+1,worker_id=$1,lease_until=now()+interval '90 seconds',heartbeat_at=now(),execution_version=execution_version+1 WHERE j.id IN (SELECT id FROM picked) RETURNING j.id,j.source_id) SELECT c.id,s.id,s.name,s.url,s.enabled,s.version,s.adapter,s.source_kind,s.license_status,s.egress_policy FROM claimed c JOIN sources s ON s.id=c.source_id`, worker).Scan(&id, &x.ID, &x.Name, &x.URL, &x.Enabled, &x.Version, &x.Adapter, &x.SourceKind, &x.LicenseStatus, &x.EgressPolicy)
-	return id, x, e
 }
 func (s *Store) Heartbeat(ctx context.Context, id int64, worker string, version int64) error {
 	r, e := s.Exec(ctx, "UPDATE jobs SET lease_until=now()+interval '90 seconds',heartbeat_at=now() WHERE id=$1 AND status='running' AND worker_id=$2 AND (execution_version=$3 OR $3=0) AND lease_until>now()", id, worker, version)
@@ -854,10 +738,12 @@ func (s *Store) ReapExpired(ctx context.Context) error {
 	return e
 }
 func (s *Store) Finish(ctx context.Context, id int64, items []model.Item, cause error) error {
-	if b, blocked := catalog.IsBlocked(cause); blocked {
-		// A blocked source is not retried by the job queue: BlockSource parks
-		// the source and the scheduler creates a fresh job after Retry-After.
-		_, e := s.Exec(ctx, "UPDATE jobs SET status='failed',error=$2,error_code='source_blocked',finished_at=now(),worker_id=NULL,lease_until=NULL WHERE id=$1 AND status='running'", id, b.Error())
+	if code, msg := finishCode(cause); code != "" {
+		// Blocked sources, robots.txt refusals and gate/config refusals are
+		// not retried by the job queue: BlockSource parks a blocked source
+		// and the scheduler creates a fresh job later; the others need a
+		// change on the source (robots.txt, license, configuration) first.
+		_, e := s.Exec(ctx, "UPDATE jobs SET status='failed',error=$2,error_code=$3,finished_at=now(),worker_id=NULL,lease_until=NULL WHERE id=$1 AND status='running'", id, msg, code)
 		return e
 	}
 	if cause != nil {

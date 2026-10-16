@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
+	"strings"
 	"time"
 )
 
@@ -13,6 +15,8 @@ const (
 )
 
 // CheckpointKey identifies one checkpoint row (source, task type, partition).
+// Discovery checkpoints are partitioned by Phase, so a baseline pass and the
+// daily incremental pass never share a cursor or watermark.
 type CheckpointKey struct {
 	SourceID      int64
 	TaskType      string
@@ -49,64 +53,137 @@ const (
 	StopComplete  StopReason = "complete"   // reached the last discovery page
 	StopBudget    StopReason = "budget"     // page/byte budget spent
 	StopPageLimit StopReason = "page_limit" // Crawl.MaxPages reached
+	StopWatermark StopReason = "watermark"  // incremental pass reached already-seen records
 )
 
-// Crawl runs paginated discovery for one source: resume from the stored
-// cursor, fetch each discovery page and its detail pages through Fetcher,
-// persist every record, then advance the checkpoint to the next page.
+// DefaultIncrementalPages is the incremental overlap window: how many head
+// pages an incremental run reads when it does not meet its watermark first
+// (FINAL_DATA_DESIGN 7 "最近 3 页或 7 天重叠窗口", with headroom).
+const DefaultIncrementalPages = 5
+
+// incrementalMarkKeys is how many head records an incremental watermark keeps,
+// so one deleted or re-sorted record does not lose the mark.
+const incrementalMarkKeys = 5
+
+// Crawl runs paginated discovery for one source and one Phase:
+//
+//   - baseline resumes from its own cursor, walks the archive page by page and
+//     advances the baseline checkpoint after each fully persisted page. When
+//     a full pass ends, its cursor resets and its watermark is set; it never
+//     touches the incremental checkpoint.
+//   - incremental always starts at the newest-first head and stops at the
+//     stored watermark: the set of head record keys from its last completed
+//     run (cursor), stamped with that run's time (watermark). It advances only
+//     when the run reached the mark, the end of the listing, or its page
+//     window; a failed or budget-stopped run leaves the mark untouched, so the
+//     next run re-reads the head (saves are idempotent).
+//   - verify reads at most MaxPages pages from the head and never reads or
+//     writes a checkpoint.
 type Crawl struct {
 	SourceID    int64
 	StartURL    string
+	Phase       Phase
 	Adapter     Adapter
 	Fetcher     *Fetcher
 	Checkpoints CheckpointStore
 	Sink        RecordSink
-	// MaxPages caps discovery pages per run (0 = unlimited).
+	// MaxPages caps discovery pages per run (0 = unlimited; incremental runs
+	// default to DefaultIncrementalPages).
 	MaxPages int
 	Now      func() time.Time
 }
 
 type CrawlResult struct {
+	Phase   Phase
 	Pages   int
 	Records int
 	// Skipped counts detail pages without a usable entity (ErrSkipRecord).
 	Skipped int
-	Cursor  string
-	Stop    StopReason
+	// RobotsSkipped counts detail pages robots.txt disallowed.
+	RobotsSkipped int
+	Cursor        string
+	Stop          StopReason
+	// WatermarkGap is set when an incremental run filled its page window
+	// without meeting the previous mark: records between the window and the
+	// mark are left for the next baseline pass.
+	WatermarkGap bool
 }
 
+func recordMark(r Record) string { return string(r.EntityType) + ":" + r.SourceKey }
+
 func (c *Crawl) Run(ctx context.Context) (CrawlResult, error) {
-	if c.Adapter == nil || c.Fetcher == nil || c.Checkpoints == nil || c.Sink == nil {
+	if c.Adapter == nil || c.Fetcher == nil || c.Sink == nil || (c.Checkpoints == nil && c.Phase != PhaseVerify) {
 		return CrawlResult{}, errors.New("catalog: crawl is missing adapter, fetcher, checkpoints or sink")
+	}
+	phase := c.Phase
+	if phase == "" {
+		phase = PhaseBaseline
 	}
 	now := c.Now
 	if now == nil {
 		now = time.Now
 	}
+	maxPages := c.MaxPages
+	if phase == PhaseIncremental && maxPages <= 0 {
+		maxPages = DefaultIncrementalPages
+	}
+	if phase == PhaseVerify && (maxPages <= 0 || maxPages > VerifyMaxPages) {
+		maxPages = VerifyMaxPages
+	}
 	parser := c.Adapter.Name()
-	key := CheckpointKey{SourceID: c.SourceID, TaskType: TaskDiscovery, ParserVersion: parser}
-	cp, _, err := c.Checkpoints.LoadCheckpoint(ctx, key)
-	if err != nil {
-		return CrawlResult{}, fmt.Errorf("load checkpoint: %w", err)
+	key := CheckpointKey{SourceID: c.SourceID, TaskType: TaskDiscovery, Partition: string(phase), ParserVersion: parser}
+	var cp Checkpoint
+	if phase != PhaseVerify {
+		var err error
+		if cp, _, err = c.Checkpoints.LoadCheckpoint(ctx, key); err != nil {
+			return CrawlResult{Phase: phase}, fmt.Errorf("load checkpoint: %w", err)
+		}
 	}
 	page := c.StartURL
-	if cp.Cursor != "" && SameSite(c.StartURL, cp.Cursor) {
+	if phase == PhaseBaseline && cp.Cursor != "" && SameSite(c.StartURL, cp.Cursor) {
 		page = cp.Cursor
 	}
-	res := CrawlResult{Cursor: page}
+	oldMarks := map[string]bool{}
+	if phase == PhaseIncremental {
+		for _, m := range strings.Split(cp.Cursor, "\n") {
+			if m = strings.TrimSpace(m); m != "" {
+				oldMarks[m] = true
+			}
+		}
+	}
+	var newMarks []string
+	res := CrawlResult{Phase: phase, Cursor: page}
 	seen := map[string]bool{}
 	fail := func(k CheckpointKey, code string, cause error) (CrawlResult, error) {
 		if b, ok := IsBlocked(cause); ok && b != nil {
 			code = "source_blocked"
+		}
+		if _, ok := IsRobots(cause); ok {
+			code = CodeRobotsDisallow
+		}
+		if phase == PhaseVerify {
+			return res, cause
 		}
 		if ferr := c.Checkpoints.FailCheckpoint(ctx, k, code); ferr != nil {
 			return res, errors.Join(cause, fmt.Errorf("record checkpoint failure: %w", ferr))
 		}
 		return res, cause
 	}
+	failDetail := func(k CheckpointKey, code string) {
+		if phase != PhaseVerify {
+			_ = c.Checkpoints.FailCheckpoint(ctx, k, code)
+		}
+	}
 	for {
-		if c.MaxPages > 0 && res.Pages >= c.MaxPages {
+		if maxPages > 0 && res.Pages >= maxPages {
 			res.Stop = StopPageLimit
+			if phase == PhaseIncremental {
+				// The window is spent without meeting the old mark (or there
+				// was none): move the mark to this run's head so tomorrow's
+				// run stops here; anything older is the baseline's job.
+				res.WatermarkGap = len(oldMarks) > 0
+				return res, c.advanceIncremental(ctx, key, newMarks, cp.Cursor, now)
+			}
 			return res, nil
 		}
 		seen[page] = true
@@ -122,7 +199,17 @@ func (c *Crawl) Run(ctx context.Context) (CrawlResult, error) {
 		if err != nil {
 			return fail(key, "discover_failed", err)
 		}
+		reachedMark := false
 		for _, discovered := range records {
+			if phase == PhaseIncremental {
+				if oldMarks[recordMark(discovered)] {
+					reachedMark = true
+					break // newest-first: everything from here on was seen
+				}
+				if res.Pages == 0 && len(newMarks) < incrementalMarkKeys {
+					newMarks = append(newMarks, recordMark(discovered))
+				}
+			}
 			detailKey := CheckpointKey{SourceID: c.SourceID, TaskType: TaskDetail, Partition: discovered.SourceKey, ParserVersion: parser}
 			doc, err := c.Fetcher.Fetch(ctx, discovered.URL)
 			if errors.Is(err, ErrBudgetExhausted) {
@@ -131,9 +218,13 @@ func (c *Crawl) Run(ctx context.Context) (CrawlResult, error) {
 				res.Stop = StopBudget
 				return res, nil
 			}
+			if _, ok := IsRobots(err); ok {
+				res.RobotsSkipped++ // robots.txt disallows this detail page: never fetch it
+				continue
+			}
 			if err != nil {
 				if _, blocked := IsBlocked(err); !blocked {
-					_ = c.Checkpoints.FailCheckpoint(ctx, detailKey, "detail_fetch_failed")
+					failDetail(detailKey, "detail_fetch_failed")
 				}
 				return fail(key, "detail_fetch_failed", err)
 			}
@@ -141,12 +232,12 @@ func (c *Crawl) Run(ctx context.Context) (CrawlResult, error) {
 			if errors.Is(err, ErrSkipRecord) {
 				// Nothing to save (e.g. only a site-title heading): note it on
 				// the detail checkpoint and keep crawling.
-				_ = c.Checkpoints.FailCheckpoint(ctx, detailKey, "parse_skipped")
+				failDetail(detailKey, "parse_skipped")
 				res.Skipped++
 				continue
 			}
 			if err != nil {
-				_ = c.Checkpoints.FailCheckpoint(ctx, detailKey, "parse_failed")
+				failDetail(detailKey, "parse_failed")
 				return fail(key, "parse_failed", err)
 			}
 			if record.SourceKey == "" {
@@ -156,7 +247,7 @@ func (c *Crawl) Run(ctx context.Context) (CrawlResult, error) {
 				record.URL = discovered.URL
 			}
 			if _, err := c.Sink.SaveCatalogRecord(ctx, c.SourceID, parser, record); err != nil {
-				_ = c.Checkpoints.FailCheckpoint(ctx, detailKey, "record_save_failed")
+				failDetail(detailKey, "record_save_failed")
 				return fail(key, "record_save_failed", err)
 			}
 			res.Records++
@@ -169,21 +260,60 @@ func (c *Crawl) Run(ctx context.Context) (CrawlResult, error) {
 		if next != "" && (!SameSite(c.StartURL, next) || seen[next]) {
 			next = ""
 		}
-		watermark := cp.Watermark
-		if next == "" {
-			// Full pass finished: the next run starts again from the head.
-			t := now().UTC()
-			watermark = &t
-		}
-		if err := c.Checkpoints.AdvanceCheckpoint(ctx, key, next, watermark, 1); err != nil {
-			return res, fmt.Errorf("advance checkpoint: %w", err)
-		}
-		cp.Watermark = watermark
-		res.Cursor = next
-		if next == "" {
-			res.Stop = StopComplete
-			return res, nil
+		switch phase {
+		case PhaseVerify:
+			res.Cursor = next
+			if next == "" {
+				res.Stop = StopComplete
+				return res, nil
+			}
+		case PhaseIncremental:
+			if reachedMark || next == "" {
+				res.Stop = StopComplete
+				if reachedMark {
+					res.Stop = StopWatermark
+				}
+				res.Cursor = ""
+				return res, c.advanceIncremental(ctx, key, newMarks, cp.Cursor, now)
+			}
+			res.Cursor = next
+		default: // baseline
+			watermark := cp.Watermark
+			if next == "" {
+				// Full pass finished: the next baseline starts again from the head.
+				t := now().UTC()
+				watermark = &t
+			}
+			if err := c.Checkpoints.AdvanceCheckpoint(ctx, key, next, watermark, 1); err != nil {
+				return res, fmt.Errorf("advance checkpoint: %w", err)
+			}
+			cp.Watermark = watermark
+			res.Cursor = next
+			if next == "" {
+				res.Stop = StopComplete
+				return res, nil
+			}
 		}
 		page = next
 	}
+}
+
+// advanceIncremental stores this run's head marks, topped up with the previous
+// marks (newest first, at most incrementalMarkKeys), and the run time as the
+// new incremental watermark.
+func (c *Crawl) advanceIncremental(ctx context.Context, key CheckpointKey, marks []string, previous string, now func() time.Time) error {
+	t := now().UTC()
+	keep := append([]string{}, marks...)
+	for _, m := range strings.Split(previous, "\n") {
+		if len(keep) >= incrementalMarkKeys {
+			break
+		}
+		if m = strings.TrimSpace(m); m != "" && !slices.Contains(keep, m) {
+			keep = append(keep, m)
+		}
+	}
+	if err := c.Checkpoints.AdvanceCheckpoint(ctx, key, strings.Join(keep, "\n"), &t, 1); err != nil {
+		return fmt.Errorf("advance checkpoint: %w", err)
+	}
+	return nil
 }

@@ -41,6 +41,12 @@ type Adapter interface {
 	Parse(ctx context.Context, doc Document, entity EntityType) (Record, error)
 }
 
+// Adapters returns every built-in catalog adapter (the scraper registry and
+// the fixture acceptance harness share this list).
+func Adapters() []Adapter {
+	return []Adapter{NewJAVDatabaseAdapter(), NewXCITYAdapter(), NewJavGuruAdapter()}
+}
+
 type Registry struct{ adapters map[string]Adapter }
 
 func NewRegistry() *Registry { return &Registry{adapters: make(map[string]Adapter)} }

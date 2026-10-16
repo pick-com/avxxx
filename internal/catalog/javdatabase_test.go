@@ -26,3 +26,36 @@ func TestJAVDatabasePerformer(t *testing.T) {
 		t.Fatalf("fields: %#v", r.Fields)
 	}
 }
+
+func TestJAVDatabaseLabelShapes(t *testing.T) {
+	for name, body := range map[string]string{
+		"inline label":   `<p>Studio: <a>MADONNA</a></p><p>Idol(s)/Actress(es): <a>A One</a><a>B Two</a></p>`,
+		"label element":  `<p><b>Studio:</b> <a>MADONNA</a></p><p><span>Idol(s)/Actress(es):</span> <a>A One</a>, <a>B Two</a></p>`,
+		"wrapped values": `<div><b>Studio:</b><span><a>MADONNA</a></span></div><div><b>Idol(s)/Actress(es):</b><span><a>A One</a><a>B Two</a></span></div>`,
+	} {
+		doc := Document{FinalURL: "https://www.javdatabase.com/movies/juq-743/", Body: []byte(`<html><body><h1>JUQ-743</h1>` + body + `</body></html>`)}
+		r, err := JAVDatabaseAdapter{}.Parse(context.Background(), doc, Release)
+		if err != nil {
+			t.Fatal(err)
+		}
+		ps, _ := r.Fields["performers"].([]string)
+		if r.Fields["maker"] != "MADONNA" || len(ps) != 2 || ps[1] != "B Two" {
+			t.Errorf("%s: maker %v performers %v", name, r.Fields["maker"], ps)
+		}
+	}
+}
+
+func TestXCITYDetailKeys(t *testing.T) {
+	for raw, want := range map[string]string{
+		"https://xxx.xcity.jp/idol/detail/1001/":  "performer:1001",
+		"https://xxx.xcity.jp/title/detail/7788/": "release:7788",
+		"https://xxx.xcity.jp/idol/sena/":         "performer:sena",
+		"https://xxx.xcity.jp/idol/?page=2":       ":",
+		"https://xxx.xcity.jp/idol/detail/":       ":",
+	} {
+		k, key := xcityClassify(raw)
+		if string(k)+":"+key != want {
+			t.Errorf("%s -> %s:%s want %s", raw, k, key, want)
+		}
+	}
+}

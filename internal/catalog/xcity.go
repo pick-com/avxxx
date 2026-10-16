@@ -113,22 +113,27 @@ func xcityClassify(raw string) (EntityType, string) {
 		default:
 			continue
 		}
-		// Detail pages are /idol/detail/<id>/ or /idol/detail/?id=<id>: the
-		// "detail" segment is not the key (it once collapsed every idol of
-		// a list page into one record).
-		rest := parts[i+1:]
-		if len(rest) > 0 && rest[0] == "detail" {
-			rest = rest[1:]
-			if len(rest) == 0 || rest[0] == "" {
-				if id := u.Query().Get("id"); id != "" {
-					return kind, id
-				}
-				return "", ""
+		// Detail pages are /idol/detail/<id>/, /title/detail/<id>/ or
+		// /idol/detail/?id=<id>: the id, never the literal "detail", is the
+		// source key (it once collapsed every idol of a list page into one
+		// record).
+		key := ""
+		if i+1 < len(parts) {
+			key = parts[i+1]
+		}
+		if key == "detail" {
+			key = ""
+			if i+2 < len(parts) {
+				key = parts[i+2]
+			}
+			if key == "" {
+				key = u.Query().Get("id")
 			}
 		}
-		if len(rest) > 0 && rest[0] != "" {
-			return kind, rest[0]
+		if key == "" {
+			continue
 		}
+		return kind, key
 	}
 	return "", ""
 }
