@@ -45,6 +45,9 @@ func dryRunCatalog(ctx context.Context, w io.Writer, registry *catalog.Registry,
 	if rawURL == "" {
 		rawURL = dryRunStartURLs[adapter.Name()]
 	}
+	if s, ok := adapter.(interface{ StartURL() string }); ok && rawURL == "" {
+		rawURL = s.StartURL() // maker:<slug>: the profile's listing_url
+	}
 	if rawURL == "" {
 		return fmt.Errorf("adapter %q has no default start URL; pass -url", name)
 	}
