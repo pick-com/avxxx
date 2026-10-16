@@ -1,10 +1,10 @@
 # Prometheus for the optional `monitoring` compose profile
-# (docker compose --profile monitoring up -d prometheus).
+# (docker compose --profile monitoring up -d prometheus alertmanager node-exporter).
 #
 # Every target is a service-internal metrics listener on the compose network
 # (METRICS_ADDR=0.0.0.0:909x inside the container, no published port); nothing
 # here is reachable from outside the host. Job names are what alerts.yml
-# matches on.
+# matches on; the `service` label is what Alertmanager groups by.
 global:
   scrape_interval: 15s
   evaluation_interval: 30s
@@ -14,26 +14,45 @@ global:
 rule_files:
   - /etc/prometheus/alerts.yml
 
-# Paging needs an Alertmanager (not part of this profile yet); until then the
-# firing alerts are listed at /alerts in the Prometheus UI.
+# Routing, receivers and inhibition: deploy/monitoring/alertmanager/render-config.sh.
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets: ["alertmanager:9093"]
+
 scrape_configs:
   - job_name: avxxx-api
     static_configs:
       - targets: ["api:9090"]
+        labels: {service: api}
   - job_name: avxxx-scheduler
     # Database-derived gauges are cached for 30 s (5 min for play pairing).
     scrape_interval: 30s
     static_configs:
       - targets: ["scheduler:9091"]
+        labels: {service: scheduler}
   - job_name: avxxx-scraper
     static_configs:
       - targets: ["scraper:9092"]
+        labels: {service: scraper}
   - job_name: avxxx-audit
     static_configs:
       - targets: ["audit:9093"]
+        labels: {service: audit}
   - job_name: avxxx-notifier
     static_configs:
       - targets: ["notifier:9094"]
+        labels: {service: notifier}
+  - job_name: node
+    # Host metrics plus the backup textfile (scripts/backup-db.sh).
+    static_configs:
+      - targets: ["node-exporter:9100"]
+        labels: {service: host}
+  - job_name: alertmanager
+    static_configs:
+      - targets: ["alertmanager:9093"]
+        labels: {service: monitoring}
   - job_name: prometheus
     static_configs:
       - targets: ["localhost:9090"]
+        labels: {service: monitoring}

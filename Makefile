@@ -34,9 +34,9 @@ smoke:
 	./scripts/smoke.sh
 backup:
 	./scripts/backup-db.sh
-# promtool check + unit tests for deploy/monitoring (docker, or a local promtool).
+# promtool check + unit tests, amtool check-config + routing tests (docker, or local promtool/amtool).
 check-alerts:
 	./scripts/check-alerts.sh
-# Prometheus + alert rules on 127.0.0.1:9095 (compose profile "monitoring").
+# Prometheus 127.0.0.1:9095, Alertmanager 127.0.0.1:9096, node_exporter (compose profile "monitoring").
 monitoring:
-	docker compose --profile monitoring up -d prometheus
+	docker compose --profile monitoring up -d prometheus alertmanager node-exporter

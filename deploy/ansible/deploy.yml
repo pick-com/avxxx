@@ -35,6 +35,16 @@
           DMM_API_ID={{ dmm_api_id | default('') }}
           DMM_AFFILIATE_ID={{ dmm_affiliate_id | default('') }}
           LOG_HASH_KEY={{ log_hash_key | default('') }}
+          # Alertmanager receivers (monitoring profile); empty = not configured.
+          ALERT_WEBHOOK_URL={{ alert_webhook_url | default('') }}
+          ALERT_WARNING_WEBHOOK_URL={{ alert_warning_webhook_url | default('') }}
+          ALERT_EMAIL_TO={{ alert_email_to | default('') }}
+          ALERT_WARNING_EMAIL_TO={{ alert_warning_email_to | default('') }}
+          ALERT_EMAIL_FROM={{ alert_email_from | default('') }}
+          ALERT_SLACK_WEBHOOK_URL={{ alert_slack_webhook_url | default('') }}
+          ALERT_TELEGRAM_BOT_TOKEN={{ alert_telegram_bot_token | default('') }}
+          ALERT_TELEGRAM_CHAT_ID={{ alert_telegram_chat_id | default('') }}
+          BACKUP_METRICS_DIR={{ backup_metrics_dir }}
     - name: Build and start database
       ansible.builtin.command:
         cmd: docker compose up -d db
@@ -47,11 +57,37 @@
       ansible.builtin.command:
         cmd: docker compose up -d api scheduler scraper audit notifier
         chdir: "{{ app_dir }}"
-    - name: Start monitoring (Prometheus + alert rules, localhost-only UI)
+    - name: Create backup directories (dumps private, metrics readable by node-exporter)
+      ansible.builtin.file:
+        path: "{{ item.path }}"
+        state: directory
+        mode: "{{ item.mode }}"
+      loop:
+        - {path: "{{ backup_dir }}", mode: '0700'}
+        - {path: "{{ backup_metrics_dir }}", mode: '0755'}
+      when: (monitoring_enabled | default(false) | bool) or (backup_cron_enabled | default(false) | bool)
+    - name: Start monitoring (Prometheus, Alertmanager, node_exporter; localhost-only UIs)
+      # --force-recreate picks up changed bind-mounted configs; data volumes are kept.
       ansible.builtin.command:
-        cmd: docker compose --profile monitoring up -d prometheus
+        cmd: docker compose --profile monitoring up -d --force-recreate prometheus alertmanager node-exporter
         chdir: "{{ app_dir }}"
       when: monitoring_enabled | default(false) | bool
+    - name: Schedule the daily database backup
+      # pg_dump runs inside the db container (BACKUP_VIA_COMPOSE=1), so the host
+      # needs no PostgreSQL client. Output is appended to backup.log next to the
+      # dumps. Opt-in; with backup_cron_enabled unset the entry is removed.
+      become_user: root  # crontab -u needs root even for the deploy user's own table
+      ansible.builtin.cron:
+        name: avxxx database backup
+        user: "{{ deploy_user }}"
+        minute: "{{ backup_cron_minute }}"
+        hour: "{{ backup_cron_hour }}"
+        job: >-
+          cd {{ app_dir }} &&
+          BACKUP_VIA_COMPOSE=1 OUTPUT_DIR={{ backup_dir }} BACKUP_KEEP_DAYS={{ backup_keep_days }}
+          BACKUP_METRICS_DIR={{ backup_metrics_dir }}
+          ./scripts/backup-db.sh >> {{ backup_dir }}/backup.log 2>&1
+        state: "{{ 'present' if (backup_cron_enabled | default(false) | bool) else 'absent' }}"
     - name: Check API health
       ansible.builtin.uri:
         url: http://127.0.0.1:8080/api/health

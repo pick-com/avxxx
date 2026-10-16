@@ -58,3 +58,199 @@ tests:
               instance: scheduler:9091
             exp_annotations:
               summary: "play_request→play_end pairing 90% < 95%"
+
+  # Host: disk thresholds, memory, load, exporter down.
+  - interval: 1m
+    input_series:
+      # "/" at 10% free: warning only.
+      - series: 'node_filesystem_avail_bytes{job="node",instance="node-exporter:9100",device="/dev/root",fstype="ext4",mountpoint="/"}'
+        values: '10x30'
+      - series: 'node_filesystem_size_bytes{job="node",instance="node-exporter:9100",device="/dev/root",fstype="ext4",mountpoint="/"}'
+        values: '100x30'
+      # Docker data disk (Postgres volume) at 3% free: warning and page.
+      - series: 'node_filesystem_avail_bytes{job="node",instance="node-exporter:9100",device="/dev/vdb1",fstype="xfs",mountpoint="/var/lib/docker"}'
+        values: '3x30'
+      - series: 'node_filesystem_size_bytes{job="node",instance="node-exporter:9100",device="/dev/vdb1",fstype="xfs",mountpoint="/var/lib/docker"}'
+        values: '100x30'
+      # tmpfs and /boot are ignored even when full.
+      - series: 'node_filesystem_avail_bytes{job="node",instance="node-exporter:9100",device="tmpfs",fstype="tmpfs",mountpoint="/run"}'
+        values: '1x30'
+      - series: 'node_filesystem_size_bytes{job="node",instance="node-exporter:9100",device="tmpfs",fstype="tmpfs",mountpoint="/run"}'
+        values: '100x30'
+      - series: 'node_filesystem_avail_bytes{job="node",instance="node-exporter:9100",device="/dev/vda16",fstype="ext4",mountpoint="/boot"}'
+        values: '1x30'
+      - series: 'node_filesystem_size_bytes{job="node",instance="node-exporter:9100",device="/dev/vda16",fstype="ext4",mountpoint="/boot"}'
+        values: '100x30'
+      - series: 'node_memory_MemAvailable_bytes{job="node",instance="node-exporter:9100"}'
+        values: '5x30'
+      - series: 'node_memory_MemTotal_bytes{job="node",instance="node-exporter:9100"}'
+        values: '100x30'
+      - series: 'node_load15{job="node",instance="node-exporter:9100"}'
+        values: '10x40'
+      - series: 'node_cpu_seconds_total{job="node",instance="node-exporter:9100",cpu="0",mode="idle"}'
+        values: '0+60x40'
+      - series: 'node_cpu_seconds_total{job="node",instance="node-exporter:9100",cpu="1",mode="idle"}'
+        values: '0+60x40'
+      - series: 'node_cpu_seconds_total{job="node",instance="node-exporter:9100",cpu="2",mode="idle"}'
+        values: '0+60x40'
+      - series: 'node_cpu_seconds_total{job="node",instance="node-exporter:9100",cpu="3",mode="idle"}'
+        values: '0+60x40'
+      - series: 'up{job="alertmanager",instance="alertmanager:9093"}'
+        values: '1 1 0 0 0 0 0 0 0 0'
+    alert_rule_test:
+      - eval_time: 4m
+        alertname: HostDiskSpaceCritical
+        exp_alerts: []
+      - eval_time: 11m
+        alertname: HostDiskSpaceLow
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              job: node
+              instance: node-exporter:9100
+              device: /dev/root
+              fstype: ext4
+              mountpoint: /
+            exp_annotations:
+              summary: "/ has 10% free"
+              description: "Less than 15% free on / (/dev/root). PostgreSQL stops accepting writes when its volume fills up."
+          - exp_labels:
+              severity: warning
+              job: node
+              instance: node-exporter:9100
+              device: /dev/vdb1
+              fstype: xfs
+              mountpoint: /var/lib/docker
+            exp_annotations:
+              summary: "/var/lib/docker has 3% free"
+              description: "Less than 15% free on /var/lib/docker (/dev/vdb1). PostgreSQL stops accepting writes when its volume fills up."
+      - eval_time: 6m
+        alertname: HostDiskSpaceCritical
+        exp_alerts:
+          - exp_labels:
+              severity: page
+              job: node
+              instance: node-exporter:9100
+              device: /dev/vdb1
+              fstype: xfs
+              mountpoint: /var/lib/docker
+            exp_annotations:
+              summary: "/var/lib/docker has only 3% free"
+              description: "Less than 5% free on /var/lib/docker (/dev/vdb1); the database is about to stop accepting writes."
+      - eval_time: 16m
+        alertname: HostMemoryLow
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              job: node
+              instance: node-exporter:9100
+            exp_annotations:
+              summary: "Host memory available 5%"
+              description: "Less than 10% of memory available for 15 minutes; the kernel OOM killer may stop PostgreSQL or a service."
+      - eval_time: 31m
+        alertname: HostLoadHigh
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              job: node
+              instance: node-exporter:9100
+            exp_annotations:
+              summary: "15-minute load is 2.5x the CPU count"
+      - eval_time: 8m
+        alertname: AlertmanagerDown
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              job: alertmanager
+              instance: alertmanager:9093
+            exp_annotations:
+              summary: "Alertmanager is down; no alert notifications are being sent"
+              description: "Firing alerts are still listed at /alerts in the Prometheus UI."
+
+  # Backup textfile: a 2 KiB dump written at t=0 (time() starts at 0 in
+  # promtool), then no further successful backup.
+  - interval: 5m
+    input_series:
+      - series: 'avxxx_backup_last_success_timestamp_seconds{job="node",instance="node-exporter:9100"}'
+        values: '0x400'
+      - series: 'avxxx_backup_last_size_bytes{job="node",instance="node-exporter:9100"}'
+        values: '2048x400'
+      - series: 'up{job="node",instance="node-exporter:9100"}'
+        values: '1x400'
+    alert_rule_test:
+      - eval_time: 26h
+        alertname: BackupStale
+        exp_alerts: []
+      - eval_time: 27h
+        alertname: BackupStale
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              job: node
+              instance: node-exporter:9100
+            exp_annotations:
+              summary: "Last successful database backup was 1d 3h 0m 0s ago"
+              description: "The daily backup (scripts/backup-db.sh) has not succeeded for more than 26 hours; check the cron log."
+      - eval_time: 30m
+        alertname: BackupTooSmall
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              job: node
+              instance: node-exporter:9100
+            exp_annotations:
+              summary: "Last database backup is only 2kiB"
+              description: "The newest dump is smaller than 1 MiB; verify it with pg_restore --list before relying on it."
+      - eval_time: 27h
+        alertname: BackupMetricMissing
+        exp_alerts: []
+
+  # node_exporter up but no backup has ever been recorded.
+  - interval: 5m
+    input_series:
+      - series: 'up{job="node",instance="node-exporter:9100"}'
+        values: '1x400'
+    alert_rule_test:
+      - eval_time: 25h
+        alertname: BackupMetricMissing
+        exp_alerts: []
+      - eval_time: 27h
+        alertname: BackupMetricMissing
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+            exp_annotations:
+              summary: "No database backup metric for 26 hours"
+              description: "Backups are not scheduled, or BACKUP_METRICS_DIR differs between the backup job and node-exporter."
+
+  # Alertmanager failing to deliver.
+  - interval: 1m
+    input_series:
+      - series: 'alertmanager_notifications_failed_total{job="alertmanager",instance="alertmanager:9093",integration="email"}'
+        values: '0+1x60'
+    alert_rule_test:
+      - eval_time: 1h
+        alertname: AlertmanagerNotificationsFailing
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              integration: email
+            exp_annotations:
+              summary: "Alertmanager email notifications are failing"
+              description: "Check the receiver settings (ALERT_* / SMTP_*) and docker compose logs alertmanager."
+
+  # node_exporter down.
+  - interval: 1m
+    input_series:
+      - series: 'up{job="node",instance="node-exporter:9100"}'
+        values: '0x10'
+    alert_rule_test:
+      - eval_time: 6m
+        alertname: NodeExporterDown
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              job: node
+              instance: node-exporter:9100
+            exp_annotations:
+              summary: "node_exporter is down; disk, memory and backup alerts are blind"
