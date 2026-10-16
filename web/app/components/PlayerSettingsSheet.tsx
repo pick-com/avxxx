@@ -51,11 +51,13 @@ function ChoiceList<T extends string | number>({label, options, value, onChange}
  * (片源 / 清晰度 / 字幕 / 音轨 / 倍速). Only what the current stream exposes is
  * listed; nothing is filled with sample data.
  */
-export function PlayerSettingsSheet({open, onClose, container, initialTab = 'quality', quality, rate, captions, audio}: {
+export function PlayerSettingsSheet({open, onClose, container, initialTab = 'quality', source, quality, rate, captions, audio}: {
   open: boolean;
   onClose: () => void;
   container?: HTMLElement | null;
   initialTab?: SettingsTab;
+  /** versioned: options come from play-config (正片 / 高画质 / 配音 / 其他版本). */
+  source: {options: Choice<number>[]; value: number; onChange: (value: number) => void; versioned: boolean};
   quality: {options: Choice<number>[]; value: number; onChange: (value: number) => void};
   rate: {options: Choice<number>[]; value: number; onChange: (value: number) => void};
   captions: {options: Choice<number>[]; value: number; onChange: (value: number) => void};
@@ -69,12 +71,18 @@ export function PlayerSettingsSheet({open, onClose, container, initialTab = 'qua
   let body;
   switch (tab) {
     case 'source':
-      // TODO(tech plan 3.3 play-config / playback_sources): 正片 / 高画质 / 配音 / 其他版本.
-      body = (
-        <p className="sheet-note">
-          多片源切换即将支持。当前片源加载失败时，会自动换到下一条线路。
-        </p>
-      );
+      body =
+        source.options.length > 1 ? (
+          <>
+            <p className="sheet-note">
+              {source.versioned ? '切换片源会保留播放进度；时长不同的版本从头播放。' : '切换线路会保留播放进度。'}
+              播放失败时自动换到下一个可用片源。
+            </p>
+            <ChoiceList label="片源" options={source.options} value={source.value} onChange={source.onChange} />
+          </>
+        ) : (
+          <p className="sheet-note">当前只有一个片源。播放失败时会提示并可重试。</p>
+        );
       break;
     case 'quality':
       body =
