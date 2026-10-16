@@ -39,6 +39,8 @@ export default [
     route('*', 'routes/not-found.tsx'),
   ]),
   route(L('login'), 'routes/login.tsx'),
+  // Emailed password reset link (internal/notify.ResetPath).
+  route(L('reset-password'), 'routes/reset-password.tsx'),
   route(L('welcome'), 'routes/welcome.tsx'),
   // Back office (PRD 11): AdminNav shell with the shared token and 操作人.
   layout('routes/admin-layout.tsx', [
