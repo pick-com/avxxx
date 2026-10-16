@@ -2,6 +2,7 @@
 package api
 
 import (
+	"avxxx/internal/community"
 	"avxxx/internal/media"
 	"avxxx/internal/store"
 	"crypto/subtle"
@@ -31,6 +32,12 @@ type Server struct {
 	// i18n backs content translations, glossary and UI strings (i18n.go,
 	// admin_i18n.go); nil serves catalog routes untranslated.
 	i18n i18nStore
+	// community backs danmaku, ratings, reviews and reports (community.go);
+	// moderation backs the AdminOps moderation routes (moderation.go).
+	community  communityStore
+	moderation moderationStore
+	// limiter enforces the danmaku / review posting limits (PRD 5.5).
+	limiter community.Limiter
 	// adminToken is ADMIN_TOKEN, read once at construction. Empty disables
 	// every admin route (they all return 401).
 	adminToken string
@@ -50,13 +57,15 @@ func New(s *store.Store, mediaHandler *media.Handler) http.Handler {
 
 // Register adds every API route to mux.
 func Register(mux *http.ServeMux, s *store.Store, mediaHandler *media.Handler) {
-	srv := &Server{store: s, media: mediaHandler, adminToken: os.Getenv("ADMIN_TOKEN")}
+	srv := &Server{store: s, media: mediaHandler, adminToken: os.Getenv("ADMIN_TOKEN"), limiter: community.NewMemoryLimiter()}
 	if s != nil {
 		srv.accounts = s
 		srv.identity = s
 		srv.social = s
 		srv.audit = s
 		srv.i18n = s
+		srv.community = s
+		srv.moderation = s
 	}
 	for _, rt := range srv.routes() {
 		mux.HandleFunc(rt.pattern, rt.handler)
@@ -77,6 +86,8 @@ func (srv *Server) routes() []route {
 	rs = append(rs, srv.eventRoutes()...)
 	rs = append(rs, srv.adminAuditRoutes()...)
 	rs = append(rs, srv.adminI18nRoutes()...)
+	rs = append(rs, srv.communityRoutes()...)
+	rs = append(rs, srv.moderationRoutes()...)
 	return srv.followMerges(rs)
 }
 
