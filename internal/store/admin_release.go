@@ -224,16 +224,19 @@ type AdminMediaSource struct {
 
 // AdminReleasePerformer is one credit with age at filming.
 type AdminReleasePerformer struct {
-	ID           int64       `json:"id"`
-	Slug         string      `json:"slug"`
-	Name         string      `json:"name"`
-	NameJA       *string     `json:"name_ja"`
-	BirthDate    *string     `json:"birth_date"`
-	Role         string      `json:"role"` // lead | guest
-	IsPrimary    bool        `json:"is_primary"`
-	BillingOrder *int        `json:"billing_order"`
-	CreditedName *string     `json:"credited_name"`
-	AgeAtFilming *FilmingAge `json:"age_at_filming"`
+	ID        int64   `json:"id"`
+	Slug      string  `json:"slug"`
+	Name      string  `json:"name"`
+	NameJA    *string `json:"name_ja"`
+	BirthDate *string `json:"birth_date"`
+	// BirthDateHidden: the birthday is not public (PRD 15); the editor still
+	// sees it and R-AGE still uses it.
+	BirthDateHidden bool        `json:"birth_date_hidden"`
+	Role            string      `json:"role"` // lead | guest
+	IsPrimary       bool        `json:"is_primary"`
+	BillingOrder    *int        `json:"billing_order"`
+	CreditedName    *string     `json:"credited_name"`
+	AgeAtFilming    *FilmingAge `json:"age_at_filming"`
 	// AgeFlag is the R-AGE reason when this performer fails the rule.
 	AgeFlag string `json:"age_flag,omitempty"`
 }
@@ -440,13 +443,13 @@ func (s *Store) overrides(ctx context.Context, entityType string, id int64) ([]O
 
 func (s *Store) releasePerformersAdmin(ctx context.Context, id int64, releaseDate *time.Time, shootYear *int) ([]AdminReleasePerformer, error) {
 	ps, err := collect[AdminReleasePerformer](s.Query(ctx, `SELECT p.id,p.slug,p.canonical_name,p.canonical_name_ja,p.birth_date,COALESCE(rp.role,''),rp.is_primary,
-		rp.billing_order,rp.credited_name FROM release_performers rp JOIN performers p ON p.id=rp.performer_id
+		rp.billing_order,rp.credited_name,p.birth_date_hidden FROM release_performers rp JOIN performers p ON p.id=rp.performer_id
 		WHERE rp.release_id=$1 ORDER BY rp.is_primary DESC,rp.billing_order NULLS LAST,p.id`, id))(
 		func(r pgx.Rows) (AdminReleasePerformer, error) {
 			var v AdminReleasePerformer
 			var birth *time.Time
 			var order *int16
-			if err := r.Scan(&v.ID, &v.Slug, &v.Name, &v.NameJA, &birth, &v.Role, &v.IsPrimary, &order, &v.CreditedName); err != nil {
+			if err := r.Scan(&v.ID, &v.Slug, &v.Name, &v.NameJA, &birth, &v.Role, &v.IsPrimary, &order, &v.CreditedName, &v.BirthDateHidden); err != nil {
 				return v, err
 			}
 			if order != nil {

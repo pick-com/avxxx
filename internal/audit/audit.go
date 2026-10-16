@@ -36,7 +36,7 @@ const (
 )
 
 // AllRules is the run order. R-AGE always runs first.
-var AllRules = []Rule{RuleAge, RuleMeta, RuleTitle, RuleStats, RuleSourceHealth, RuleWatermark, RuleSubtitles, RuleScreenshots, RuleSEO}
+var AllRules = []Rule{RuleAge, RuleMeta, RuleTitle, RulePerformerName, RuleStats, RuleSourceHealth, RuleWatermark, RuleSubtitles, RuleScreenshots, RuleSEO}
 
 // KnownRule reports whether r is one of AllRules.
 func KnownRule(r Rule) bool {
@@ -180,4 +180,7 @@ type Store interface {
 	// of their latest status change, with their latest scored run. hasRuns
 	// is false while the source health job has never recorded a run.
 	SourceHealthIssues(ctx context.Context) (facts []SourceHealthFacts, hasRuns bool, err error)
+	// PerformerNames returns unmerged, not hidden performers with id >
+	// afterID in id order, at most limit of them (R-PERFORMER-NAME).
+	PerformerNames(ctx context.Context, afterID int64, limit int) ([]PerformerNameFacts, error)
 }

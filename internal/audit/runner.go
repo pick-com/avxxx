@@ -120,6 +120,8 @@ func (r *Runner) runRule(ctx context.Context, rule Rule, start time.Time) (ruleO
 		return r.ruleTitle(ctx)
 	case RuleSourceHealth:
 		return r.ruleSource(ctx, start)
+	case RulePerformerName:
+		return r.rulePerformerName(ctx, start)
 	}
 	if note, ok := stubNotes[rule]; ok {
 		return ruleOutcome{notApplicable: true, detail: map[string]any{"note": note}}, nil

@@ -55,11 +55,14 @@ func (a JAVDatabaseAdapter) Parse(ctx context.Context, doc Document, entity Enti
 	f := map[string]any{}
 	text := strings.TrimSpace(d.Find("body").Text())
 	if entity == Performer {
-		name := strings.TrimSpace(d.Find("h1").First().Text())
-		if i := strings.Index(name, " - "); i > 0 {
-			name = name[:i]
+		// The idol heading, never the site logo / <title> (which once saved
+		// "JAV Japanese Porn Actress & Idol Database" as a performer).
+		name := performerName(d, "h1.entry-title", ".entry-header h1", "article h1", "main h1")
+		if name == "" {
+			return Record{}, fmt.Errorf("javdatabase: no performer name on %s: %w", doc.FinalURL, ErrSkipRecord)
 		}
 		f["name"] = name
+		f[FieldPageTitle] = pageTitle(d)
 		f["name_ja"] = labelValue(text, "JP:")
 		f["birth_date"] = labelValue(text, "DOB:")
 		f["debut_date"] = labelValue(text, "Debut:")
@@ -71,7 +74,7 @@ func (a JAVDatabaseAdapter) Parse(ctx context.Context, doc Document, entity Enti
 		f["release_refs"] = movieRefs(d)
 		return Record{EntityType: Performer, SourceKey: key, URL: doc.FinalURL, Fields: f}, nil
 	}
-	f["title"] = strings.TrimSpace(d.Find("h1").First().Text())
+	f["title"] = entityHeading(d, "h1.entry-title", ".entry-header h1")
 	f["dvd_code"] = labelValue(text, "DVD ID:")
 	f["content_id"] = labelValue(text, "Content ID:")
 	f["release_date"] = labelValue(text, "Release Date:")
@@ -80,7 +83,7 @@ func (a JAVDatabaseAdapter) Parse(ctx context.Context, doc Document, entity Enti
 	f["director"] = linkedLabel(d, "Director:")
 	f["genres"] = linksAfter(d, "Genre(s):")
 	f["tags"] = f["genres"]
-	f["performers"] = linksAfter(d, "Idol(s)/Actress(es):")
+	f["performers"] = idolLinksAfter(d, doc.FinalURL, "Idol(s)/Actress(es):")
 	return Record{EntityType: Release, SourceKey: key, URL: doc.FinalURL, Fields: f}, nil
 }
 
@@ -159,6 +162,23 @@ func linksAfter(d *goquery.Document, label string) []string {
 				if v != "" {
 					out = append(out, v)
 				}
+			})
+			return false
+		}
+		return true
+	})
+	return out
+}
+
+// idolLinksAfter is linksAfter for the cast list: only links to idol pages
+// (or bare anchors), never navigation or boilerplate text.
+func idolLinksAfter(d *goquery.Document, base, label string) []string {
+	out := []string{}
+	d.Find("body *").EachWithBreak(func(_ int, s *goquery.Selection) bool {
+		if strings.TrimSpace(s.Text()) == label {
+			out = performerLinks(s.NextAll().Find("a").AddSelection(s.NextAll().Filter("a")), base, func(u string) bool {
+				kind, key := classify(u)
+				return kind == Performer && key != ""
 			})
 			return false
 		}
