@@ -10,6 +10,7 @@
     "i18n:check": "node scripts/i18n-check.mjs",
     "start": "node server.mjs",
     "seo:check": "node scripts/seo-check.mjs",
+    "favicon": "node scripts/favicon.mjs",
     "test": "node --test scripts/*.test.mjs"
   },
   "dependencies": {
