@@ -1,5 +1,7 @@
 import {Link, useSearchParams} from 'react-router';
 import {PerformerChip, SectionHeader} from '../components/Cards';
+import {RecommendedPerformers} from '../components/PerformerRecs';
+import {parsePeriod, PeriodTabs, TrendingBoard} from '../components/Trending';
 import {Icon} from '../components/Icon';
 import {LoadMore} from '../components/Paging';
 import {FilterBar, ReleaseResults} from '../components/ReleaseFilters';
@@ -9,13 +11,15 @@ import {formatCount, formatYear} from '../lib/format';
 import {t, useT} from '../lib/i18n';
 import type {MessageKey} from '../lib/messages.zh-CN';
 import {DURATION_BUCKETS, RELEASE_SORTS, discoverHref, durationLabel, parseReleaseFilter, withFilter, yearOptions} from '../lib/releaseFilter';
+import {useRecsAvailable} from '../lib/recs';
 import {useAsync} from '../lib/useAsync';
 import {usePaged} from '../lib/usePaged';
 
 export const meta = () => [{title: t('title.discover')}];
 
-type Tab = 'new' | 'categories' | 'actors';
+type Tab = 'trending' | 'new' | 'categories' | 'actors';
 const tabs: {key: Tab; label: MessageKey}[] = [
+  {key: 'trending', label: 'nav.trending'},
   {key: 'new', label: 'nav.new'},
   {key: 'categories', label: 'nav.categories'},
   {key: 'actors', label: 'nav.actors'},
@@ -24,15 +28,16 @@ const tabs: {key: Tab; label: MessageKey}[] = [
 // MobileDiscover sub-tabs and the SideNav 新上线 / 分类 / 演员 destinations,
 // limited to what the API serves today. 新上线 doubles as the filtered list
 // that 分类 facets, tag chips and maker links open (GET /api/releases filters).
-// TODO(tech plan 3.13 trending_snapshots): 热门 tab (NavTrending).
+// 热门 (MobileDiscover sub-tab; desktop has /trending in the side nav) and the
+// 今晚看什么 entry on top (mobile) need the recs routes and are hidden without them.
 // TODO(tech plan 3.13 releases.status='upcoming' + reservations): 即将上线 / 预约 (NavNew).
 // TODO(tech plan 3.4): 类型方块 and 语言 facet (NavCategories) — no genre or language data yet.
-// TODO(PRD 18): 今晚看什么 entry.
 export default function Discover() {
   const t = useT();
   const [params, setParams] = useSearchParams();
   const raw = params.get('tab');
-  const tab: Tab = raw === 'categories' || raw === 'actors' ? raw : 'new';
+  const recs = useRecsAvailable(true);
+  const tab: Tab = raw === 'categories' || raw === 'actors' || (raw === 'trending' && recs !== 'no') ? raw : 'new';
 
   return (
     <div className="page discover">
@@ -40,8 +45,20 @@ export default function Discover() {
         <Icon name="search" size={16} />
         {t('discover.searchHint')}
       </Link>
+      {recs !== 'no' && (
+        <Link to="/tonight" className="tonight-entry show-mobile">
+          <span className="tonight-entry-icon">
+            <Icon name="tonight" size={20} />
+          </span>
+          <span className="tonight-entry-text">
+            <strong>{t('tonight.title')}</strong>
+            <span>{t('tonight.entryHint')}</span>
+          </span>
+          <Icon name="back" size={16} />
+        </Link>
+      )}
       <div className="tabbar" role="tablist" aria-label={t('tabs.discover')}>
-        {tabs.map(item => (
+        {tabs.filter(item => item.key !== 'trending' || recs !== 'no').map(item => (
           <button
             key={item.key}
             type="button"
@@ -54,10 +71,32 @@ export default function Discover() {
           </button>
         ))}
       </div>
+      {tab === 'trending' && <TrendingTab />}
       {tab === 'new' && <BrowseReleases />}
       {tab === 'categories' && <Categories />}
       {tab === 'actors' && <Actors />}
     </div>
+  );
+}
+
+function TrendingTab() {
+  const [params, setParams] = useSearchParams();
+  const period = parsePeriod(params.get('period'));
+  return (
+    <section className="shelf">
+      <PeriodTabs
+        period={period}
+        onChange={p => {
+          const next = new URLSearchParams(params);
+          next.set('tab', 'trending');
+          if (p === 'week') next.delete('period');
+          else next.set('period', p);
+          setParams(next, {replace: true});
+        }}
+      />
+      {/* Without the route recs availability turns 'no' and this tab falls back to 新上线. */}
+      <TrendingBoard period={period} />
+    </section>
   );
 }
 
@@ -215,6 +254,8 @@ function Actors() {
   const shownSort = PERFORMER_SORTS.find(s => s.value === shown);
 
   return (
+    <>
+    <RecommendedPerformers />
     <section className="shelf">
       <SectionHeader
         title={t('home.actorLibrary')}
@@ -261,6 +302,7 @@ function Actors() {
         </>
       )}
     </section>
+    </>
   );
 }
 
