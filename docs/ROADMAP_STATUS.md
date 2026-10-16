@@ -90,7 +90,9 @@
 - [x] 作品列表、详情和演员页
 - [x] 搜索、筛选、排序和游标分页
 - [x] 系列查询 API（`series` 实体与 `releases.series_id`，迁移 027 回填和触发器；`GET /api/series`、`/api/series/{slug}`、`/api/series/{slug}/releases?sort=episode|newest|oldest`；作品详情带 `series`）
-- [ ] 来源证据和更新时间展示（API 已完成：`GET /api/releases/{slug}/evidence`、`GET /api/performers/{slug}/evidence`，不含 raw_data、覆盖原因和隐藏生日；前端展示待做）
+- [x] 来源证据和更新时间展示（`GET /api/releases/{slug}/evidence`、`GET /api/performers/{slug}/evidence`，不含 raw_data、覆盖原因和隐藏生日；作品页和演员页的「信息来源」折叠区，按字段显示来源、层级、更新时间和「人工校正」）
+- [x] 系列页面（`/series`、`/series/{slug}`：服务端渲染、按集数/最新/最早排序、JSON-LD、`/sitemaps/series-{lang}-{n}.xml`）
+- [x] 来源署名（`sources.attribution_html` 经 `GET /api/attributions?release=|performer=|series=` 下发，原样渲染在作品、演员、系列页末尾；DMM 数据出现时显示「Powered by FANZA Webサービス」）
 - [x] 管理后台冲突审核页面
 - [x] 管理后台任务和来源页面（`admin-pipeline`）
 - [ ] 管理后台 checkpoint 页面（`GET /api/admin/sources/{id}/checkpoints` 已有，前端未接入）
