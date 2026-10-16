@@ -55,7 +55,7 @@ no failed requests and no overflow, and the listed interactions worked.
 
 | Page | Result |
 |------|--------|
-| Age gate | OK: ok (1990-04) enters and keeps the page; denied (2015) shows the restricted page with the unlock time; locked: reload stays denied and `POST /api/age-gate` answers 403; legal/help/copyright stay reachable. |
+| Age gate | OK. Tested first with the birth-month gate: ok (1990-04) enters and keeps the page; denied (2015) shows the restricted page with the unlock time; locked: reload stays denied and `POST /api/age-gate` answers 403; legal/help/copyright stay reachable. Retested after rebasing onto 3ea4bc6 (checkbox-only): the button stays disabled until the box is ticked, then the page renders and playback auto-loads (4d62601). The gate copy is stale, see decision 7. |
 | Home | OK: hero, tag chips, 编辑精选 series shelf, 继续观看, 为你推荐, 你关注的演员有新作 (bug 3), 新上线, 热门演员; two announcements, dismiss persists per account; region-targeted announcement shown only with `CF-IPCountry: JP` (SSR and after hydration). |
 | Discover | OK: 热门 (empty, then filled after the trending job), 新上线 filters, 即将上线 incl. 只看关注 (bug 1), 分类, 演员 with era / genre / language / sort. |
 | Search | OK: 全部 / 演员 / 视频 tabs, duration / year / quality / subtitle filters, recent searches on the empty page, clearing from settings. |
@@ -120,3 +120,10 @@ no failed requests and no overflow, and the listed interactions worked.
    preview in the editor would avoid it.
 5. The cookie banner also appears in the back office.
 6. Recent searches are stored normalized ("Summer" is listed as "summer").
+7. Since the checkbox-only gate (3ea4bc6) the gate text still describes the
+   old form: `age.gateBody` asks to 填写出生年月, `age.gatePrivacy` says the
+   birth month is only used for this check, `age.gateNotice` says under-18
+   answers lock the site for 24 hours, and the unticked-box error reuses
+   `login.pickBirth` (请选择出生年月), in all eight languages. This is
+   compliance copy, so it was left for whoever owns the wording rather than
+   rewritten here.
