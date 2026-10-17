@@ -5,8 +5,11 @@
 
 export type Searchable = {slug: string; title: string; performers?: string[]; codes?: string[]};
 
-/** NFKC, lower case, whitespace collapsed (search.NormalizeQuery). */
-export const normalizeHistoryQuery = (q: string) => q.normalize('NFKC').toLowerCase().split(/\s+/).filter(Boolean).join(' ').slice(0, 100);
+/** NFKC, lower case, whitespace collapsed. */
+const normalizeText = (s: string) => s.normalize('NFKC').toLowerCase().split(/\s+/).filter(Boolean).join(' ');
+
+/** A query: normalized and capped at 100 characters (search.NormalizeQuery). */
+export const normalizeHistoryQuery = (q: string) => normalizeText(q).slice(0, 100);
 
 /** Only [a-z0-9]: "ABC-123" and "abc123" compare equal. */
 const compact = (s: string) => s.normalize('NFKC').toLowerCase().replace(/[^a-z0-9]/g, '');
@@ -26,7 +29,8 @@ export function codeMatchKey(s: string): string {
 export function matchesHistory(item: Searchable, q: string): boolean {
   if (!q) return true;
   const text = [item.title, item.slug, ...(item.performers ?? [])];
-  if (text.some(s => normalizeHistoryQuery(s).includes(q))) return true;
+  // Titles are not capped: a performer name often ends a long title.
+  if (text.some(s => normalizeText(s).includes(q))) return true;
   // Product codes: the release's codes, and the slug (usually the code).
   if (!/[0-9]/.test(q)) return false;
   const key = codeMatchKey(q);
