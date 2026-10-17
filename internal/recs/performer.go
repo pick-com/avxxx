@@ -208,29 +208,37 @@ func PerformerSimilarity(docs []ReleaseDoc, audience []Interaction, w Weights, c
 	if cfg.Content.TopK <= 0 {
 		cfg.Content.TopK = 100
 	}
+	if cfg.Content.MaxSharedPerKind <= 0 {
+		// The evidence keeps the first 3 tags and 2 makers.
+		cfg.Content.MaxSharedPerKind = 3
+	}
 	type parts struct {
 		meta    float64
 		costar  int
 		cowatch float64
 		shared  []string
 	}
-	all := map[[2]int64]*parts{}
+	// Pairs index into one slice: a map of pointers cost one allocation per
+	// pair (millions at 50k performers) and a GC scan of each.
+	all := map[[2]int64]int32{}
+	var pairs []parts
 	get := func(a, b int64) *parts {
 		k := [2]int64{a, b}
-		p := all[k]
-		if p == nil {
-			p = &parts{}
-			all[k] = p
+		i, ok := all[k]
+		if !ok {
+			i = int32(len(pairs))
+			all[k] = i
+			pairs = append(pairs, parts{})
 		}
-		return p
+		return &pairs[i]
 	}
 	if w.Metadata > 0 {
-		for a, ms := range ContentNeighbors(PerformerFeatureSets(docs), cfg.Content) {
+		EachContentNeighbors(PerformerFeatureSets(docs), cfg.Content, func(a int64, ms []ContentMatch) {
 			for _, m := range ms {
 				p := get(a, m.ID)
 				p.meta, p.shared = m.Score, m.Shared
 			}
-		}
+		})
 	}
 	if w.CoStar > 0 {
 		for k, n := range CoStarCounts(docs) {
@@ -246,7 +254,8 @@ func PerformerSimilarity(docs []ReleaseDoc, audience []Interaction, w Weights, c
 		}
 	}
 	var out []PerformerMatch
-	for k, p := range all {
+	for k, i := range all {
+		p := &pairs[i]
 		cs := CoStarScore(p.costar)
 		score := mixScore(w, p.meta, cs, p.cowatch)
 		if score < cfg.MinScore {
