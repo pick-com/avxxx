@@ -18,6 +18,7 @@
 
 import {sendsUserToken} from './apiTokenPaths';
 import {t} from './i18n';
+import {playbackOrNone, type PlaybackNone} from './legacyPlayback';
 
 const USER_TOKEN_KEY = 'user_token';
 // Break-glass ADMIN_TOKEN and its label (recorded as token:<label>).
@@ -405,7 +406,7 @@ export type SearchHit = {
 };
 export type WatchItem = {slug: string; title: string; progress_seconds: number; duration_seconds: number; watched_at: string};
 export type FavoriteItem = {slug: string; title: string; created_at: string};
-export type Playback = {source: string; source_key: string; source_url: string; detail_path: string; resolve_path: string};
+export type Playback = {source: string; source_key: string; source_url: string; detail_path: string; resolve_path: string; available?: true};
 export type Stream = {url: string; protocol: string; quality?: string};
 export type User = {id: number; email: string};
 export type AuthResult = {token: string; user: User};
@@ -548,8 +549,13 @@ export const clearSearchHistory = () => api<{deleted: number}>('me/search-histor
 
 // ---- Playback ----
 
-export const getPlayback = (slug: string, signal?: AbortSignal) =>
-  api<Playback>(`releases/${enc(slug)}/playback?source=javtiful`, {signal});
+/**
+ * Legacy playback mapping. Resolves to null when the release has no mapping
+ * (the API answers 200 {available: false}, not 404, so no-source pages log no
+ * console error); a 404 still means the release itself is unknown.
+ */
+export const getPlayback = (slug: string, signal?: AbortSignal): Promise<Playback | null> =>
+  api<Playback | PlaybackNone>(`releases/${enc(slug)}/playback?source=javtiful`, {signal}).then(playbackOrNone);
 
 /**
  * POST resolve_path. `refresh`: a cached stream URL failed to play, so the

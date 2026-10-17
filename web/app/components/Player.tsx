@@ -218,6 +218,10 @@ export function Player({slug, releaseId, title, resumeAt, startAt, onBack, theat
   // Sources exist but none is licensed for the viewer's region (PRD 15): no legacy fallback.
   const regionBlocked = config.data?.region_blocked === true;
   const info = useAsync(signal => getPlayback(slug, signal), [slug], mode === 'legacy' && !regionBlocked);
+  // No playable source at all: the legacy lookup found no mapping (null; a
+  // 404 from servers that predate the available:false answer).
+  const noSource =
+    mode === 'legacy' && !info.loading && (info.data === null || (info.error instanceof ApiError && info.error.status === 404));
   const [entries, setEntries] = useState<PlayEntry[]>([]);
   const [current, setCurrent] = useState(0);
   const [failure, setFailure] = useState('');
@@ -390,7 +394,7 @@ export function Player({slug, releaseId, title, resumeAt, startAt, onBack, theat
         segmentFormat: hlsSegmentFormatOf(hlsPlaying?.details?.fragments?.[0]?.url),
       }
     : null;
-  const castDead = phase === 'failed' || (phase === 'ready' && !stream) || regionBlocked || (mode === 'legacy' && !!info.error);
+  const castDead = phase === 'failed' || (phase === 'ready' && !stream) || regionBlocked || noSource || (mode === 'legacy' && !!info.error);
   const gcast = useGoogleCast({
     video: stream ? videoEl : null,
     media: castMedia,
@@ -1537,7 +1541,7 @@ export function Player({slug, releaseId, title, resumeAt, startAt, onBack, theat
               <strong>{t('player.unavailable')}</strong>
               <span>{t('player.regionBlocked')}</span>
             </div>
-          ) : mode === 'legacy' && info.error instanceof ApiError && info.error.status === 404 ? (
+          ) : noSource ? (
             // No playable source at all: say so on the cover; retrying cannot help.
             <div className="player-state player-state-nosource" role="status">
               <Icon name="film" size={30} />

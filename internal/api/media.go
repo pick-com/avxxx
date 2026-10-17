@@ -49,7 +49,14 @@ func (srv *Server) releaseSources(w http.ResponseWriter, r *http.Request) {
 // (default javtiful). Mappings are normally created offline by the
 // media_link job (internal/medialink); with MEDIA_LINK_ON_DEMAND=true (the
 // default) a missing one is searched for here once, honoring the same
-// media_link_attempts backoff. With false, it is 404 until the job links it.
+// media_link_attempts backoff. With false, it stays unlinked until the job
+// links it.
+//
+// A published release without a mapping is an expected state, not an error:
+// it answers 200 {"source":…,"available":false} so no-source release pages
+// do not log a console 404 (the web player reads it as 暂无视频资源). A found
+// mapping carries "available":true. 404 is left for a slug that names no
+// published release.
 func (srv *Server) releasePlayback(w http.ResponseWriter, r *http.Request) {
 	if srv.playback == nil {
 		reply(w, nil, errNotFound)
@@ -63,6 +70,18 @@ func (srv *Server) releasePlayback(w http.ResponseWriter, r *http.Request) {
 	v, e := srv.playback.ReleasePlayback(r.Context(), slug, source)
 	if errors.Is(e, pgx.ErrNoRows) && srv.linkOnDemand && srv.autoLinkPlayback(r.Context(), slug, source) {
 		v, e = srv.playback.ReleasePlayback(r.Context(), slug, source)
+	}
+	if errors.Is(e, pgx.ErrNoRows) {
+		// Tell "no mapping yet" from "no such release".
+		if _, _, err := srv.playback.ReleaseCodesForPlayback(r.Context(), slug); err != nil {
+			reply(w, nil, err)
+			return
+		}
+		reply(w, map[string]any{"source": source, "available": false}, nil)
+		return
+	}
+	if e == nil && v != nil {
+		v["available"] = true
 	}
 	reply(w, v, e)
 }
