@@ -111,6 +111,14 @@ func (srv *Server) withHome(h http.HandlerFunc) http.HandlerFunc {
 type respCache struct {
 	mu      sync.Mutex
 	entries map[string]cacheEntry
+	// building holds one lock per key being built, so concurrent misses
+	// of a key wait for one build instead of each running it.
+	building map[string]*keyBuild
+}
+
+type keyBuild struct {
+	mu      sync.Mutex
+	waiters int
 }
 
 type cacheEntry struct {
@@ -118,7 +126,33 @@ type cacheEntry struct {
 	at   time.Time
 }
 
-func newRespCache() *respCache { return &respCache{entries: map[string]cacheEntry{}} }
+func newRespCache() *respCache {
+	return &respCache{entries: map[string]cacheEntry{}, building: map[string]*keyBuild{}}
+}
+
+// lockKey serializes builds of key; call the returned func to release.
+func (c *respCache) lockKey(key string) func() {
+	if c == nil {
+		return func() {}
+	}
+	c.mu.Lock()
+	b := c.building[key]
+	if b == nil {
+		b = &keyBuild{}
+		c.building[key] = b
+	}
+	b.waiters++
+	c.mu.Unlock()
+	b.mu.Lock()
+	return func() {
+		b.mu.Unlock()
+		c.mu.Lock()
+		if b.waiters--; b.waiters == 0 {
+			delete(c.building, key)
+		}
+		c.mu.Unlock()
+	}
+}
 
 func (c *respCache) get(key string, ttl time.Duration) ([]byte, bool) {
 	if c == nil {
@@ -155,9 +189,17 @@ func (c *respCache) clear() {
 }
 
 // cachedJSON serves key from the cache or builds, caches and serves it.
-// Errors are not cached.
+// Concurrent misses of one key wait for a single build (高分短片 aggregates
+// every rating: ~250 ms at 1M ratings, per language). Errors are not
+// cached; a waiter then builds itself.
 func (srv *Server) cachedJSON(w http.ResponseWriter, key string, ttl time.Duration, cacheControl string, build func() (any, error)) {
 	if body, ok := srv.homeCache.get(key, ttl); ok {
+		writeCachedJSON(w, body, cacheControl)
+		return
+	}
+	unlock := srv.homeCache.lockKey(key)
+	defer unlock()
+	if body, ok := srv.homeCache.get(key, ttl); ok { // built while we waited
 		writeCachedJSON(w, body, cacheControl)
 		return
 	}
