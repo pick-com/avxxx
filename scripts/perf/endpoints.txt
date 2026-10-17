@@ -1,0 +1,14 @@
+# Endpoints replayed by scripts/perf/loadgen (name, path). Placeholders:
+# {r} release slug, {p} performer slug, {tag}, {code}, {q} (see loadgen).
+# Names starting with "auth:" send -token as a bearer token.
+home                 /api/home
+releases-newest      /api/releases?sort=newest
+releases-tag         /api/releases?tag={tag}
+release-detail       /api/releases/{r}
+performers-name      /api/performers?sort=name
+performers-works     /api/performers?sort=works
+performers-newest    /api/performers?sort=newest_work
+performers-heat      /api/performers?sort=heat
+performer-detail     /api/performers/{p}
+catalog-search       /api/catalog/search?q={q}
+upcoming             /api/upcoming
