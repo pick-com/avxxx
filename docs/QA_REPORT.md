@@ -127,3 +127,111 @@ no failed requests and no overflow, and the listed interactions worked.
    `login.pickBirth` (请选择出生年月), in all eight languages. This is
    compliance copy, so it was left for whoever owns the wording rather than
    rewritten here.
+
+## Round 2: hands-on pass over #118–#169
+
+Date: 2026-10-17. Scope: the features merged in #118–#158 that had only been
+covered by builds and tests, plus a spot check of #160–#169 after the rebase.
+Clicked through in the built-in browser pane at 1440px and 375px, in zh-CN
+and en, signed out and signed in (one throwaway `@example.test` account,
+created through the sign-in sheet), and with the break-glass admin token.
+
+### Setup
+
+- The shared local test API (compose project `avxxx-localtest`, port 18080)
+  was down for most of the pass (container exited 137, stopped from
+  elsewhere), so `cmd/api` was built from this branch and run on its own port
+  against the same localtest database, with a generated `ADMIN_TOKEN`
+  (no OAuth, S3, OpenRouter or real `AGE_GATE_KEY`). After the rebase the web
+  app was pointed back at 18080 (#169) to recheck the fixes and #160–#169.
+- `react-router dev` from the worktree with `API_PROXY_TARGET` and
+  `API_INTERNAL_URL` (SSR needs the second; without it every page renders
+  client-side after a 503).
+- Playback used the database's one resolvable javtiful mapping (SNOS-397,
+  JUQ-743); DOA-078 has no source.
+- No rows were written to the database directly. Test data was removed
+  through the API afterwards (comment, clip, 不感兴趣, favorite, watch
+  history) and the account was put into deletion (30-day purge).
+
+### Verified
+
+| Area | PR | Result |
+| --- | --- | --- |
+| 片源 details card | #118 | Provider, resolution, format; fixed: 720 → 720p, missing MP4 (bug 2) |
+| Fullscreen without the 弹幕 row | #119 | Code path checked (`!fullscreen` hides the row); the pane refuses `requestFullscreen`, so not seen in a real fullscreen |
+| No-source cover on DOA-078 | #120 | 暂无视频资源 / 这部作品还没有可用的片源 |
+| Resume from history | #121 / #129 | Guest: resume prompt from 10:19 after leaving and coming back; signed in: from server history (JUQ-743 0:57) |
+| Pause when hidden | #132 | Simulated `visibilitychange` (the pane never hides a tab): pauses, stays paused on return |
+| Shortcuts | #138 / #144 / #148 | ↑/↓ 5% steps inside the player (the page scrolls on the body, by design), T, Shift+N, ?, / ; fixed: / missing from the ? dialog (bug 3), menu button name (bug 7) |
+| Play queue | #143 | 添加到播放队列 note, sessionStorage queue, 播放队列 panel with 上移 / 下移 / 移除 / 清空 |
+| Clickable timestamps | #142 | Links with 跳到 m:ss 播放; fixed: the player never scrolled into view (bug 4) |
+| Loop, A-B, sleep, ambient | #155–#157 | Loop switch and toast, A-B jumps back to A, 15-minute timer shows 剩余 15:00, ambient reports 当前片源不支持氛围模式 for the cross-origin stream; fixed: that notice flashed on every load (bug 6) |
+| Clips | #158 / #167 | Clip 1:32.5–1:47.5 created, `/clips/<id>` plays the range, listed on 我的片段 |
+| 不感兴趣 / 不推荐此演员 | #141 | Card turns into 已隐藏 · 撤销; actor's works leave every home shelf after reload; settings 推荐反馈 lists both and 撤销 works; fixed: Chinese reasons in en (bug 5) |
+| History search | #145 | Signed in (server) and guest (local) by title, performer, code; fixed: guest search ignored text past 100 characters (bug 1) |
+| Sign-in sheet | #150–#154 | Opens from 收藏 / 稍后观看 / 评论; sign-up in the sheet finishes the pending 收藏 (收藏夹 picker); comment draft restored into the box and focused; guest history merged into the account; reminder bar on a guest resume, once per day; fixed: 视频会继续播放 shown with no video (bug 8) |
+| Admin 机器翻译 | #147 | Disabled with the tooltip 未配置 OPENROUTER_API_KEY, as expected without a key |
+| Pipeline proxy field | #149 | XSList 编辑策略: a URL with credentials is refused (400), `env:CATALOG_PROXY_VPN` saves and shows 代理 env:…, clearing restores inheritance (left cleared) |
+| Cast | #131 / #139 | Remote Playback present, Cast sender loads in Chrome; no button without a device, as designed |
+| 375px | — | No horizontal page overflow on home, history, settings, release (with and without source), clip, trending, discover; settings sheet tabs scroll |
+| #160–#169 | — | /me/clips lists the clip; release page, reasons, card menu and settings sheet recheck clean on 18080 |
+
+### Bugs found and fixed
+
+One commit each, with a `node --test` / Go test where the logic is pure.
+
+1. **History search (guest) missed most of long titles** — medium.
+   `matchesHistory` normalized titles with the query normalizer, which caps at
+   100 characters; guest history has no cast, so the performer name at the end
+   of a long JAV title never matched (`kuraki` found nothing, `tipsy` did).
+   Only the query is capped now. Test: `history-filter.test.mjs`.
+2. **片源 card read 清晰度 720 with no 格式** — low. Resolved streams carry
+   quality `"720"` and protocol `mp4` on an extension-less signed URL. Bare
+   heights read `720p`; the protocol names the format. `lib/streamFormat.ts`,
+   `stream-format.test.mjs`.
+3. **? dialog did not list /** — low. Added 转到搜索框 in all seven languages.
+4. **Clicking a timestamp did not bring the player into view** — medium. It
+   scrolled `.player-slot`, which is `display: contents` (no box), so the
+   seek happened off screen. It scrolls `.video-main` with a scroll margin
+   for the sticky top bar. Checked in the browser (player top at 80px after
+   the click).
+5. **Chinese 推荐理由 in English** — medium. `reasonText` kept the server's
+   zh-CN text for trending / similar_tags / because_watched, so the en video
+   page showed 本周热门 · 第 1 名. They use the localized template and keep
+   the rank / tag (`Trending · #1`). `lib/reasonParse.ts`,
+   `reason-parse.test.mjs`.
+6. **氛围模式 notice on every page load** — low. With the saved preference
+   and a cross-origin source, 当前片源不支持氛围模式 flashed on each load,
+   over the resume prompt. It now follows a switch-on in the same page.
+7. **Player menu button names** — low (a11y / i18n). `PlayerMenu` built
+   `label + "：" + text`, so screen readers heard 倍速：倍速, and English got
+   `Speed：Speed` with a full-width colon. New `pc.menuButton` template; the
+   label alone when the text repeats it.
+8. **Sign-in sheet said 视频会继续播放 with no video** — low. Also on a
+   release without a source and for a paused video; a new
+   `authPrompt.subNoVideo` is used then.
+9. **Aborted requests logged as 500** — medium (observability). A fetch
+   aborted by navigation or an effect cleanup made the store call fail with
+   `context.Canceled`, answered 500, logged at ERROR and counted in the 5xx
+   metrics: 5–6 per video-page navigation. `errorStatus` maps it to 499
+   (client closed request). Test: `TestErrorStatus`.
+
+### Not fixed (noted)
+
+- `GET /api/releases/{slug}/playback?source=javtiful` answers 404 for a
+  release with no media link, so every no-source page logs a console 404 from
+  the legacy fallback after play-config returns no sources (same family as
+  #125).
+- SNOS-397's 导演 shows `Genre(s): 4K Exclusive Distribution …` — a bad
+  `director_name` value in the local data, not traced to a source record.
+- The 机器翻译 button explains itself only through `title` on a disabled
+  button, which keyboard and touch users do not get.
+- `PUT …/crawl-policy` errors are English inside the Chinese back office.
+- Page heading 观看记录 vs. the search placeholder 搜索播放记录.
+- Untestable here: real fullscreen and the sheet inside it (#119, #160 —
+  the pane denies `requestFullscreen`), a real hidden tab (#132, simulated),
+  Cast / AirPlay with a device, Google / Apple sign-in.
+- Items the parallel agents own were not touched: onboarding after a sheet
+  sign-up (no nudge was seen before the rebase; #161 landed since), review
+  draft restore (#163), guest rec_feedback claim (#164), CardMenu clipping
+  (#165), 我的片段 and clip moderation (#167 / #168).
