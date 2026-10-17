@@ -25,6 +25,16 @@ CREATE INDEX IF NOT EXISTS ratings_active_release
   ON ratings (release_id) INCLUDE (weight, score)
   WHERE status='active';
 
+-- Live per-performer work counts (GET /api/performers page rows, the
+-- performer profile stats) probe releases once per credit to keep only
+-- published, unmerged works and read their date. For the busiest
+-- performers (1.5k works each, and sort=works / heat list exactly those)
+-- that was ~8k heap reads per page: 166 ms. Covering the probe makes it
+-- index-only: 9 ms (the performer works page 209 ms -> 21 ms).
+CREATE INDEX IF NOT EXISTS releases_public_id_date
+  ON releases (id) INCLUDE (release_date)
+  WHERE status='published' AND merged_into_id IS NULL;
+
 CREATE INDEX IF NOT EXISTS releases_public_runtime
   ON releases ((COALESCE(runtime_minutes,0)) DESC, id DESC)
   WHERE status='published' AND merged_into_id IS NULL;

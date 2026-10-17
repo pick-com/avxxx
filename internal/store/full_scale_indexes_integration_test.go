@@ -136,6 +136,39 @@ func TestRatingAggregateUsesCoveringIndexIntegration(t *testing.T) {
 	}
 }
 
+func TestPerformerWorkCountsIndexOnlyIntegration(t *testing.T) {
+	s := openTestStore(t)
+	ctx := context.Background()
+	sfx := fmt.Sprint(time.Now().UnixNano())
+	var perf int64
+	if err := s.QueryRow(ctx, `INSERT INTO performers(slug,canonical_name) VALUES($1,'Counted') RETURNING id`, "pc-"+sfx).Scan(&perf); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.Exec(ctx, `WITH r AS (
+		INSERT INTO releases(slug,canonical_title,status,release_date)
+		SELECT $1||g,'Work '||g,CASE WHEN g%4=0 THEN 'unpublished' ELSE 'published' END,DATE '2020-01-01'+g FROM generate_series(1,40) g RETURNING id)
+		INSERT INTO release_performers(release_id,performer_id) SELECT id,$2 FROM r`, "pc-"+sfx+"-", perf); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.Exec(ctx, `VACUUM ANALYZE releases`); err != nil {
+		t.Fatal(err)
+	}
+	sql, args, _, err := buildPerformerQuery(PerformerFilter{Sort: "name"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if plan := planWithoutSort(t, s, sql, args...); !strings.Contains(plan, `"releases_public_id_date"`) || !strings.Contains(plan, `"Index Only Scan"`) {
+		t.Errorf("live work counts should probe releases_public_id_date index-only:\n%s", plan)
+	}
+	page, _, err := s.PerformerPage(ctx, PerformerFilter{Sort: "name", Q: "Counted"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(page) != 1 || page[0].WorksCount != 30 {
+		t.Fatalf("page %+v, want one performer with 30 published works", page)
+	}
+}
+
 func TestReleaseRuntimeSortUsesIndexIntegration(t *testing.T) {
 	s := openTestStore(t)
 	ctx := context.Background()
