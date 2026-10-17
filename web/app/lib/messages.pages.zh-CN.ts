@@ -391,6 +391,8 @@ export const pagesZhCN = {
   'authPrompt.doneReserve': '已登录，并已预约',
   'authPrompt.doneLike': '已登录，并已点赞',
   'authPrompt.doneDraft': '已登录，内容已放回输入框，确认后再发送',
+  'authPrompt.onboardText': '账号已创建。花 1 分钟选几个喜欢的类型，推荐会更懂你。',
+  'authPrompt.onboardGo': '完成设置',
   'reset.title': '设置新密码',
   'reset.sub': '新密码至少 8 位。设置后，所有设备都需要重新登录。',
   'reset.newPassword': '新密码',

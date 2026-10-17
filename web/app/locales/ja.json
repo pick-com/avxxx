@@ -554,6 +554,8 @@
   "authPrompt.doneReserve": "ログインして、リマインダーを予約しました",
   "authPrompt.doneLike": "ログインして、いいねしました",
   "authPrompt.doneDraft": "ログインしました。入力内容を戻したので、確認してから送信してください",
+  "authPrompt.onboardText": "アカウントを作成しました。好きなジャンルを選ぶと、おすすめがもっと好みに合います（約1分）。",
+  "authPrompt.onboardGo": "設定する",
   "reset.title": "新しいパスワードを設定",
   "reset.sub": "8文字以上で設定してください。設定後はすべての端末で再ログインが必要です。",
   "reset.newPassword": "新しいパスワード",

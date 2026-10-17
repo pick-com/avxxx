@@ -9,7 +9,8 @@ import {clearGuestHistory, deleteGuestEntry, guestStore} from '../lib/guestProgr
 import {needsFullscreenExit, useOverlayHost} from '../lib/fullscreenHost';
 import {useT} from '../lib/i18n';
 import type {MessageKey} from '../lib/messages.zh-CN';
-import {useLocation} from '../lib/nav';
+import {Link, useLocation} from '../lib/nav';
+import {onboardingNudge, welcomeHref} from '../lib/onboardingNudge';
 import {track} from '../lib/analytics';
 import {clearPending, markPromptOAuth, savePending, takePending, takePromptOAuth, type PendingPayload} from '../lib/pendingAction';
 
@@ -33,6 +34,10 @@ import {clearPending, markPromptOAuth, savePending, takePending, takePromptOAuth
 // after signing in. Exiting fullscreen instead would shrink the player and
 // lose the viewer's place for a two-field form. Only a bare <video> in
 // fullscreen (no room for our DOM) is taken out of fullscreen first.
+//
+// 注册 in the sheet also stays on the page (/login would go to /welcome
+// first); while the new account has not finished onboarding a small
+// dismissible prompt links to /welcome?next=<this page> (lib/onboardingNudge).
 
 export type AuthAction = 'favorite' | 'later' | 'follow' | 'reserve' | 'danmaku' | 'comment' | 'review' | 'like' | 'report' | 'sync' | 'other';
 
@@ -118,10 +123,31 @@ function useGuestMerge() {
 }
 
 export function AuthPromptProvider({children}: {children: ReactNode}) {
-  const {status} = useAuth();
+  const {status, user} = useAuth();
+  const location = useLocation();
   useGuestMerge();
   const [action, setAction] = useState<AuthAction | null>(null);
   const [toast, setToast] = useState<{text: string; id: number} | null>(null);
+  // A sign-up from the sheet: the page it happened on, until the profile says whether to offer /welcome.
+  const [signedUpOn, setSignedUpOn] = useState<string | null>(null);
+  const [nudge, setNudge] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (signedUpOn === null) return;
+    if (status === 'anon') {
+      setSignedUpOn(null);
+      return;
+    }
+    const next = onboardingNudge(true, status === 'user' ? user : null);
+    if (next === 'wait') return;
+    if (next === 'show') setNudge(signedUpOn);
+    setSignedUpOn(null);
+  }, [signedUpOn, status, user]);
+
+  // The prompt belongs to the page it was offered on, and to the signed-in account.
+  useEffect(() => {
+    if (nudge !== null && (status !== 'user' || location.pathname !== nudge.split('?')[0])) setNudge(null);
+  }, [nudge, status, location.pathname]);
 
   const requireAuth = useCallback(
     (next: AuthAction, resume?: ResumeSpec) => {
@@ -163,6 +189,7 @@ export function AuthPromptProvider({children}: {children: ReactNode}) {
           {toast.text}
         </div>
       )}
+      {nudge !== null && <OnboardingNudge here={nudge} onDismiss={() => setNudge(null)} />}
     </div>
   );
   return (
@@ -172,6 +199,7 @@ export function AuthPromptProvider({children}: {children: ReactNode}) {
         <AuthSheet
           action={action}
           container={host}
+          onCreated={here => setSignedUpOn(here)}
           onClose={how => {
             if (how !== 'signed_in') {
               // Dismissed without signing in: nothing is left waiting.
@@ -189,7 +217,28 @@ export function AuthPromptProvider({children}: {children: ReactNode}) {
 
 type CloseReason = 'signed_in' | 'skip' | 'dismiss' | 'navigate';
 
-function AuthSheet({action, container, onClose}: {action: AuthAction; container: HTMLElement | null; onClose: (how: CloseReason) => void}) {
+/** 「账号已创建 · 完成设置」: non-blocking, until dismissed, followed or the page changes. */
+function OnboardingNudge({here, onDismiss}: {here: string; onDismiss: () => void}) {
+  const t = useT();
+  return (
+    <div className="auth-toast auth-nudge">
+      <span>{t('authPrompt.onboardText')}</span>
+      <Link to={welcomeHref(here)} className="auth-nudge-go" onClick={onDismiss}>
+        {t('authPrompt.onboardGo')}
+      </Link>
+      <button type="button" className="auth-nudge-close" aria-label={t('common.close')} onClick={onDismiss}>
+        ×
+      </button>
+    </div>
+  );
+}
+
+function AuthSheet({action, container, onCreated, onClose}: {
+  action: AuthAction;
+  container: HTMLElement | null;
+  onCreated: (here: string) => void;
+  onClose: (how: CloseReason) => void;
+}) {
   const t = useT();
   const {status, signIn} = useAuth();
   const location = useLocation();
@@ -230,6 +279,7 @@ function AuthSheet({action, container, onClose}: {action: AuthAction; container:
           onOAuthStart={provider => markPromptOAuth(action, provider)}
           onSignedIn={(result, remember, method) => {
             signIn(result, remember);
+            if (method === 'register' || result.created) onCreated(here);
             if (method === 'password' || method === 'register') track('auth_prompt_converted', {action, method});
             // A sign-in that cancelled a pending deletion keeps the sheet for its notice and 继续.
             if (!result.deletion_cancelled) onClose('signed_in');

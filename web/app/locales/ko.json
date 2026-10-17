@@ -554,6 +554,8 @@
   "authPrompt.doneReserve": "로그인하고 알림을 예약했어요",
   "authPrompt.doneLike": "로그인하고 좋아요를 눌렀어요",
   "authPrompt.doneDraft": "로그인했어요. 작성한 내용을 입력창에 다시 넣었으니 확인 후 보내세요",
+  "authPrompt.onboardText": "계정이 만들어졌어요. 좋아하는 장르를 몇 개 고르면 추천이 더 정확해져요(약 1분).",
+  "authPrompt.onboardGo": "설정하기",
   "reset.title": "새 비밀번호 설정",
   "reset.sub": "8자 이상 입력하세요. 설정 후에는 모든 기기에서 다시 로그인해야 합니다.",
   "reset.newPassword": "새 비밀번호",

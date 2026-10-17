@@ -554,6 +554,8 @@
   "authPrompt.doneReserve": "Đã đăng nhập và đã đặt lời nhắc",
   "authPrompt.doneLike": "Đã đăng nhập và đã thích",
   "authPrompt.doneDraft": "Đã đăng nhập. Nội dung đã được đưa lại vào ô nhập, hãy kiểm tra rồi gửi",
+  "authPrompt.onboardText": "Đã tạo tài khoản. Dành 1 phút chọn vài thể loại bạn thích để nhận gợi ý hợp hơn.",
+  "authPrompt.onboardGo": "Thiết lập",
   "reset.title": "Đặt mật khẩu mới",
   "reset.sub": "Ít nhất 8 ký tự. Sau khi đặt, bạn cần đăng nhập lại trên mọi thiết bị.",
   "reset.newPassword": "Mật khẩu mới",

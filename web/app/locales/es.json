@@ -554,6 +554,8 @@
   "authPrompt.doneReserve": "Sesión iniciada y aviso programado",
   "authPrompt.doneLike": "Sesión iniciada y me gusta añadido",
   "authPrompt.doneDraft": "Sesión iniciada. Tu texto ha vuelto al cuadro; envíalo cuando quieras",
+  "authPrompt.onboardText": "Cuenta creada. Dedica un minuto a elegir algunos géneros que te gusten y mejora tus recomendaciones.",
+  "authPrompt.onboardGo": "Configurar",
   "reset.title": "Elige una nueva contraseña",
   "reset.sub": "Al menos 8 caracteres. Después tendrás que volver a iniciar sesión en todos tus dispositivos.",
   "reset.newPassword": "Nueva contraseña",
