@@ -169,6 +169,32 @@ func TestPerformerWorkCountsIndexOnlyIntegration(t *testing.T) {
 	}
 }
 
+func TestReleaseQIdentifierUsesIndexIntegration(t *testing.T) {
+	s := openTestStore(t)
+	ctx := context.Background()
+	sfx := fmt.Sprint(time.Now().UnixNano())
+	if _, err := s.Exec(ctx, `WITH r AS (
+		INSERT INTO releases(slug,canonical_title,status) SELECT $1||g,'Coded '||g,'published' FROM generate_series(1,30) g RETURNING id,slug)
+		INSERT INTO release_identifiers(release_id,identifier_type,identifier_value,normalized_value)
+		SELECT id,'dvd_code',upper(slug),slug FROM r`, "qid-"+sfx+"-"); err != nil {
+		t.Fatal(err)
+	}
+	sql, args, _, err := buildReleaseQuery(ReleaseFilter{Q: "QID-" + sfx + "-7"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if plan := planWithoutSort(t, s, sql, args...); !strings.Contains(plan, `"release_identifiers_value"`) {
+		t.Errorf("?q= identifier lookup should use release_identifiers_value:\n%s", plan)
+	}
+	page, _, err := s.ReleasePage(ctx, ReleaseFilter{Q: "QID-" + sfx + "-7"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(page) != 1 || page[0].Slug != "qid-"+sfx+"-7" {
+		t.Fatalf("q by product code found %+v", page)
+	}
+}
+
 func TestReleaseRuntimeSortUsesIndexIntegration(t *testing.T) {
 	s := openTestStore(t)
 	ctx := context.Background()
