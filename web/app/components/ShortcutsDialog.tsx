@@ -41,6 +41,7 @@ const SECTIONS: {title: MessageKey; rows: Row[]}[] = [
       {label: 'pc.keys.escape', keys: [['Esc']]},
       {label: 'pc.keys.mute', keys: [['M']]},
       {label: 'pc.keys.volume', keys: [['↑'], ['↓']]},
+      {label: 'pc.keys.search', keys: [['/']]},
       {label: 'pc.keys.help', keys: [['?']]},
     ],
   },

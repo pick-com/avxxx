@@ -1039,6 +1039,7 @@
   "pc.keys.mute": "สลับปิดเสียง",
   "pc.keys.volume": "เพิ่ม / ลดเสียง",
   "pc.keys.toggleCaptions": "เปิด/ปิดคำบรรยาย",
+  "pc.keys.search": "ไปที่ช่องค้นหา",
   "pc.keys.help": "แสดงแป้นพิมพ์ลัด",
   "mini.label": "มินิเพลเยอร์",
   "mini.expand": "ขยายเพลเยอร์: {title}",

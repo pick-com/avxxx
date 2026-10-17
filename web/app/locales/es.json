@@ -1039,6 +1039,7 @@
   "pc.keys.mute": "Silenciar",
   "pc.keys.volume": "Subir / bajar volumen",
   "pc.keys.toggleCaptions": "Activar/desactivar subtítulos",
+  "pc.keys.search": "Ir al cuadro de búsqueda",
   "pc.keys.help": "Mostrar combinaciones de teclas",
   "mini.label": "Minirreproductor",
   "mini.expand": "Expandir reproductor: {title}",
