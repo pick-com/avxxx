@@ -225,6 +225,9 @@ export const zhCN = {
   'player.sleepEpisodeSet': '本集播完后停止，不自动播放下一个',
   'player.sleepOff': '定时停止已关闭',
   'player.sleepFired': '定时停止：已暂停播放',
+  'player.ambient': '氛围模式',
+  'player.ambientHint': '用画面颜色在播放器周围营造柔和光晕',
+  'player.ambientBlocked': '当前片源不支持氛围模式',
 
   // autoplay (PRD 5.4)
   'autoplay.label': '自动播放下一个',
