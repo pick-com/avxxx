@@ -1,4 +1,5 @@
 import {useEffect, useId, useRef, useState, type KeyboardEvent as ReactKeyboardEvent} from 'react';
+import {useT} from '../lib/i18n';
 import {Icon} from './Icon';
 
 export type MenuOption<T> = {value: T; label: string; hint?: string};
@@ -16,6 +17,7 @@ export function PlayerMenu<T extends string | number>({label, buttonText, option
   disabled?: boolean;
 }) {
   const [open, setOpen] = useState(false);
+  const t = useT();
   const rootRef = useRef<HTMLDivElement>(null);
   const buttonRef = useRef<HTMLButtonElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
@@ -69,7 +71,7 @@ export function PlayerMenu<T extends string | number>({label, buttonText, option
         aria-haspopup="menu"
         aria-expanded={open}
         aria-controls={open ? menuId : undefined}
-        aria-label={`${label}：${buttonText}`}
+        aria-label={buttonText === label ? label : t('pc.menuButton', {label, value: buttonText})}
         disabled={disabled}
         onClick={() => setOpen(o => !o)}
       >
