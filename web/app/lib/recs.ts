@@ -14,6 +14,7 @@ import {useEffect, useSyncExternalStore} from 'react';
 import {api, ApiError, isMissingEndpoint, query, toPage, type Page} from './api';
 import {t, uiLang} from './i18n';
 import type {MessageKey} from './messages.zh-CN';
+import {sharedTag, trendingRank} from './reasonParse';
 import {recsDeviceHeaders} from './recFeedback';
 
 // ---- Types (mirror internal/api/recs.go) ----
@@ -251,7 +252,15 @@ export function reasonText(reason: RecReason | undefined, item?: Partial<RecItem
   const vars: Record<string, string> = {name, series: item?.series_name ?? '', maker: item?.maker_name ?? ''};
   // Templates that need a value the item does not carry keep the server text.
   if ((reason.code === 'same_performer' || reason.code === 'followed_new') && !name) return reason.text;
-  if (reason.code === 'because_watched' || reason.code === 'similar_tags' || reason.code === 'trending') return reason.text;
+  // The server text is zh-CN: keep only the values it carries (rank, tag).
+  if (reason.code === 'trending') {
+    const rank = trendingRank(reason.text);
+    return rank ? `${t(key, {})} · ${t('trending.rank', {n: rank})}` : t(key, {});
+  }
+  if (reason.code === 'similar_tags') {
+    const tag = sharedTag(reason.text);
+    return tag ? `${t(key, {})} · ${tag}` : t(key, {});
+  }
   return t(key, vars);
 }
 
