@@ -108,6 +108,8 @@ export default function MeClips() {
                   <span className="release-row-text">
                     <span className="card-title">{clipName(c)}</span>
                     <span className="card-meta">{c.release_title}</span>
+                    {c.title_status === 'shadow' && <span className="card-meta">{t('clip.titleShadow')}</span>}
+                    {c.title_status === 'removed' && <span className="card-meta">{t('clip.titleRemovedByMod')}</span>}
                     <span className="card-meta">{t('clip.mineMeta', {date: formatDate(c.created_at), n: Math.round((c.end_ms - c.start_ms) / 1000)})}</span>
                   </span>
                 </Link>

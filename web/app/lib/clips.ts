@@ -12,6 +12,8 @@ export type Clip = {
   end_ms: number;
   title: string;
   status: string;
+  /** Author only: visible | shadow (keyword hit, waiting for a moderator) | removed. */
+  title_status?: 'visible' | 'shadow' | 'removed';
   author_name?: string;
   created_at: string;
   /** The viewer made it (may delete it). */
@@ -19,7 +21,7 @@ export type Clip = {
 };
 
 export const createClip = (slug: string, range: ClipRange, title: string) =>
-  api<{clip: Clip; title_removed: boolean}>('me/clips', {method: 'POST', body: clipRequest(slug, range, title)});
+  api<{clip: Clip; title_pending: boolean}>('me/clips', {method: 'POST', body: clipRequest(slug, range, title)});
 
 export const getClip = (id: string, signal?: AbortSignal) => api<Clip>(`clips/${encodeURIComponent(id)}`, {signal});
 

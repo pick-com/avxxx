@@ -3,7 +3,10 @@ package store
 // 片段 (clips, migration 054): a 5–60 s segment of a published release,
 // shared under a short public id. Only signed-in users create them; the
 // author deletes the row. Moderators act on them through the shared report
-// inbox (status visible | shadow | folded | deleted, like comments).
+// inbox (status visible | shadow | folded | deleted, like comments). A title
+// that hits a moderation keyword is shadowed (migration 055 title_status):
+// the clip stays public, but only its author sees the title until a
+// moderator approves or removes it (the 待审片段 queue, moderation.go).
 
 import (
 	"avxxx/internal/model"
@@ -29,17 +32,31 @@ const (
 	clipInsertTries = 5
 )
 
+// Clip title statuses (clips.title_status, migration 055).
+const (
+	ClipTitleVisible = "visible"
+	ClipTitleShadow  = "shadow"  // keyword hit: only the author sees the title
+	ClipTitleRemoved = "removed" // a moderator cleared it
+)
+
+// clipTitleSQL is the title a viewer ($2) may see: a shadowed title only
+// reaches its author.
+const clipTitleSQL = `CASE WHEN c.title_status='visible' OR c.user_id=$2 THEN c.title ELSE '' END`
+
 // Clip is a clip as the API returns it.
 type Clip struct {
-	ID           string    `json:"id"` // public id
-	ReleaseSlug  string    `json:"release_slug"`
-	ReleaseTitle string    `json:"release_title"`
-	StartMs      int       `json:"start_ms"`
-	EndMs        int       `json:"end_ms"`
-	Title        string    `json:"title"`
-	Status       string    `json:"status"`
-	AuthorName   string    `json:"author_name,omitempty"`
-	CreatedAt    time.Time `json:"created_at"`
+	ID           string `json:"id"` // public id
+	ReleaseSlug  string `json:"release_slug"`
+	ReleaseTitle string `json:"release_title"`
+	StartMs      int    `json:"start_ms"`
+	EndMs        int    `json:"end_ms"`
+	// Title is empty for other viewers while it is shadowed.
+	Title  string `json:"title"`
+	Status string `json:"status"`
+	// TitleStatus is only told to the author (visible | shadow | removed).
+	TitleStatus string    `json:"title_status,omitempty"`
+	AuthorName  string    `json:"author_name,omitempty"`
+	CreatedAt   time.Time `json:"created_at"`
 	// Mine: the viewer made it (may delete it).
 	Mine bool `json:"mine"`
 	// internal id (reports.target_id); never in JSON.
@@ -110,14 +127,22 @@ const clipReleaseDurationSQL = `COALESCE(
 	(SELECT max(duration_seconds) FROM playback_sources ps WHERE ps.release_id=r.id AND NOT ps.is_alt_version AND ps.duration_seconds > 0) * 1000,
 	r.runtime_minutes * 60000 + 59999, 0)`
 
-// CreateClip stores a clip of a published release for userID. status is
-// the content status the caller decided (visible, or shadow on a keyword
-// hit). An unknown or unpublished release is pgx.ErrNoRows.
-func (s *Store) CreateClip(ctx context.Context, userID int64, in ClipInput, status string) (Clip, error) {
+// CreateClip stores a visible clip of a published release for userID.
+// titleStatus is what the caller decided for the title (visible, or shadow
+// on a keyword hit); an empty title is always visible. An unknown or
+// unpublished release is pgx.ErrNoRows.
+func (s *Store) CreateClip(ctx context.Context, userID int64, in ClipInput, titleStatus string) (Clip, error) {
 	title, err := CleanClipTitle(in.Title)
 	if err != nil {
 		return Clip{}, err
 	}
+	switch {
+	case title == "":
+		titleStatus = ClipTitleVisible
+	case titleStatus != ClipTitleVisible && titleStatus != ClipTitleShadow:
+		return Clip{}, invalid("title status must be visible or shadow")
+	}
+	const status = "visible"
 	var releaseID int64
 	var slug, releaseTitle string
 	var durationMs int
@@ -134,9 +159,9 @@ func (s *Store) CreateClip(ctx context.Context, userID int64, in ClipInput, stat
 		if err != nil {
 			return Clip{}, err
 		}
-		c := Clip{ID: id, ReleaseSlug: slug, ReleaseTitle: releaseTitle, StartMs: in.StartMs, EndMs: in.EndMs, Title: title, Status: status, Mine: true}
-		err = s.QueryRow(ctx, `INSERT INTO clips(public_id,release_id,user_id,start_ms,end_ms,title,status) VALUES($1,$2,$3,$4,$5,$6,$7)
-			RETURNING id,created_at`, id, releaseID, userID, in.StartMs, in.EndMs, title, status).Scan(&c.RowID, &c.CreatedAt)
+		c := Clip{ID: id, ReleaseSlug: slug, ReleaseTitle: releaseTitle, StartMs: in.StartMs, EndMs: in.EndMs, Title: title, Status: status, TitleStatus: titleStatus, Mine: true}
+		err = s.QueryRow(ctx, `INSERT INTO clips(public_id,release_id,user_id,start_ms,end_ms,title,status,title_status) VALUES($1,$2,$3,$4,$5,$6,$7,$8)
+			RETURNING id,created_at`, id, releaseID, userID, in.StartMs, in.EndMs, title, status, titleStatus).Scan(&c.RowID, &c.CreatedAt)
 		var pgErr *pgconn.PgError
 		if errors.As(err, &pgErr) && pgErr.Code == "23505" && try < clipInsertTries {
 			continue // public id collision: draw again
@@ -146,19 +171,24 @@ func (s *Store) CreateClip(ctx context.Context, userID int64, in ClipInput, stat
 }
 
 // ClipByPublicID returns a clip of a published release. Deleted clips are
-// pgx.ErrNoRows; shadowed ones only for their author (viewerID).
+// pgx.ErrNoRows; shadowed clips, and shadowed titles, only reach their
+// author (viewerID). TitleStatus is set for the author only.
 func (s *Store) ClipByPublicID(ctx context.Context, publicID string, viewerID int64) (Clip, error) {
 	if !ValidClipID(publicID) {
 		return Clip{}, pgx.ErrNoRows
 	}
 	var c Clip
 	var owner int64
-	err := s.QueryRow(ctx, `SELECT c.id,c.public_id,r.slug,r.canonical_title,c.start_ms,c.end_ms,c.title,c.status,COALESCE(u.display_name,''),c.created_at,c.user_id
+	var titleStatus string
+	err := s.QueryRow(ctx, `SELECT c.id,c.public_id,r.slug,r.canonical_title,c.start_ms,c.end_ms,`+clipTitleSQL+`,c.title_status,c.status,COALESCE(u.display_name,''),c.created_at,c.user_id
 		FROM clips c JOIN releases r ON r.id=c.release_id JOIN users u ON u.id=c.user_id
 		WHERE c.public_id=$1 AND r.status='published' AND r.merged_into_id IS NULL
 		  AND (c.status IN ('visible','folded') OR (c.status='shadow' AND c.user_id=$2))`, publicID, viewerID).
-		Scan(&c.RowID, &c.ID, &c.ReleaseSlug, &c.ReleaseTitle, &c.StartMs, &c.EndMs, &c.Title, &c.Status, &c.AuthorName, &c.CreatedAt, &owner)
+		Scan(&c.RowID, &c.ID, &c.ReleaseSlug, &c.ReleaseTitle, &c.StartMs, &c.EndMs, &c.Title, &titleStatus, &c.Status, &c.AuthorName, &c.CreatedAt, &owner)
 	c.Mine = viewerID != 0 && owner == viewerID
+	if c.Mine {
+		c.TitleStatus = titleStatus
+	}
 	return c, err
 }
 
@@ -204,7 +234,7 @@ func (s *Store) MyClips(ctx context.Context, userID int64, c *Cursor, limit int)
 		}
 		after, afterID = &t, c.ID
 	}
-	rows, err := s.Query(ctx, `SELECT c.id,c.public_id,r.id,r.slug,r.canonical_title,c.start_ms,c.end_ms,c.title,c.status,c.created_at
+	rows, err := s.Query(ctx, `SELECT c.id,c.public_id,r.id,r.slug,r.canonical_title,c.start_ms,c.end_ms,c.title,c.title_status,c.status,c.created_at
 		FROM clips c JOIN releases r ON r.id=c.release_id
 		WHERE c.user_id=$1 AND c.status<>'deleted' AND r.status='published' AND r.merged_into_id IS NULL
 		  AND ($2::timestamptz IS NULL OR (c.created_at,c.id) < ($2::timestamptz,$3::bigint))
@@ -214,7 +244,7 @@ func (s *Store) MyClips(ctx context.Context, userID int64, c *Cursor, limit int)
 	}
 	out, err := pgx.CollectRows(rows, func(r pgx.CollectableRow) (MyClip, error) {
 		x := MyClip{Clip: Clip{Mine: true}}
-		return x, r.Scan(&x.RowID, &x.ID, &x.ReleaseID, &x.ReleaseSlug, &x.ReleaseTitle, &x.StartMs, &x.EndMs, &x.Title, &x.Status, &x.CreatedAt)
+		return x, r.Scan(&x.RowID, &x.ID, &x.ReleaseID, &x.ReleaseSlug, &x.ReleaseTitle, &x.StartMs, &x.EndMs, &x.Title, &x.TitleStatus, &x.Status, &x.CreatedAt)
 	})
 	if err != nil {
 		return nil, "", err
