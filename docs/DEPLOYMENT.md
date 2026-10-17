@@ -169,6 +169,48 @@ reel.example {
 
 **操作日志**：后台「操作日志」（`/admin/oplog`，仅超级管理员）可按关键词、操作人、身份、对象和时间搜索；内容包括所有写操作、所有紧急令牌请求、读取前台用户和版权投诉等个人数据的请求、登录成功与失败。字段级的修改前后值仍在 `review_events`。
 
+### 2.8 目录抓取出口（Catalog egress：`CATALOG_PROXY_URL` / VPN 来源）
+
+目录抓取（`cmd/scraper`，包括 `-dry-run`）可以经代理出网，例如在 VPN 前面放一个 SOCKS/HTTP 代理。代理只改变出口：robots.txt、许可门禁、限速与预算、403/429/验证码阻断检测照常生效；经代理遇到 Cloudflare 等挑战页时来源同样被停放为 blocked（`blocked_reason=challenge`）。爬虫**从不**尝试绕过挑战或验证码（不复用浏览器 Cookie、不用无头浏览器、不伪造 TLS 指纹）。
+
+**出口解析顺序**（`internal/catalog/proxy.go`，先命中者生效）：
+
+1. 来源抓取策略的 `proxy_url`（`PUT /api/admin/sources/{id}/crawl-policy` 或后台「抓取管线 → 策略」的「出口代理」）：
+   - `direct`：不用任何代理（主机本身的路由已经走 VPN 时用它）；
+   - `env:CATALOG_PROXY_<X>`：代理 URL（可含账号密码）从该环境变量读取，例如 `env:CATALOG_PROXY_VPN`；只允许 `CATALOG_PROXY_` 前缀的变量；
+   - 不含凭据的代理 URL，如 `socks5h://10.8.0.1:1080`。
+   带账号密码的 URL 会被 API 拒绝（400），数据库也有 CHECK 约束：**凭据只放在环境变量 / vault 里，从不入库**。不发送 `proxy_url` 的旧客户端不会清掉已有值；发送 `""` 才清空（回到全局出口）。
+2. `CATALOG_PROXY_URL`（全局）：`http://`、`https://`、`socks5://`、`socks5h://`（`socks5h` 由代理解析域名，推荐用于 VPN）。
+3. 标准 `HTTPS_PROXY` / `HTTP_PROXY` / `NO_PROXY`（及小写形式），仅当 `CATALOG_PROXY_URL` 为空时生效；compose 默认不向 scraper 传这些变量，需要时自己加。
+4. 都没有：直连。
+
+**安全约束**：
+- 配置了代理却无法解析（环境变量缺失、URL 非法）时任务以 `config_error` 失败，**从不静默回退到直连**；`CATALOG_PROXY_URL` 非法时 scraper 启动即退出。
+- `egress_policy=vpn` 的来源（XSList、JAVLibrary 默认如此）在没有任何代理时拒绝运行（`config_error`），避免用服务器真实出口访问；确认主机自身路由已走 VPN 时把该来源的 `proxy_url` 设为 `direct`。
+- 日志、任务错误和 dry-run 输出只打印 `scheme://***@host:port`；传输层错误也会擦除凭据。robots.txt 与页面走同一出口（每个出口独立缓存 robots.txt）。
+- 交叉验证（`cmd/audit -crosscheck`）和图片下载不使用该代理，仍直连。
+
+**Docker 下连到宿主机上的代理**：scraper 服务已配置 `extra_hosts: host.docker.internal:host-gateway`，因此 `.env` 写 `CATALOG_PROXY_VPN=socks5h://user:pass@host.docker.internal:1080` 即可。代理需监听容器可达的地址（不能只监听 127.0.0.1，或改用宿主机网桥地址）。VPN 的连接和账号由运维在宿主机上管理，项目不保存 VPN 账号。
+
+#### XSList / JAVLibrary 启用步骤（VPN 连接后）
+
+两个来源由迁移以停用、`aggregator`、`license_status=review_required`、`terms_reviewed_at` 为空、`egress_policy=vpn` 播种，抓取策略为每 10 秒 1 次请求、增量每日 100 次、baseline 每日 50 次 / 每次 2 页。2026-10-16 从我们的出口访问时两站（含 robots.txt）都返回 Cloudflare 托管挑战（HTTP 403，`cf-mitigated: challenge`），也没有找到条款页；选择器只按合成 fixture 编写（`internal/catalog/testdata/{xslist,javlibrary}/README.md`）。
+
+1. **连接 VPN 并开代理**：在跑 scraper 的机器上连好 VPN，并在其前面提供一个 SOCKS5/HTTP 代理；把代理 URL 写进 `.env` 的 `CATALOG_PROXY_VPN`（生产写 vault `catalog_proxy_vpn` 后重新部署）。
+2. **探测（不写库）**：
+   ```bash
+   docker compose run --rm scraper /usr/local/bin/scraper -dry-run -adapter xslist -proxy env:CATALOG_PROXY_VPN
+   docker compose run --rm scraper /usr/local/bin/scraper -dry-run -adapter javlibrary -proxy env:CATALOG_PROXY_VPN
+   ```
+   输出的 `egress` 字段应显示代理（凭据已脱敏）。出现 `source blocked (challenge, HTTP 403)` 说明该出口仍被挑战：**到此为止**，来源保持停用，不要尝试绕过。也可以用 `-url` 指定单个页面，例如 XSList 搜索 `https://xslist.org/search?query=<名字>&lg=en`、JAVLibrary `https://www.javlibrary.com/en/vl_searchbyid.php?keyword=<品番>`。
+3. **核对选择器**：能拿到真实页面时，按 `docs/MAKER_CATALOG.md` 的做法保存少量页面为 `"origin": "recorded"` fixture，必要时调整选择器，直到 `go run ./cmd/fixturecheck` 通过。
+4. **阅读条款与 robots.txt**：通过 VPN 在浏览器中查看站点条款与 `robots.txt`（爬虫令牌 `avxxx-catalog`）；禁止自动化就把来源设为 `denied`。
+5. **设置出口**：`PUT /api/admin/sources/{id}/crawl-policy`，在原有字段基础上加 `"proxy_url":"env:CATALOG_PROXY_VPN"`（后台「出口代理」同理）。
+6. **verify**：启用来源后先 `POST /api/admin/sources/{id}/jobs` `{"phase":"verify"}`（最多 3 页，不写目录），在后台看 `result_counts.verify`。
+7. **记录审核并放开自动抓取**：条款允许时 `PUT /api/admin/sources/{id}/license` `{"license_status":"terms_confirmed","terms_url":"https://…","reviewed":true,"note":"…"}`；之后 scheduler 按 `discovery_interval` 跑增量。来源一旦被挑战就停放为 blocked，不会自动重试到解除时间之前。
+
+字段优先级：XSList 档案字段为聚合层级 40（`sources.priority` 45，排在 Jav.Guru 之前）；JAVLibrary 作品字段为 70，低于所有其它层级，只补没人提供的字段。JAVLibrary 的演员表（`cast`）、类型（`genres`）和用户评分（`javlibrary_user_rating`）只作为证据保存，不建演员、不加公开标签、不覆盖任何字段。
+
 ## 3. 密钥与配置清单
 
 全部放在 Ansible vault（`secrets.vault.yml`），deploy.yml 渲染到主机 `/opt/avxxx/.env`（0600，属部署用户）。仓库、inventory、文档里都不出现真实值。生成随机值：`openssl rand -hex 32`（URL 安全，可直接放进连接串）。
@@ -186,6 +228,7 @@ reel.example {
 | `log_hash_key` | `LOG_HASH_KEY` | 建议 | 日志中用户 id 的 HMAC 键；空则每次重启随机（哈希不可跨重启关联） |
 | `dmm_api_id` / `dmm_affiliate_id` | `DMM_API_ID` / `DMM_AFFILIATE_ID` | 可选 | DMM/FANZA Affiliate API；affiliate id 须 990–999 结尾。只发往 `api.dmm.com`，日志/任务/入库前脱敏 |
 | `theporndb_api_token` | `THEPORNDB_API_TOKEN` | 可选 | ThePornDB 个人 token，只发往 `api.theporndb.net` |
+| `catalog_proxy_url` / `catalog_proxy_vpn` | `CATALOG_PROXY_URL` / `CATALOG_PROXY_VPN` | 可选 | 目录抓取出口代理（http/https/socks5/socks5h，可含凭据，2.8）；`CATALOG_PROXY_VPN` 供 `proxy_url=env:CATALOG_PROXY_VPN` 的来源使用。日志里只显示 `***@host:port`；空则直连 |
 | `vapid_public_key` / `vapid_private_key` / `vapid_subject` | `VAPID_*` | 可选 | Web Push（`go run ./cmd/notifier -gen-vapid` 生成）；私钥只给 notifier |
 | `smtp_host` / `smtp_port` / `smtp_user` / `smtp_password` / `mail_from` | `SMTP_*`、`MAIL_FROM` | 可选 | 邮件通知与告警邮件（STARTTLS；465 为隐式 TLS） |
 | `alert_webhook_url`、`alert_warning_webhook_url`、`alert_email_to`、`alert_warning_email_to`、`alert_email_from`、`alert_slack_webhook_url`、`alert_telegram_bot_token`、`alert_telegram_chat_id` | `ALERT_*` | 生产必需至少一个 page 通道 | Alertmanager 接收器（`docs/PRODUCTION_OPERATIONS.md`「值班通知」）。全空时告警无人接收 |

@@ -174,6 +174,9 @@ export type CrawlPolicy = {
   daily_byte_budget: number;
   enabled_at: string | null;
   baseline_completed_at: string | null;
+  // Egress: '' = inherit CATALOG_PROXY_URL / HTTPS_PROXY, 'direct',
+  // 'env:CATALOG_PROXY_<X>' or a proxy URL without credentials.
+  proxy_url?: string;
 };
 export type CrawlPolicyInput = Omit<CrawlPolicy, 'source_id' | 'enabled_at' | 'baseline_completed_at'>;
 

@@ -10,7 +10,6 @@ import (
 	"flag"
 	"github.com/jackc/pgx/v5"
 	"log/slog"
-	"net/http"
 	"os"
 	"os/signal"
 	"syscall"
@@ -19,15 +18,16 @@ import (
 
 func main() {
 	dryRun := flag.Bool("dry-run", false, "fetch one discovery page with -adapter, print the mapped records as JSON and exit without touching the database")
-	dryAdapter := flag.String("adapter", "", "adapter name for -dry-run (e.g. dmm, theporndb, maker:s1)")
+	dryAdapter := flag.String("adapter", "", "adapter name for -dry-run (e.g. dmm, theporndb, maker:s1, xslist, javlibrary)")
 	dryURL := flag.String("url", "", "discovery URL for -dry-run (default: the adapter's seeded start URL, if it has one)")
+	dryProxy := flag.String("proxy", "", "egress for -dry-run: direct, env:CATALOG_PROXY_<X> or a proxy URL without credentials (default: CATALOG_PROXY_URL, then HTTPS_PROXY)")
 	flag.Parse()
 	obs.SetupLogging("scraper")
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 	registry := newRegistry()
 	if *dryRun {
-		if e := dryRunCatalog(ctx, os.Stdout, registry, *dryAdapter, *dryURL, os.Getenv); e != nil {
+		if e := dryRunCatalogVia(ctx, os.Stdout, registry, *dryAdapter, *dryURL, *dryProxy, os.Getenv); e != nil {
 			obs.Fatal("dry run", e)
 		}
 		return
@@ -48,8 +48,17 @@ func main() {
 	if uaErr != nil {
 		slog.Warn("catalog crawls disabled", "err", uaErr)
 	}
-	robots := catalog.NewRobots(&http.Client{Timeout: 20 * time.Second}, ua)
-	runner := &crawlrun.Runner{Store: s, Registry: registry, UserAgent: ua, UserAgentErr: uaErr, Robots: robots}
+	// The process-wide catalog egress: CATALOG_PROXY_URL, else HTTPS_PROXY /
+	// HTTP_PROXY. Sources may override it with their crawl policy proxy_url.
+	// An invalid CATALOG_PROXY_URL stops the worker: it must never fall back
+	// to the direct route silently.
+	egress, egErr := catalog.ResolveEgress("", os.Getenv)
+	if egErr != nil {
+		obs.Fatal("catalog egress", errors.New(catalog.RedactProxyURL(egErr.Error())))
+	}
+	slog.Info("catalog egress", "egress", egress.Desc)
+	robots := catalog.NewRobots(catalog.NewHTTPClient(20*time.Second, egress), ua)
+	runner := &crawlrun.Runner{Store: s, Registry: registry, UserAgent: ua, UserAgentErr: uaErr, Robots: robots, Getenv: os.Getenv}
 	for ctx.Err() == nil {
 		if e := s.ReapExpired(ctx); e != nil {
 			obs.JobClaimErrors.WithLabelValues("crawl", "reap").Inc()

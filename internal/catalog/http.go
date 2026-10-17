@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"strconv"
 	"strings"
 	"sync"
@@ -126,6 +127,12 @@ func (f *Fetcher) Fetch(ctx context.Context, rawURL string) (Document, error) {
 	interval := f.Policy.MinInterval
 	if f.Robots != nil {
 		v := f.Robots.Check(ctx, rawURL)
+		if v.Challenge {
+			// The host challenges this egress before we can even read its
+			// rules: a block, for verify runs too. Never attempt the page.
+			f.blocked = &BlockedError{URL: robotsURL(rawURL), Status: v.ChallengeStatus, Reason: "challenge", RetryAfter: DefaultBlockBackoff}
+			return Document{}, f.blocked
+		}
 		if v.Unavailable && f.Automatic {
 			return Document{}, &RobotsError{URL: rawURL, Reason: v.Reason + "; automatic crawls treat an unavailable robots.txt as disallow"}
 		}
@@ -243,6 +250,12 @@ func detectBlock(rawURL string, resp *http.Response, body []byte, now time.Time)
 		b.Reason = "rate_limited"
 	case resp.StatusCode == http.StatusForbidden:
 		b.Reason = "forbidden"
+		if isChallenge(resp, body) {
+			// Cloudflare managed challenges answer 403: name the cause so an
+			// operator knows a different egress or the site's permission,
+			// not a retry, is what unblocks it.
+			b.Reason = "challenge"
+		}
 	case resp.StatusCode == http.StatusServiceUnavailable && (hasRetry || isChallenge(resp, body)):
 		// A bare 503 is usually an outage; only treat it as a block when the
 		// server asks us to back off or serves a challenge.
@@ -288,6 +301,15 @@ func parseRetryAfter(v string, now time.Time) (time.Duration, bool) {
 		d = MaxBlockBackoff
 	}
 	return d, true
+}
+
+// robotsURL is the robots.txt URL of rawURL's origin.
+func robotsURL(rawURL string) string {
+	u, err := url.Parse(rawURL)
+	if err != nil {
+		return rawURL
+	}
+	return u.Scheme + "://" + u.Host + "/robots.txt"
 }
 
 // FetchDocument performs a single unbudgeted fetch. Catalog crawls should use

@@ -48,8 +48,12 @@ type Adapter interface {
 // The ThePornDB adapter (THEPORNDB_API_TOKEN) behaves the same way.
 // The official maker catalogs ("maker:<slug>", maker.go) follow, one per
 // built-in profile; AdaptersFromEnv adds MAKER_PROFILES_FILE overrides.
+// XSList and JAVLibrary are registered like any adapter; their sources are
+// seeded disabled and review_required (migrations/*_vpn_sources.sql), so only manual verify
+// jobs reach them until an operator enables them.
 func Adapters() []Adapter {
-	out := []Adapter{NewJAVDatabaseAdapter(), NewXCITYAdapter(), NewJavGuruAdapter(), NewDMMAdapter(), NewThePornDBAdapter()}
+	out := []Adapter{NewJAVDatabaseAdapter(), NewXCITYAdapter(), NewJavGuruAdapter(), NewDMMAdapter(), NewThePornDBAdapter(),
+		NewXSListAdapter(), NewJAVLibraryAdapter()}
 	return append(out, builtinMakerAdapters()...)
 }
 
