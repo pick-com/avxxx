@@ -18,6 +18,8 @@ export type Clip = {
   created_at: string;
   /** The viewer made it (may delete it). */
   mine: boolean;
+  /** The release's stored cover (absent from older APIs). */
+  release_cover?: ApiImage | null;
 };
 
 export const createClip = (slug: string, range: ClipRange, title: string) =>
@@ -27,8 +29,8 @@ export const getClip = (id: string, signal?: AbortSignal) => api<Clip>(`clips/${
 
 export const deleteClip = (id: string) => api<{deleted: boolean}>(`me/clips/${encodeURIComponent(id)}`, {method: 'DELETE'});
 
-/** 我的片段 row: the clip plus its release's cover. */
-export type MyClip = Clip & {release_cover?: ApiImage | null};
+/** 我的片段 row. */
+export type MyClip = Clip;
 
 /** GET /api/me/clips: the signed-in user's clips, newest first, by cursor. */
 export const getMyClips = (cursor?: string | null, signal?: AbortSignal) =>

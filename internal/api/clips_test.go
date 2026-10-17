@@ -54,7 +54,7 @@ func (s *stubClips) DeleteClip(_ context.Context, _ int64, id string) error {
 func (s *stubClips) MyClips(_ context.Context, uid int64, c *store.Cursor, limit int) ([]store.MyClip, string, error) {
 	s.calls = append(s.calls, "Mine")
 	s.cursor, s.limit = c, limit
-	return []store.MyClip{{Clip: store.Clip{ID: stubClipID, ReleaseSlug: "abc-1", ReleaseTitle: "ABC", StartMs: 1000, EndMs: 16000, Status: "visible", Mine: true, RowID: 9}, ReleaseID: 77}},
+	return []store.MyClip{{Clip: store.Clip{ID: stubClipID, ReleaseSlug: "abc-1", ReleaseTitle: "ABC", StartMs: 1000, EndMs: 16000, Status: "visible", Mine: true, RowID: 9, ReleaseID: 77}}},
 		store.EncodeCursor(store.Cursor{Sort: store.ClipSort, Key: "2026-10-16T00:00:00Z", ID: 9}), nil
 }
 
@@ -163,6 +163,21 @@ func TestCreateClipShadowsKeywordTitle(t *testing.T) {
 		}
 		if out.Clip.Title != tc.title || out.Clip.TitleStatus != tc.want || out.TitlePending != tc.pending {
 			t.Errorf("%q: clip %+v pending=%v, want %s", tc.title, out.Clip, out.TitlePending, tc.want)
+		}
+	}
+}
+
+// GET /api/clips/{id} carries the release cover key (the clip page needs
+// no second request) and never an internal id.
+func TestGetClipCarriesCover(t *testing.T) {
+	rec := do(newClipServer(&stubClips{}), "GET", "/api/clips/"+stubClipID, "", "")
+	body := rec.Body.String()
+	if rec.Code != http.StatusOK || !strings.Contains(body, `"release_cover":null`) {
+		t.Fatalf("status %d: %s", rec.Code, body)
+	}
+	for _, leak := range []string{`"RowID"`, `"ReleaseID"`, `"release_id"`, `"title_status"`} {
+		if strings.Contains(body, leak) {
+			t.Errorf("leaked %s: %s", leak, body)
 		}
 	}
 }

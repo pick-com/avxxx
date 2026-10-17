@@ -127,9 +127,14 @@ func (srv *Server) myClips(w http.ResponseWriter, r *http.Request, uid int64) {
 }
 
 // getClip: GET /api/clips/{id} (public id). 404 for unknown, deleted or
-// moderated-away clips and for releases that are not published.
+// moderated-away clips and for releases that are not published. The
+// release's cover comes along, so the clip page renders (og:image included)
+// from this one request.
 func (srv *Server) getClip(w http.ResponseWriter, r *http.Request) {
 	c, err := srv.clips.ClipByPublicID(r.Context(), r.PathValue("id"), srv.viewerID(r))
+	if err == nil {
+		c.ReleaseCover = srv.publicImages(r.Context(), images.EntityRelease, []int64{c.ReleaseID})[c.ReleaseID]
+	}
 	reply(w, c, err)
 }
 
