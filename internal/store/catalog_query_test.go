@@ -141,7 +141,8 @@ func TestBuildPerformerQuery(t *testing.T) {
 	}
 
 	// works sorts on performer_stats; performers the hourly run has not
-	// seen yet sort on a live count in a branch of their own.
+	// seen yet sort on a live count in a branch of their own, which starts
+	// from performer_stats_pending.
 	live := "(SELECT count(*) FROM release_performers lrp JOIN releases lr ON lr.id=lrp.release_id WHERE lrp.performer_id=p.id AND lr.status='published' AND lr.merged_into_id IS NULL)"
 	sql, args, _, err = buildPerformerQuery(PerformerFilter{Q: "ai", Sort: "works", Cursor: &Cursor{Sort: "works", Key: "12", ID: 3}, Limit: 10})
 	if err != nil {
@@ -150,7 +151,7 @@ func TestBuildPerformerQuery(t *testing.T) {
 	for _, want := range []string{
 		"p.canonical_name ILIKE '%'||$1||'%'",
 		"ps.performer_id IS NOT NULL AND (ps.works_count < $2 OR (ps.works_count = $2 AND p.id > $3)) ORDER BY ps.works_count DESC,p.id ASC LIMIT $4",
-		"ps.performer_id IS NULL AND (" + live + " < $2 OR (" + live + " = $2 AND p.id > $3)) ORDER BY " + live + " DESC,p.id ASC LIMIT $4",
+		"ps.performer_id IS NULL AND p.id IN (SELECT performer_id FROM performer_stats_pending) AND (" + live + " < $2 OR (" + live + " = $2 AND p.id > $3)) ORDER BY " + live + " DESC,p.id ASC LIMIT $4",
 		"ORDER BY u.sk DESC,u.id ASC LIMIT $4) pg",
 		// The live counts are only computed for the page's rows.
 		"LIMIT $4) pg\n\tCROSS JOIN LATERAL (SELECT count(*) works",
