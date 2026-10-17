@@ -13,6 +13,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -85,6 +86,9 @@ type sortSpec struct {
 	kind    keyKind
 	keyDesc bool
 	idDesc  bool
+	// missingKey (performer sorts only) is the key of a performer without
+	// a performer_stats row; key then only reads rows that have one.
+	missingKey string
 }
 
 func dir(desc bool) string {
@@ -147,10 +151,14 @@ func (b *sqlBuilder) after(s sortSpec, idCol string, c *Cursor) error {
 	if err != nil {
 		return err
 	}
-	kp, ip := b.arg(k), b.arg(c.ID)
-	b.cond(fmt.Sprintf("(%s %s %s OR (%s = %s AND %s %s %s))",
-		s.key, cmp(s.keyDesc), kp, s.key, kp, idCol, cmp(s.idDesc), ip))
+	b.cond(s.keysetCond(idCol, b.arg(k), b.arg(c.ID)))
 	return nil
+}
+
+// keysetCond is "row comes after the cursor (key kp, id ip) in order s".
+func (s sortSpec) keysetCond(idCol, kp, ip string) string {
+	return fmt.Sprintf("(%s %s %s OR (%s = %s AND %s %s %s))",
+		s.key, cmp(s.keyDesc), kp, s.key, kp, idCol, cmp(s.idDesc), ip)
 }
 
 func (b *sqlBuilder) whereSQL() string {
@@ -356,9 +364,16 @@ func (s *Store) ReleasePage(ctx context.Context, f ReleaseFilter) ([]model.Relea
 // ---- performers ----
 
 var performerSorts = map[string]sortSpec{
-	"name":        {key: "p.canonical_name", kind: kindText},
-	"works":       {key: "st.works", kind: kindInt, keyDesc: true},
-	"newest_work": {key: "COALESCE(st.newest,DATE '0001-01-01')", kind: kindDate, keyDesc: true, idDesc: true},
+	"name": {key: "p.canonical_name", kind: kindText},
+	// works / newest_work sort on the hourly performer_stats counts (same
+	// rule as the displayed ones: published, unmerged works) so the sort no
+	// longer counts every performer's works. A performer with no stats row
+	// yet (added since the last run) sorts by a live count (missingKey,
+	// see buildPerformerQuery). The displayed works_count /
+	// latest_release_date stay live for the page's rows.
+	"works": {key: "ps.works_count", missingKey: liveWorksSQL("count(*)"), kind: kindInt, keyDesc: true},
+	"newest_work": {key: "COALESCE(ps.latest_work_date,DATE '0001-01-01')", missingKey: "COALESCE(" + liveWorksSQL("max(lr.release_date)") + ",DATE '0001-01-01')",
+		kind: kindDate, keyDesc: true, idDesc: true},
 	// From performer_stats (hourly): 热度 (30-day heat), 粉丝, 新晋 (latest debut first).
 	"heat":      {key: "ps.heat_30d", kind: kindInt, keyDesc: true, idDesc: true},
 	"followers": {key: "ps.followers", kind: kindInt, keyDesc: true, idDesc: true},
@@ -430,18 +445,60 @@ func buildPerformerQuery(f PerformerFilter) (string, []any, int, error) {
 	if statsSorts[f.Sort] || f.Era != 0 || f.Tag != "" || f.AudioLang != "" {
 		b.cond("ps.performer_id IS NOT NULL")
 	}
-	if err := b.after(s, "p.id", f.Cursor); err != nil {
-		return "", nil, 0, err
+	// The inner query picks the page from performers + performer_stats
+	// only; the live work counts are computed for its limit+1 rows, never
+	// for every performer the sort walks. The outer ORDER BY repeats the
+	// same order on the carried sort key (pg.sk).
+	page := func(key, extra string, kp, ip string) string {
+		k := s
+		k.key = key
+		conds := append(slices.Clone(b.where), extra)
+		if kp != "" {
+			conds = append(conds, k.keysetCond("p.id", kp, ip))
+		}
+		return `SELECT p.id,p.slug,p.canonical_name,COALESCE(p.canonical_name_ja,'') name_ja,` + PublicBirthDate("p") + ` birth_date,
+	COALESCE(p.height_cm,0) height_cm,COALESCE(p.bust_cm,0) bust_cm,COALESCE(p.waist_cm,0) waist_cm,COALESCE(p.hip_cm,0) hip_cm,p.status,
+	COALESCE(ps.followers,0) followers,COALESCE(ps.heat_30d,0) heat,COALESCE(ps.total_plays,0) total_plays,ps.first_work_date,
+	` + key + ` sk FROM performers p
+	LEFT JOIN performer_stats ps ON ps.performer_id=p.id WHERE ` + strings.Join(slices.DeleteFunc(conds, func(c string) bool { return c == "" }), " AND ") +
+			" ORDER BY " + k.orderBy("p.id")
 	}
-	sql := `SELECT p.id,p.slug,p.canonical_name,COALESCE(p.canonical_name_ja,''),` + PublicBirthDate("p") + `,
-	COALESCE(p.height_cm,0),COALESCE(p.bust_cm,0),COALESCE(p.waist_cm,0),COALESCE(p.hip_cm,0),p.status,
-	st.works,st.newest,COALESCE(ps.followers,0),COALESCE(ps.heat_30d,0),COALESCE(ps.total_plays,0),ps.first_work_date,` + s.keyText + ` FROM performers p
-	LEFT JOIN performer_stats ps ON ps.performer_id=p.id
+	var kp, ip string
+	if f.Cursor != nil {
+		k, err := s.parseKey(f.Cursor.Key)
+		if err != nil {
+			return "", nil, 0, err
+		}
+		kp, ip = b.arg(k), b.arg(f.Cursor.ID)
+	}
+	lim := b.arg(limit + 1)
+	outer := sortSpec{key: "pg.sk", kind: s.kind, keyDesc: s.keyDesc, idDesc: s.idDesc}
+	inner := page(s.key, "", kp, ip) + " LIMIT " + lim
+	if s.missingKey != "" {
+		// Rows with stats sort on them; the few without (new since the
+		// last run) on the live key. Two branches rather than one
+		// COALESCE(stats, live subquery): the planner costs a subquery in
+		// the sort key once per performer even when it never runs, which
+		// at production volume pushes the query over jit_above_cost.
+		inner = `SELECT * FROM ((` + page(s.key, "ps.performer_id IS NOT NULL", kp, ip) + " LIMIT " + lim + `)
+	UNION ALL (` + page(s.missingKey, "ps.performer_id IS NULL", kp, ip) + " LIMIT " + lim + `)) u
+	ORDER BY ` + sortSpec{key: "u.sk", keyDesc: s.keyDesc, idDesc: s.idDesc}.orderBy("u.id") + " LIMIT " + lim
+	}
+	sql := `SELECT pg.id,pg.slug,pg.canonical_name,pg.name_ja,pg.birth_date,pg.height_cm,pg.bust_cm,pg.waist_cm,pg.hip_cm,pg.status,
+	st.works,st.newest,pg.followers,pg.heat,pg.total_plays,pg.first_work_date,` + keyTextExpr(outer) + ` FROM (
+	` + inner + `) pg
 	CROSS JOIN LATERAL (SELECT count(*) works,max(r.release_date) newest FROM release_performers rp
 	 JOIN releases r ON r.id=rp.release_id
-	 WHERE rp.performer_id=p.id AND r.status='published' AND r.merged_into_id IS NULL) st` +
-		b.whereSQL() + " ORDER BY " + s.orderBy("p.id") + " LIMIT " + b.arg(limit+1)
+	 WHERE rp.performer_id=pg.id AND r.status='published' AND r.merged_into_id IS NULL) st
+	ORDER BY ` + outer.orderBy("pg.id")
 	return sql, b.args, limit, nil
+}
+
+// liveWorksSQL aggregates agg over performer p's published, unmerged works
+// (alias lr): the performer_stats works_count / latest_work_date rule.
+func liveWorksSQL(agg string) string {
+	return "(SELECT " + agg + " FROM release_performers lrp JOIN releases lr ON lr.id=lrp.release_id" +
+		" WHERE lrp.performer_id=p.id AND lr.status='published' AND lr.merged_into_id IS NULL)"
 }
 
 // PerformerPage returns one page of active performers and the next cursor.
