@@ -29,6 +29,26 @@ type ReleaseSimilarRow struct {
 	Reason    string
 }
 
+// ReleaseSimilarEpsilon is how far a stored release_similar score may drift
+// from the newly computed one before the nightly job rewrites the row
+// (SimilarDiff). Each night's new releases and plays move idf and the
+// co-watch norms, so most scores change by 1e-5 to 1e-3 every night: with
+// no tolerance the job rewrites almost every row, with 1e-3 about 1%
+// (docs/PERFORMANCE.md). Scores are cosines in [0, 1], and 1e-3 is a tenth
+// of a match percent. Each release's neighbour order stays exact.
+const ReleaseSimilarEpsilon = 1e-3
+
+// ReleaseSimilarWrite counts the rows one ReplaceReleaseSimilar changed.
+type ReleaseSimilarWrite struct {
+	Inserted int64 `json:"inserted"`
+	Updated  int64 `json:"updated"`
+	Deleted  int64 `json:"deleted"`
+	// Exact counts releases written with exact scores because no stored
+	// value within the tolerance kept their order (float rounding edges).
+	Exact   int64 `json:"exact_releases"`
+	WriteMS int64 `json:"write_ms"`
+}
+
 // Store is everything the jobs need from the database (internal/store/recs.go).
 type Store interface {
 	SimilarityWeights(ctx context.Context) (Weights, error)
@@ -40,7 +60,11 @@ type Store interface {
 	// completed play events since eventSince; ratio is the best watch ratio
 	// in [0, 1], or -1 when the duration is unknown.
 	WatchInteractions(ctx context.Context, historySince, eventSince time.Time) ([]Interaction, error)
-	ReplaceReleaseSimilar(ctx context.Context, rows []ReleaseSimilarRow, at time.Time) error
+	// ReplaceReleaseSimilar makes release_similar equivalent to rows (see
+	// SimilarDiff, with ReleaseSimilarEpsilon), writing only the rows that
+	// differ, and reports how many it inserted, updated and deleted. It may
+	// reorder rows.
+	ReplaceReleaseSimilar(ctx context.Context, rows []ReleaseSimilarRow, at time.Time) (ReleaseSimilarWrite, error)
 	ReplacePerformerSimilar(ctx context.Context, rows []PerformerMatch, at time.Time) error
 
 	// TrendingInputs counts plays (distinct play_request plays, or
@@ -84,8 +108,10 @@ type SimilarityReport struct {
 	CoWatchRows   int       `json:"cowatch_rows"`
 	ContentRows   int       `json:"content_rows"`
 	PerformerRows int       `json:"performer_rows"`
-	Weights       Weights   `json:"weights"`
-	DurationMS    int64     `json:"duration_ms"`
+	// ReleaseWrite is what the release_similar write changed.
+	ReleaseWrite ReleaseSimilarWrite `json:"release_write"`
+	Weights      Weights             `json:"weights"`
+	DurationMS   int64               `json:"duration_ms"`
 }
 
 // RunSimilarity recomputes release_similar (co-watch + content) and
@@ -150,9 +176,10 @@ func (r *Runner) RunSimilarity(ctx context.Context) (rep SimilarityReport, err e
 	}
 
 	at := r.now()
-	if err = r.Store.ReplaceReleaseSimilar(ctx, rows, at); err != nil {
+	if rep.ReleaseWrite, err = r.Store.ReplaceReleaseSimilar(ctx, rows, at); err != nil {
 		return rep, fmt.Errorf("write release_similar: %w", err)
 	}
+	rep.ReleaseWrite.WriteMS = r.now().Sub(at).Milliseconds()
 	if err = r.Store.ReplacePerformerSimilar(ctx, perf, at); err != nil {
 		return rep, fmt.Errorf("write performer_similar: %w", err)
 	}

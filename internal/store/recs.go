@@ -12,6 +12,8 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"math"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -144,9 +146,17 @@ func (s *Store) WatchInteractions(ctx context.Context, historySince, eventSince 
 	})
 }
 
-// ReplaceReleaseSimilar swaps the whole release_similar table in one
-// transaction (readers see the old or the new set, never a mix).
-func (s *Store) ReplaceReleaseSimilar(ctx context.Context, rows []recs.ReleaseSimilarRow, at time.Time) error {
+// ReplaceReleaseSimilar implements recs.Store with SyncReleaseSimilar and
+// recs.ReleaseSimilarEpsilon.
+func (s *Store) ReplaceReleaseSimilar(ctx context.Context, rows []recs.ReleaseSimilarRow, at time.Time) (recs.ReleaseSimilarWrite, error) {
+	return s.SyncReleaseSimilar(ctx, rows, at, recs.ReleaseSimilarEpsilon)
+}
+
+// RewriteReleaseSimilar swaps the whole release_similar table in one
+// transaction: DELETE and COPY. It is the reference SyncReleaseSimilar is
+// tested against. At 300k releases it writes ~17.5M rows and leaves as many
+// dead ones, so the job does not use it.
+func (s *Store) RewriteReleaseSimilar(ctx context.Context, rows []recs.ReleaseSimilarRow, at time.Time) error {
 	return pgx.BeginFunc(ctx, s, func(tx pgx.Tx) error {
 		if _, err := tx.Exec(ctx, `DELETE FROM release_similar`); err != nil {
 			return err
@@ -158,6 +168,120 @@ func (s *Store) ReplaceReleaseSimilar(ctx context.Context, rows []recs.ReleaseSi
 			}))
 		return err
 	})
+}
+
+// SyncReleaseSimilar makes release_similar equivalent to rows (see
+// recs.SimilarDiff: same pairs, scores within eps, same order per release;
+// identical with eps 0) while writing only the rows that differ. It sorts
+// rows by release in place.
+//
+// In one transaction (readers see the old or the new set, never a mix, and
+// are never blocked) it streams the current rows in release order, plans
+// each release against its new rows, COPYs the planned changes into a temp
+// table and applies them with one DELETE and one INSERT … ON CONFLICT DO
+// UPDATE. Rows left alone keep their computed_at, which nothing reads.
+func (s *Store) SyncReleaseSimilar(ctx context.Context, rows []recs.ReleaseSimilarRow, at time.Time, eps float64) (recs.ReleaseSimilarWrite, error) {
+	slices.SortFunc(rows, func(a, b recs.ReleaseSimilarRow) int {
+		switch {
+		case a.ReleaseID < b.ReleaseID:
+			return -1
+		case a.ReleaseID > b.ReleaseID:
+			return 1
+		}
+		return 0
+	})
+	d := &recs.SimilarDiff{Eps: eps}
+	err := pgx.BeginFunc(ctx, s, func(tx pgx.Tx) error {
+		d.Upsert, d.Delete, d.Write = nil, nil, recs.ReleaseSimilarWrite{}
+		i := 0
+		// next plans the releases with only new rows before id, then id.
+		next := func(id int64, stored []recs.StoredSimilar) {
+			for i < len(rows) && rows[i].ReleaseID < id {
+				j := i + 1
+				for j < len(rows) && rows[j].ReleaseID == rows[i].ReleaseID {
+					j++
+				}
+				d.Release(rows[i].ReleaseID, rows[i:j], nil)
+				i = j
+			}
+			j := i
+			for j < len(rows) && rows[j].ReleaseID == id {
+				j++
+			}
+			if j > i || len(stored) > 0 {
+				d.Release(id, rows[i:j], stored)
+			}
+			i = j
+		}
+		q, err := tx.Query(ctx, `SELECT release_id, similar_id, reason, score FROM release_similar ORDER BY release_id`)
+		if err != nil {
+			return err
+		}
+		cur := int64(-1)
+		var stored []recs.StoredSimilar
+		reasons := map[string]string{}
+		for q.Next() {
+			var id int64
+			var x recs.StoredSimilar
+			var reason []byte
+			if err := q.Scan(&id, &x.SimilarID, &reason, &x.Score); err != nil {
+				q.Close()
+				return err
+			}
+			// Four reasons: intern them instead of allocating per row.
+			r, ok := reasons[string(reason)]
+			if !ok {
+				r = string(reason)
+				reasons[r] = r
+			}
+			x.Reason = r
+			if id != cur {
+				if cur >= 0 {
+					next(cur, stored)
+				}
+				cur, stored = id, stored[:0]
+			}
+			stored = append(stored, x)
+		}
+		q.Close()
+		if err := q.Err(); err != nil {
+			return err
+		}
+		if cur >= 0 {
+			next(cur, stored)
+		}
+		next(math.MaxInt64, nil)
+		if len(d.Upsert)+len(d.Delete) == 0 {
+			return nil
+		}
+		if _, err := tx.Exec(ctx, `CREATE TEMP TABLE release_similar_changes (
+			release_id bigint NOT NULL, similar_id bigint NOT NULL, reason text NOT NULL, score real
+		) ON COMMIT DROP`); err != nil {
+			return err
+		}
+		// score NULL marks a delete.
+		n := len(d.Upsert)
+		if _, err := tx.CopyFrom(ctx, pgx.Identifier{"release_similar_changes"}, []string{"release_id", "similar_id", "reason", "score"},
+			pgx.CopyFromSlice(n+len(d.Delete), func(k int) ([]any, error) {
+				if k < n {
+					r := d.Upsert[k]
+					return []any{r.ReleaseID, r.SimilarID, r.Reason, float32(r.Score)}, nil
+				}
+				r := d.Delete[k-n]
+				return []any{r.ReleaseID, r.SimilarID, r.Reason, nil}, nil
+			})); err != nil {
+			return err
+		}
+		if _, err := tx.Exec(ctx, `DELETE FROM release_similar t USING release_similar_changes c
+			WHERE c.score IS NULL AND t.release_id=c.release_id AND t.reason=c.reason AND t.similar_id=c.similar_id`); err != nil {
+			return err
+		}
+		_, err = tx.Exec(ctx, `INSERT INTO release_similar (release_id, similar_id, score, reason, computed_at)
+			SELECT release_id, similar_id, score, reason, $1 FROM release_similar_changes WHERE score IS NOT NULL
+			ON CONFLICT (release_id, reason, similar_id) DO UPDATE SET score=EXCLUDED.score, computed_at=EXCLUDED.computed_at`, at)
+		return err
+	})
+	return d.Write, err
 }
 
 // ReplacePerformerSimilar swaps the whole performer_similar table.
