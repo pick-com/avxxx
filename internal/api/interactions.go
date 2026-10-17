@@ -128,6 +128,10 @@ func (srv *Server) setReaction(w http.ResponseWriter, r *http.Request, value int
 		reply(w, nil, err)
 		return
 	}
+	if err := srv.allowAnonVote(r, v); err != nil {
+		reply(w, nil, err)
+		return
+	}
 	id, err := srv.community.ReleaseIDBySlug(ctx, r.PathValue("slug"))
 	if err != nil {
 		reply(w, nil, err)
