@@ -6,6 +6,7 @@ import (
 	"errors"
 	"log"
 	"net/http"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -34,9 +35,42 @@ func (srv *Server) mediaRoutes() []route {
 		// Source-specific search/detail/resolve routes are ready for Kodi adapters.
 		// Adapters are intentionally not registered until their source implementation
 		// and authorization requirements are reviewed.
-		{"GET /api/search", srv.media.Search},
-		{"GET /api/detail/{source}/{id...}", srv.media.Detail},
-		{"POST /api/resolve/{source}/{id...}", srv.media.Resolve},
+		// Each call can fetch a third-party provider page, so they are
+		// limited per client address (mediaLimited).
+		{"GET /api/search", srv.mediaLimited("media-lookup", limitMediaLookupIP, srv.media.Search)},
+		{"GET /api/detail/{source}/{id...}", srv.mediaLimited("media-lookup", limitMediaLookupIP, srv.media.Detail)},
+		{"POST /api/resolve/{source}/{id...}", srv.mediaLimited("media-resolve", limitMediaResolveIP, srv.media.Resolve)},
+	}
+}
+
+// Per-address limits on the provider routes. The resolve cache absorbs
+// repeated plays of one video, but any uncached (source, id), and any
+// ?refresh=1 (once per DefaultResolveRefreshInterval per id, and ids are
+// the caller's choice), is a live request to the provider; without a limit
+// one client could make the server hammer a provider (and get its address
+// blocked there). A player resolves once per play and refreshes only when a
+// stream URL fails, far below these.
+var (
+	limitMediaResolveIP = rateRule{120, 10 * time.Minute}
+	limitMediaRefreshIP = rateRule{20, 10 * time.Minute}
+	limitMediaLookupIP  = rateRule{60, 10 * time.Minute}
+)
+
+// mediaLimited applies rule per client address before h; a resolve with
+// ?refresh=1 also counts against limitMediaRefreshIP.
+func (srv *Server) mediaLimited(name string, rule rateRule, h http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		ip := srv.ip(r)
+		ok := srv.allow(r, name+":"+ip, rule)
+		if ok && r.Method == http.MethodPost && r.URL.Query().Get("refresh") == "1" {
+			ok = srv.allow(r, "media-refresh:"+ip, limitMediaRefreshIP)
+		}
+		if !ok {
+			w.Header().Set("Retry-After", strconv.Itoa(int(rule.window/time.Second)))
+			reply(w, nil, tooManyRequests("too many requests"))
+			return
+		}
+		h(w, r)
 	}
 }
 
