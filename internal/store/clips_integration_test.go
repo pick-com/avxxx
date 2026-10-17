@@ -132,6 +132,39 @@ func TestClipsIntegration(t *testing.T) {
 		t.Errorf("exported clips = %d, want 4: %s", len(clips), export["clips"])
 	}
 
+	// 我的片段: newest first, one per page; the moderator-deleted clip and
+	// the draft release's clip are left out, other users' clips never show.
+	var seen []string
+	var cur *Cursor
+	for page := 0; ; page++ {
+		items, next, err := s.MyClips(ctx, alice, cur, 1)
+		must(err)
+		for _, x := range items {
+			if !x.Mine || x.ReleaseID == 0 || x.ReleaseTitle == "" {
+				t.Errorf("my clip %+v", x)
+			}
+			seen = append(seen, x.ReleaseSlug)
+		}
+		if next == "" {
+			break
+		}
+		c, err := DecodeCursor(next)
+		must(err)
+		cur = &c
+		if page > 5 {
+			t.Fatal("pagination does not end")
+		}
+	}
+	if len(seen) != 2 || seen[0] != "unknown" || seen[1] != "runtime" {
+		t.Errorf("alice's clips = %v, want [unknown runtime]", seen)
+	}
+	if items, _, err := s.MyClips(ctx, bob, nil, 0); err != nil || len(items) != 1 || items[0].ID != sh.ID {
+		t.Errorf("bob's clips = %+v, %v", items, err)
+	}
+	if _, _, err := s.MyClips(ctx, alice, &Cursor{Sort: "newest", Key: "x", ID: 1}, 0); err == nil {
+		t.Error("foreign cursor accepted")
+	}
+
 	// Deletion: owner only.
 	if err := s.DeleteClip(ctx, alice, sh.ID); !errors.Is(err, pgx.ErrNoRows) {
 		t.Errorf("deleting someone else's clip: %v", err)

@@ -348,6 +348,7 @@ var expectedRoutes = []string{
 	// Site-entry 18+ gate (agegate.go).
 	"POST /api/age-gate",
 	// 片段 (clips.go) and their moderator action (moderation.go).
+	"GET /api/me/clips",
 	"POST /api/me/clips",
 	"DELETE /api/me/clips/{id}",
 	"GET /api/clips/{id}",

@@ -258,6 +258,17 @@ export const zhCN = {
   'clip.report': '举报',
   'clip.notFound': '片段不存在',
   'clip.notFoundBody': '片段可能已被删除，或原视频暂时无法观看。',
+  // 我的片段 (routes/me-clips.tsx)
+  'clip.mineTitle': '我的片段',
+  'clip.mineAnonTitle': '登录后查看你的片段',
+  'clip.mineAnonBody': '在播放器里剪辑 5–60 秒的片段，生成的分享链接都会保存在这里。',
+  'clip.mineEmptyTitle': '还没有片段',
+  'clip.mineEmptyBody': '看视频时在播放设置里点「剪辑」，截取 5–60 秒分享给朋友。',
+  'clip.mineBrowse': '去发现视频',
+  'clip.mineMeta': '{date} · {n} 秒',
+  'clip.copyLabel': '复制片段「{title}」的链接',
+  'clip.deleteLabel': '删除片段「{title}」',
+  'clip.confirmDelete': '确认删除（分享链接将失效）',
 
   // autoplay (PRD 5.4)
   'autoplay.label': '自动播放下一个',

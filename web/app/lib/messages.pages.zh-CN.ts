@@ -21,6 +21,7 @@ export const pagesZhCN = {
   'title.welcome': 'REEL · 欢迎',
   'title.me': 'REEL · 我的',
   'title.meStats': 'REEL · 观看统计',
+  'title.meClips': 'REEL · 我的片段',
   'title.notifications': 'REEL · 通知',
   'title.later': 'REEL · 稍后观看',
   'title.following': 'REEL · 关注',
@@ -474,6 +475,7 @@ export const pagesZhCN = {
   'me.reservations': '我的预约',
   'me.notifications': '通知',
   'me.stats': '观看统计',
+  'me.clips': '我的片段',
 
   // me/stats (WatchStats)
   'meStats.title': '观看统计',

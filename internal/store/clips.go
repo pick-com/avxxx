@@ -6,6 +6,7 @@ package store
 // inbox (status visible | shadow | folded | deleted, like comments).
 
 import (
+	"avxxx/internal/model"
 	"context"
 	"crypto/rand"
 	"errors"
@@ -172,4 +173,57 @@ func (s *Store) DeleteClip(ctx context.Context, userID int64, publicID string) e
 		err = pgx.ErrNoRows
 	}
 	return err
+}
+
+// ClipSort is the cursor sort of GET /api/me/clips.
+const ClipSort = "clips"
+
+// MyClip is one row of the author's clip list (GET /api/me/clips): the clip
+// plus its release's cover (set by the API from the stored images).
+type MyClip struct {
+	Clip
+	ReleaseCover *model.Image `json:"release_cover"`
+	// ReleaseID looks the cover up; never in JSON.
+	ReleaseID int64 `json:"-"`
+}
+
+// MyClips lists userID's clips, newest first, keyset-paginated on
+// (created_at, id). Only clips that open are listed: published, unmerged
+// releases, not deleted by a moderator.
+func (s *Store) MyClips(ctx context.Context, userID int64, c *Cursor, limit int) ([]MyClip, string, error) {
+	limit = pageLimit(limit)
+	var after *time.Time
+	var afterID int64
+	if c != nil {
+		if c.Sort != ClipSort {
+			return nil, "", invalidQuery("cursor does not match clips")
+		}
+		t, err := time.Parse(time.RFC3339Nano, c.Key)
+		if err != nil || c.ID <= 0 {
+			return nil, "", invalidQuery("malformed cursor")
+		}
+		after, afterID = &t, c.ID
+	}
+	rows, err := s.Query(ctx, `SELECT c.id,c.public_id,r.id,r.slug,r.canonical_title,c.start_ms,c.end_ms,c.title,c.status,c.created_at
+		FROM clips c JOIN releases r ON r.id=c.release_id
+		WHERE c.user_id=$1 AND c.status<>'deleted' AND r.status='published' AND r.merged_into_id IS NULL
+		  AND ($2::timestamptz IS NULL OR (c.created_at,c.id) < ($2::timestamptz,$3::bigint))
+		ORDER BY c.created_at DESC, c.id DESC LIMIT $4`, userID, after, afterID, limit+1)
+	if err != nil {
+		return nil, "", err
+	}
+	out, err := pgx.CollectRows(rows, func(r pgx.CollectableRow) (MyClip, error) {
+		x := MyClip{Clip: Clip{Mine: true}}
+		return x, r.Scan(&x.RowID, &x.ID, &x.ReleaseID, &x.ReleaseSlug, &x.ReleaseTitle, &x.StartMs, &x.EndMs, &x.Title, &x.Status, &x.CreatedAt)
+	})
+	if err != nil {
+		return nil, "", err
+	}
+	next := ""
+	if len(out) > limit {
+		out = out[:limit]
+		last := out[limit-1]
+		next = EncodeCursor(Cursor{Sort: ClipSort, Key: last.CreatedAt.UTC().Format(time.RFC3339Nano), ID: last.RowID})
+	}
+	return nonNil(out), next, nil
 }
