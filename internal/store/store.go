@@ -16,6 +16,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -327,10 +328,38 @@ func (s *Store) LinkMediaByIdentifier(ctx context.Context, source, mediaID, medi
 	return true, s.LinkMediaToRelease(ctx, releaseID, source, mediaID, mediaURL)
 }
 
+// tagsTTL is how long the most-used tags list is cached.
+const tagsTTL = 5 * time.Minute
+
+// tagsCache is one store's cached Tags lists, by limit (1-200).
+type tagsCache struct {
+	mu      sync.Mutex
+	byLimit map[int]*staleCache[[]map[string]any]
+}
+
+var tagsCaches sync.Map // *Store -> *tagsCache
+
+// Tags lists the most-used tags with their release counts. It counts every
+// release_tags row (~100 ms at 1.77M rows) and the home page asks on every
+// server render, so lists are cached for tagsTTL, one reload at a time
+// (staleCache). Callers must not modify the returned maps.
 func (s *Store) Tags(ctx context.Context, limit int) ([]map[string]any, error) {
 	if limit <= 0 || limit > 200 {
 		limit = 50
 	}
+	v, _ := tagsCaches.LoadOrStore(s, &tagsCache{byLimit: map[int]*staleCache[[]map[string]any]{}})
+	tc := v.(*tagsCache)
+	tc.mu.Lock()
+	c := tc.byLimit[limit]
+	if c == nil {
+		c = &staleCache[[]map[string]any]{}
+		tc.byLimit[limit] = c
+	}
+	tc.mu.Unlock()
+	return c.get(tagsTTL, time.Now, func() ([]map[string]any, error) { return s.tagsNow(ctx, limit) })
+}
+
+func (s *Store) tagsNow(ctx context.Context, limit int) ([]map[string]any, error) {
 	r, err := s.Query(ctx, `SELECT normalized_tag,MIN(tag),count(*) FROM release_tags GROUP BY normalized_tag ORDER BY count(*) DESC,normalized_tag LIMIT $1`, limit)
 	if err != nil {
 		return nil, err
