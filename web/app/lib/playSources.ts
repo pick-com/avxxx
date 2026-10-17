@@ -4,6 +4,7 @@
 import type {PlayConfig, PlaySource, Stream} from './api';
 import {formatClock, languageName} from './format';
 import {t} from './i18n';
+import {formatName, streamQualityLabel} from './streamFormat';
 
 export type EntryRender = 'video' | 'embed' | 'external';
 
@@ -36,8 +37,6 @@ const langList = (codes: string[] | null | undefined) =>
     .map(c => languageName(c))
     .join('、');
 
-const formatName = (protocol: string, url: string) =>
-  protocol === 'hls' || HLS_FILE.test(url) ? 'HLS' : /\.(mp4|m4v)(\?|#|$)/i.test(url) ? 'MP4' : /\.webm(\?|#|$)/i.test(url) ? 'WebM' : '';
 
 function resolutionLabel(height: number | null | undefined, hdr: boolean): string {
   if (!height) return hdr ? 'HDR' : '';
@@ -159,10 +158,10 @@ export function entriesFromStreams(streams: Stream[], provider = ''): PlayEntry[
     name: t('play.lineName', {n: i + 1}),
     version: '',
     alt: false,
-    hint: s.quality || s.protocol.toUpperCase() || '',
+    hint: streamQualityLabel(s.quality) || s.protocol.toUpperCase() || '',
     details: [
       {key: 'provider' as const, value: provider},
-      {key: 'resolution' as const, value: s.quality ?? ''},
+      {key: 'resolution' as const, value: streamQualityLabel(s.quality)},
       {key: 'format' as const, value: formatName(s.protocol, s.url)},
     ].filter(r => r.value),
     provider: provider || undefined,
