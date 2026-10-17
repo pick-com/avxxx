@@ -51,3 +51,38 @@ func TestSitemapCountsCachedIntegration(t *testing.T) {
 		t.Fatalf("uncached count %+v %v", now, err)
 	}
 }
+
+// The default first page of SitemapTags is cached like the counts; other
+// pages and sizes still query.
+func TestSitemapTagsFirstPageCachedIntegration(t *testing.T) {
+	s := openTestStore(t)
+	ctx := context.Background()
+	sfx := fmt.Sprint(time.Now().UnixNano())
+	exec := func(sql string, args ...any) {
+		t.Helper()
+		if _, err := s.Exec(ctx, sql, args...); err != nil {
+			t.Fatalf("%s: %v", sql, err)
+		}
+	}
+	exec(`INSERT INTO releases(slug,canonical_title,status) SELECT $1||g,'Sitemap tag '||g,'published' FROM generate_series(1,6) g`, "smt-"+sfx+"-")
+	exec(`INSERT INTO release_tags(release_id,tag,normalized_tag) SELECT id,'T','smt-a-'||id FROM releases WHERE slug LIKE $1`, "smt-"+sfx+"-%")
+
+	first, next, err := s.SitemapTags(ctx, "", 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want, wantNext, err := s.sitemapTagsNow(ctx, "", 0)
+	if err != nil || next != wantNext || len(first) != len(want) || len(first) < 6 {
+		t.Fatalf("first page %d %q, query %d %q (%v)", len(first), next, len(want), wantNext, err)
+	}
+	exec(`INSERT INTO release_tags(release_id,tag,normalized_tag) SELECT id,'T','smt-b-'||id FROM releases WHERE slug LIKE $1`, "smt-"+sfx+"-%")
+	if again, _, err := s.SitemapTags(ctx, "", defaultSitemapLimit); err != nil || len(again) != len(first) {
+		t.Fatalf("within the TTL: %d %v, want cached %d", len(again), err, len(first))
+	}
+	if small, next, err := s.SitemapTags(ctx, "", 3); err != nil || len(small) != 3 || next == "" {
+		t.Fatalf("limit 3: %d %q %v", len(small), next, err)
+	}
+	if all, _, err := s.sitemapTagsNow(ctx, "", 0); err != nil || len(all) != len(first)+6 {
+		t.Fatalf("uncached list %d %v, want %d", len(all), err, len(first)+6)
+	}
+}
