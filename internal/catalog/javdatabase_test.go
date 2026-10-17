@@ -2,6 +2,7 @@ package catalog
 
 import (
 	"context"
+	"os"
 	"testing"
 )
 
@@ -27,11 +28,42 @@ func TestJAVDatabasePerformer(t *testing.T) {
 	}
 }
 
+// An empty "Director:" row (the live SNOS-397 page: <p><b>Director: </b></p>)
+// must not take the next row's value. It once stored the director as
+// "Genre(s): 4K Exclusive Distribution …".
+func TestJAVDatabaseEmptyDirector(t *testing.T) {
+	body, err := os.ReadFile("testdata/javdatabase/releases/snos-397-empty-director.html")
+	if err != nil {
+		t.Fatal(err)
+	}
+	doc := Document{FinalURL: "https://www.javdatabase.com/movies/snos-397/", Body: body}
+	r, err := JAVDatabaseAdapter{}.Parse(context.Background(), doc, Release)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if d := r.Fields["director"]; d != "" {
+		t.Errorf("director %q, want empty", d)
+	}
+	gs, _ := r.Fields["genres"].([]string)
+	if len(gs) != 3 || gs[0] != "4K" || gs[2] != "Kiss Kiss" {
+		t.Errorf("genres %v", gs)
+	}
+	ps, _ := r.Fields["performers"].([]string)
+	if r.Fields["maker"] != "S1 Number One Style" || len(ps) != 1 || ps[0] != "Hana Kuraki" {
+		t.Errorf("maker %v performers %v", r.Fields["maker"], ps)
+	}
+	if r.Fields["dvd_code"] != "SNOS-397" || r.Fields["content_id"] != "snos00397" || r.Fields["release_date"] != "2026-09-18" {
+		t.Errorf("fields %#v", r.Fields)
+	}
+}
+
 func TestJAVDatabaseLabelShapes(t *testing.T) {
 	for name, body := range map[string]string{
 		"inline label":   `<p>Studio: <a>MADONNA</a></p><p>Idol(s)/Actress(es): <a>A One</a><a>B Two</a></p>`,
 		"label element":  `<p><b>Studio:</b> <a>MADONNA</a></p><p><span>Idol(s)/Actress(es):</span> <a>A One</a>, <a>B Two</a></p>`,
 		"wrapped values": `<div><b>Studio:</b><span><a>MADONNA</a></span></div><div><b>Idol(s)/Actress(es):</b><span><a>A One</a><a>B Two</a></span></div>`,
+		// An empty label in the same row stops at the next label.
+		"empty sibling label": `<p><b>Director:</b> <b>Studio:</b> <a>MADONNA</a></p><p><b>Idol(s)/Actress(es):</b><span><a>A One</a><a>B Two</a></span></p>`,
 	} {
 		doc := Document{FinalURL: "https://www.javdatabase.com/movies/juq-743/", Body: []byte(`<html><body><h1>JUQ-743</h1>` + body + `</body></html>`)}
 		r, err := JAVDatabaseAdapter{}.Parse(context.Background(), doc, Release)
@@ -39,8 +71,8 @@ func TestJAVDatabaseLabelShapes(t *testing.T) {
 			t.Fatal(err)
 		}
 		ps, _ := r.Fields["performers"].([]string)
-		if r.Fields["maker"] != "MADONNA" || len(ps) != 2 || ps[1] != "B Two" {
-			t.Errorf("%s: maker %v performers %v", name, r.Fields["maker"], ps)
+		if r.Fields["maker"] != "MADONNA" || len(ps) != 2 || ps[1] != "B Two" || r.Fields["director"] != "" {
+			t.Errorf("%s: maker %v performers %v director %q", name, r.Fields["maker"], ps, r.Fields["director"])
 		}
 	}
 }
