@@ -650,7 +650,7 @@ export const pagesZhCN = {
   'syncReminder.text': '登录后观看记录可跨设备同步',
   'history.emptyTitle': '还没有观看记录',
   'history.emptyBody': '看过的视频会出现在这里，下次可以从上次的位置接着看。',
-  'history.search': '搜索播放记录：片名、演员、番号',
+  'history.search': '搜索观看记录：片名、演员、番号',
   'history.noMatchTitle': '没有匹配的观看记录',
   'history.noMatchBody': '没有找到包含「{q}」的片名、演员或番号，换个关键词试试。',
   'history.watchedOf': '看到 {pos} / {total}',
