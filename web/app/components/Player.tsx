@@ -316,6 +316,10 @@ export function Player({slug, releaseId, title, resumeAt, startAt, onBack, theat
   useEffect(() => setAmbientPref(readAmbientPref(window.localStorage)), []);
   // The source (stream key) whose frames cannot be read.
   const [ambientBlockedKey, setAmbientBlockedKey] = useState<string | null>(null);
+  // Only a viewer who just switched 氛围模式 on hears that this source cannot
+  // use it; with the saved preference, every page load would flash it over
+  // the resume prompt (the settings panel still says so).
+  const ambientJustOn = useRef(false);
   const rateRef = useRef(rate);
   rateRef.current = rate;
   fullscreenRef.current = fullscreen;
@@ -1323,6 +1327,7 @@ export function Player({slug, releaseId, title, resumeAt, startAt, onBack, theat
     showFlash(choice === 'off' ? t('player.sleepOff') : choice === 'episode' ? t('player.sleepEpisodeSet') : t('player.sleepSet', {n: choice}));
   };
   const chooseAmbient = (on: boolean) => {
+    ambientJustOn.current = on;
     setAmbientPref(on);
     writeAmbientPref(window.localStorage, on);
   };
@@ -1397,7 +1402,8 @@ export function Player({slug, releaseId, title, resumeAt, startAt, onBack, theat
             reducedMotion={reducedMotion}
             onBlocked={() => {
               setAmbientBlockedKey(stream.key);
-              showFlash(t('player.ambientBlocked'), true);
+              if (ambientJustOn.current) showFlash(t('player.ambientBlocked'), true);
+              ambientJustOn.current = false;
             }}
           />
         )}
