@@ -1,0 +1,12 @@
+# gluetun control-server auth (v3.40+ requires explicit role grants; without
+# this file every control route answers 401 and vpn-rotate cannot rotate).
+# Only the routes vpn-rotate uses are opened, auth-less — the port is only
+# exposed on the compose network, never published to the host.
+[[roles]]
+name = "scrape-loop"
+routes = [
+  "GET /v1/publicip/ip",
+  "GET /v1/openvpn/status",
+  "PUT /v1/openvpn/status",
+]
+auth = "none"

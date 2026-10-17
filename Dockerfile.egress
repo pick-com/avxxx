@@ -1,0 +1,26 @@
+# The egress service: one small binary that owns this host's VPN tunnel
+# (cmd/egress, a nested module so the main module and CI never need the
+# private github.com/cnc224/shared). Build context is the repo root.
+FROM golang:1.26.4-bookworm AS build
+WORKDIR /build
+COPY cmd/egress/go.mod cmd/egress/go.sum ./
+# The fetch token is a BuildKit SECRET (id gh_token), mounted for this one
+# command only: never in a layer, the image history or the build cache. The git
+# rewrite is an env var on this command alone. Needs BuildKit.
+ENV GOPRIVATE=github.com/cnc224/*
+RUN --mount=type=secret,id=gh_token,required=true \
+    GIT_CONFIG_COUNT=1 \
+    GIT_CONFIG_KEY_0="url.https://x-access-token:$(cat /run/secrets/gh_token)@github.com/.insteadOf" \
+    GIT_CONFIG_VALUE_0="https://github.com/" \
+    go mod download
+COPY cmd/egress/ ./
+RUN CGO_ENABLED=0 go build -o /out/egress .
+
+FROM debian:bookworm-slim
+# ca-certificates: probes are usually https. curl: the healthcheck.
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends ca-certificates curl \
+    && rm -rf /var/lib/apt/lists/*
+COPY --from=build /out/egress /usr/local/bin/egress
+EXPOSE 9000
+ENTRYPOINT ["/usr/local/bin/egress"]

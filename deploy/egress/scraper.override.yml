@@ -1,0 +1,11 @@
+# Joins the scraper to the external `egress` network so it can reach
+# vpn:8888. Opt in:
+#   docker compose -f docker-compose.yml -f deploy/egress/scraper.override.yml up -d scraper
+# with CATALOG_PROXY_VPN=http://vpn:8888 in .env. Kept out of the base file
+# because an external network that does not exist fails every `compose up`.
+services:
+  scraper:
+    networks: [default, egress]
+networks:
+  egress:
+    external: true
