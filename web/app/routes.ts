@@ -30,6 +30,8 @@ export default [
     route(L('history'), 'routes/history.tsx'),
     route(L('favorites'), 'routes/favorites.tsx'),
     route(L('playlists/:token'), 'routes/playlist.tsx'),
+    // 片段 shared from the player (internal/api/clips.go).
+    route(L('clips/:id'), 'routes/clip.tsx'),
     route(L('later'), 'routes/later.tsx'),
     route(L('reservations'), 'routes/reservations.tsx'),
     route(L('notifications'), 'routes/notifications.tsx'),

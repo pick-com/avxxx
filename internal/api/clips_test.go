@@ -1,0 +1,127 @@
+package api
+
+import (
+	"avxxx/internal/store"
+	"context"
+	"encoding/json"
+	"net/http"
+	"strings"
+	"testing"
+
+	"github.com/jackc/pgx/v5"
+)
+
+// stubClips is an in-memory clipStore: "abcdefghij" is a visible clip owned
+// by the stub user, everything else is missing. Releases: "abc-1" (10 min).
+type stubClips struct {
+	created []store.ClipInput
+	calls   []string
+}
+
+const stubClipID = "abcdefghij"
+
+func (s *stubClips) CreateClip(_ context.Context, _ int64, in store.ClipInput, status string) (store.Clip, error) {
+	s.calls = append(s.calls, "Create")
+	if in.Release != "abc-1" {
+		return store.Clip{}, pgx.ErrNoRows
+	}
+	if err := store.ValidateClipRange(in.StartMs, in.EndMs, 600_000); err != nil {
+		return store.Clip{}, err
+	}
+	s.created = append(s.created, in)
+	return store.Clip{ID: stubClipID, ReleaseSlug: in.Release, StartMs: in.StartMs, EndMs: in.EndMs, Title: in.Title, Status: status, Mine: true}, nil
+}
+
+func (s *stubClips) ClipByPublicID(_ context.Context, id string, viewer int64) (store.Clip, error) {
+	s.calls = append(s.calls, "Get")
+	if id != stubClipID {
+		return store.Clip{}, pgx.ErrNoRows
+	}
+	return store.Clip{ID: id, ReleaseSlug: "abc-1", StartMs: 1000, EndMs: 16000, Status: "visible", Mine: viewer != 0, RowID: 9}, nil
+}
+
+func (s *stubClips) DeleteClip(_ context.Context, _ int64, id string) error {
+	s.calls = append(s.calls, "Delete")
+	if id != stubClipID {
+		return pgx.ErrNoRows
+	}
+	return nil
+}
+
+func newClipServer(c *stubClips) http.Handler {
+	srv := &Server{accounts: &stubAccounts{}, clips: c}
+	mux := http.NewServeMux()
+	for _, rt := range srv.routes() {
+		mux.HandleFunc(rt.pattern, rt.handler)
+	}
+	return mux
+}
+
+func TestClipRoutesRequireUser(t *testing.T) {
+	c := &stubClips{}
+	h := newClipServer(c)
+	for _, rt := range []struct{ method, path string }{{"POST", "/api/me/clips"}, {"DELETE", "/api/me/clips/" + stubClipID}, {"POST", "/api/clips/" + stubClipID + "/report"}} {
+		for _, tok := range []string{"", "bad"} {
+			if rec := do(h, rt.method, rt.path, tok, `{"release":"abc-1","start_ms":0,"end_ms":15000}`); rec.Code != http.StatusUnauthorized {
+				t.Errorf("%s %s token=%q: status %d, want 401", rt.method, rt.path, tok, rec.Code)
+			}
+		}
+	}
+	if len(c.calls) != 0 {
+		t.Errorf("store called without auth: %v", c.calls)
+	}
+}
+
+func TestClipHandlerStatus(t *testing.T) {
+	tests := []struct {
+		name         string
+		method, path string
+		token, body  string
+		want         int
+	}{
+		{"create", "POST", "/api/me/clips", "good", `{"release":"abc-1","start_ms":60000,"end_ms":75000,"title":"  名场面  "}`, 201},
+		{"create no title", "POST", "/api/me/clips", "good", `{"release":"abc-1","start_ms":0,"end_ms":5000}`, 201},
+		{"too short", "POST", "/api/me/clips", "good", `{"release":"abc-1","start_ms":0,"end_ms":4999}`, 400},
+		{"too long", "POST", "/api/me/clips", "good", `{"release":"abc-1","start_ms":0,"end_ms":60001}`, 400},
+		{"negative start", "POST", "/api/me/clips", "good", `{"release":"abc-1","start_ms":-1,"end_ms":9000}`, 400},
+		{"past the end", "POST", "/api/me/clips", "good", `{"release":"abc-1","start_ms":590000,"end_ms":605000}`, 400},
+		{"long title", "POST", "/api/me/clips", "good", `{"release":"abc-1","start_ms":0,"end_ms":9000,"title":"` + strings.Repeat("长", 101) + `"}`, 400},
+		{"no release", "POST", "/api/me/clips", "good", `{"start_ms":0,"end_ms":9000}`, 400},
+		{"unknown release", "POST", "/api/me/clips", "good", `{"release":"nope","start_ms":0,"end_ms":9000}`, 404},
+		{"unknown field", "POST", "/api/me/clips", "good", `{"release":"abc-1","start_ms":0,"end_ms":9000,"user_id":2}`, 400},
+		{"get public", "GET", "/api/clips/" + stubClipID, "", "", 200},
+		{"get missing", "GET", "/api/clips/zzzzzzzzzz", "", "", 404},
+		{"delete own", "DELETE", "/api/me/clips/" + stubClipID, "good", "", 200},
+		{"delete other or missing", "DELETE", "/api/me/clips/zzzzzzzzzz", "good", "", 404},
+		{"report missing", "POST", "/api/clips/zzzzzzzzzz/report", "good", `{"reason":"spam"}`, 404},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			rec := do(newClipServer(&stubClips{}), tc.method, tc.path, tc.token, tc.body)
+			if rec.Code != tc.want {
+				t.Errorf("status %d, want %d: %s", rec.Code, tc.want, rec.Body.String())
+			}
+		})
+	}
+}
+
+func TestCreateClipTrimsTitle(t *testing.T) {
+	c := &stubClips{}
+	rec := do(newClipServer(c), "POST", "/api/me/clips", "good", `{"release":"abc-1","start_ms":1000,"end_ms":16000,"title":"  名场面  "}`)
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("status %d: %s", rec.Code, rec.Body.String())
+	}
+	var out struct {
+		Clip         store.Clip `json:"clip"`
+		TitleRemoved bool       `json:"title_removed"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &out); err != nil {
+		t.Fatal(err)
+	}
+	if out.Clip.Title != "名场面" || out.Clip.ID != stubClipID || out.Clip.Status != "visible" || out.TitleRemoved {
+		t.Errorf("clip = %+v removed=%v", out.Clip, out.TitleRemoved)
+	}
+	if strings.Contains(rec.Body.String(), `"RowID"`) || strings.Contains(rec.Body.String(), `"row_id"`) {
+		t.Error("internal id leaked")
+	}
+}

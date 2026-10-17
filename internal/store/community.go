@@ -842,6 +842,7 @@ var reportTargetExists = map[string]string{
 	"performer_info": `SELECT EXISTS(SELECT 1 FROM performers WHERE id=$1)`,
 	"source":         `SELECT EXISTS(SELECT 1 FROM playback_sources WHERE id=$1)`,
 	"comment":        `SELECT EXISTS(SELECT 1 FROM comments WHERE id=$1 AND status IN ('visible','folded'))`,
+	"clip":           `SELECT EXISTS(SELECT 1 FROM clips WHERE id=$1 AND status IN ('visible','folded'))`,
 }
 
 // CreateReport files a report with its SLA deadline. A second open report

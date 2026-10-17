@@ -483,7 +483,7 @@ export type RatingFlood = {
   anonymous: number;
 };
 export type ModerationAction = 'fold' | 'delete' | 'delete_mute' | 'approve';
-export type ModerationTarget = 'danmaku' | 'reviews' | 'comments' | 'ratings';
+export type ModerationTarget = 'danmaku' | 'reviews' | 'comments' | 'ratings' | 'clips';
 export type Keyword = {word: string; category: string};
 export const KEYWORD_CATEGORIES = ['ad', 'abuse', 'spoiler', 'illegal', 'political', 'other'] as const;
 

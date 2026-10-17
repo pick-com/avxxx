@@ -38,7 +38,7 @@ func ValidLang(l string) bool { return l == "" || langPattern.MatchString(l) }
 
 // Report targets and reasons (tech plan 3.8: one inbox for everything).
 var (
-	ReportTargets = []string{"danmaku", "review", "rating", "release", "performer_info", "source", "comment"}
+	ReportTargets = []string{"danmaku", "review", "rating", "release", "performer_info", "source", "comment", "clip"}
 	ReportReasons = []string{"spoiler", "spam", "abuse", "illegal", "underage", "privacy", "copyright", "misinfo", "broken", "other"}
 )
 

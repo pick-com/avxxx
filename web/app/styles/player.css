@@ -1036,3 +1036,97 @@ button.ep-item:hover {
     animation: none;
   }
 }
+
+/* 剪辑 (ClipPanel): a zoomed timeline with two handles. */
+.clip-panel {
+  padding: 4px 20px 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.clip-panel .share-sheet {
+  padding: 0;
+}
+
+.clip-range {
+  margin: 0;
+  font-size: 15px;
+  font-variant-numeric: tabular-nums;
+}
+
+.clip-timeline {
+  padding: 8px 10px 0;
+}
+
+.clip-track {
+  position: relative;
+  height: 36px;
+  border-radius: 8px;
+  background: var(--surface);
+  border: 1px solid var(--line2);
+  touch-action: none;
+  cursor: pointer;
+}
+
+.clip-sel {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--accent) 30%, transparent);
+  box-shadow: inset 0 0 0 2px var(--accent);
+  pointer-events: none;
+}
+
+.clip-handle {
+  position: absolute;
+  top: -4px;
+  bottom: -4px;
+  width: 14px;
+  margin-left: -7px;
+  border-radius: 4px;
+  background: var(--accent);
+  cursor: ew-resize;
+  touch-action: none;
+}
+
+/* 44px touch target around the visible bar. */
+.clip-handle::before {
+  content: '';
+  position: absolute;
+  inset: -4px -15px;
+}
+
+.clip-handle:focus-visible {
+  outline: 2px solid var(--text);
+  outline-offset: 2px;
+}
+
+.clip-scale {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 6px;
+  font-size: 12px;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.clip-done {
+  margin: 0;
+  font-weight: 600;
+}
+
+/* 片段 page (routes/clip.tsx). */
+.clip-meta,
+.clip-from {
+  margin: 4px 0 0;
+}
+
+.clip-page .action-row {
+  margin-top: 12px;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+}

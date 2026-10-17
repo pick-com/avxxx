@@ -75,6 +75,8 @@ var ReleaseTables = []TableSpec{
 	{Table: "release_reactions", FK: "release_id", Key: []string{"voter_key"}, Dedupe: true},
 	// Comments (migration 040) all move; replies keep their parent.
 	{Table: "comments", FK: "release_id", Key: []string{"id"}},
+	// 片段 (migration 054) all move: each is its own shared link.
+	{Table: "clips", FK: "release_id", Key: []string{"id"}},
 	// Every playback source is a distinct way to play the release: keep all.
 	{Table: "playback_sources", FK: "release_id", Key: []string{"id"}},
 	{Table: "audit_issues", FK: "entity_id", Key: []string{"id"}, DedupeOn: []string{"rule"}, Dedupe: true,

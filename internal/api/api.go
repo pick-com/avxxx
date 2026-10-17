@@ -114,6 +114,8 @@ type Server struct {
 	// watchStatsCache holds each owner's summaries briefly.
 	watchStats      watchStatsStore
 	watchStatsCache *respCache
+	// clips backs 片段 (clips.go).
+	clips clipStore
 	// adminToken is ADMIN_TOKEN, the break-glass credential (admin_auth.go),
 	// read once at construction; ADMIN_TOKEN_DISABLED=true turns it off.
 	// Admin accounts sign in with password + TOTP instead: adminAuth backs
@@ -237,6 +239,7 @@ func Register(mux *http.ServeMux, s *store.Store, mediaHandler *media.Handler) {
 		srv.compliance = s
 		srv.interactions = s
 		srv.watchStats = s
+		srv.clips = s
 		srv.watchStatsCache = newRespCache()
 	}
 	srv.commentsOff = !commentsEnabled(os.Getenv("COMMENTS_ENABLED"))
@@ -295,6 +298,7 @@ func (srv *Server) routes() []route {
 	rs = append(rs, srv.ageGateRoutes()...)
 	rs = append(rs, srv.adminSiteMetricsRoutes()...)
 	rs = append(rs, srv.adminDedupeRoutes()...)
+	rs = append(rs, srv.clipRoutes()...)
 	return srv.followMerges(rs)
 }
 

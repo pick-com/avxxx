@@ -335,6 +335,9 @@ func (s *Store) reportTarget(ctx context.Context, targetType string, id int64) a
 		q = `SELECT json_build_object('body',c.body,'status',c.status,'user_id',c.user_id,'spoiler',c.spoiler,'parent_id',c.parent_id,'release_slug',r.slug,
 				'edited_at',c.edited_at,'edits',(SELECT count(*) FROM comment_edits e WHERE e.comment_id=c.id))
 			FROM comments c JOIN releases r ON r.id=c.release_id WHERE c.id=$1`
+	case "clip":
+		q = `SELECT json_build_object('body',c.title,'status',c.status,'user_id',c.user_id,'public_id',c.public_id,'start_ms',c.start_ms,'end_ms',c.end_ms,'release_slug',r.slug)
+			FROM clips c JOIN releases r ON r.id=c.release_id WHERE c.id=$1`
 	case "rating":
 		q = `SELECT json_build_object('score',a.score,'status',a.status,'weight',a.weight,'release_slug',r.slug)
 			FROM ratings a JOIN releases r ON r.id=a.release_id WHERE a.id=$1`
@@ -359,7 +362,7 @@ func (s *Store) reportTarget(ctx context.Context, targetType string, id int64) a
 
 // ModerationAction is one moderator decision on a danmaku, review or rating.
 type ModerationAction struct {
-	TargetType string // danmaku | review | comment | rating
+	TargetType string // danmaku | review | comment | clip | rating
 	ID         int64
 	Action     string // community.Action*
 	MuteDays   int    // delete_mute only
@@ -410,12 +413,12 @@ func (s *Store) Moderate(ctx context.Context, a ModerationAction) (ModerationRes
 	var userID *int64
 	var releaseID int64
 	switch a.TargetType {
-	case "danmaku", "review", "comment":
+	case "danmaku", "review", "comment", "clip":
 		after, ok := community.ActionStatus(a.Action)
 		if !ok {
 			return res, ErrInvalidAction
 		}
-		table := map[string]string{"danmaku": "danmaku", "review": "reviews", "comment": "comments"}[a.TargetType]
+		table := map[string]string{"danmaku": "danmaku", "review": "reviews", "comment": "comments", "clip": "clips"}[a.TargetType]
 		var uid int64
 		if err = tx.QueryRow(ctx, `SELECT status,user_id,release_id FROM `+table+` WHERE id=$1 FOR UPDATE`, a.ID).Scan(&res.Before, &uid, &releaseID); err != nil {
 			return res, err
@@ -423,7 +426,7 @@ func (s *Store) Moderate(ctx context.Context, a ModerationAction) (ModerationRes
 		userID = &uid
 		res.After = after
 		extra := ""
-		if a.TargetType != "danmaku" && a.Action == community.ActionFold {
+		if (a.TargetType == "review" || a.TargetType == "comment") && a.Action == community.ActionFold {
 			extra = ",spoiler=true"
 		}
 		if _, err = tx.Exec(ctx, `UPDATE `+table+` SET status=$2,updated_at=now()`+extra+` WHERE id=$1`, a.ID, after); err != nil {

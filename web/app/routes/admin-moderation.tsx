@@ -43,11 +43,12 @@ const TABS: {kind: QueueKind; label: string}[] = [
   {kind: 'rating_floods', label: '疑似刷分'},
 ];
 
-const REPORT_TARGET: Record<string, ModerationTarget | undefined> = {danmaku: 'danmaku', review: 'reviews', rating: 'ratings', comment: 'comments'};
+const REPORT_TARGET: Record<string, ModerationTarget | undefined> = {danmaku: 'danmaku', review: 'reviews', rating: 'ratings', comment: 'comments', clip: 'clips'};
 const TARGET_LABELS: Record<string, string> = {
   danmaku: '弹幕',
   review: '短评',
   comment: '评论',
+  clip: '片段',
   rating: '评分',
   release: '视频',
   performer_info: '演员资料',
@@ -82,6 +83,14 @@ function targetPreview(t: Record<string, unknown> | null | undefined) {
             {String(t.release_slug)}
           </Link>
           {t.user_id ? ` · 用户 #${String(t.user_id)}` : ''}
+          {t.public_id ? (
+            <>
+              {' · '}
+              <Link to={`/clips/${String(t.public_id)}`} target="_blank">
+                打开片段
+              </Link>
+            </>
+          ) : null}
         </div>
       ) : null}
     </div>

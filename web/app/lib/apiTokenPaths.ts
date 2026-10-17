@@ -16,6 +16,9 @@ const UPCOMING_PATH = /^upcoming(\?|$)/;
 // token only (no X-Device-ID), and posting or liking a comment needs it.
 const COMMUNITY_PATH =
   /^(releases\/[^/?]+\/(danmaku|rating|reviews|reaction|comments)|danmaku\/\d+\/report|reviews\/\d+(\/(like|report))?|comments\/\d+(\/(like|replies|report))?|reports)(\?|$)/;
+// 片段 (internal/api/clips.go): public, but the token marks the viewer's own
+// clip (`mine`, may delete) and is required to report one.
+const CLIP_PATH = /^clips\/[A-Za-z0-9]{10}(\/report)?(\?|$)/;
 
 /** True when a request to `path` must carry the user token. */
 export function sendsUserToken(path: string): boolean {
@@ -25,6 +28,7 @@ export function sendsUserToken(path: string): boolean {
     PLAY_CONFIG_PATH.test(path) ||
     COMMUNITY_PATH.test(path) ||
     RECS_PATH.test(path) ||
-    UPCOMING_PATH.test(path)
+    UPCOMING_PATH.test(path) ||
+    CLIP_PATH.test(path)
   );
 }

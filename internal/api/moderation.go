@@ -48,6 +48,7 @@ func (srv *Server) moderationRoutes() []route {
 		{"DELETE /api/admin/moderation/mutes/{user_id}", srv.admin(srv.unmute)},
 		{"POST /api/admin/moderation/comments/{id}/action", srv.admin(srv.moderate("comment"))},
 		{"GET /api/admin/moderation/comments/{id}/edits", srv.admin(srv.commentEdits)},
+		{"POST /api/admin/moderation/clips/{id}/action", srv.admin(srv.moderate("clip"))},
 	}
 }
 
