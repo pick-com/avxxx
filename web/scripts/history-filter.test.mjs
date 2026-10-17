@@ -48,3 +48,11 @@ test('filterHistory: no match', () => {
   assert.deepEqual(slugs('999'), []);
   assert.equal(matchesHistory(rows[0], ''), true);
 });
+
+test('filterHistory: words past the first 100 characters of a long title', () => {
+  // Guest history has no cast: the performer name usually ends the title.
+  const long = {slug: 'snos-397', title: `SNOS-397 - ${'A Slightly Tipsy Older Woman Seduces Me '.repeat(4)}Hana Kuraki`};
+  assert.ok(long.title.length > 150);
+  assert.deepEqual(filterHistory([long], 'kuraki').map(r => r.slug), ['snos-397']);
+  assert.deepEqual(filterHistory([long], 'Hana Kuraki').map(r => r.slug), ['snos-397']);
+});
