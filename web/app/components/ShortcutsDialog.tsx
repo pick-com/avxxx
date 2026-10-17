@@ -6,8 +6,8 @@ import {Icon} from './Icon';
 
 type Row = {label: MessageKey; vars?: Record<string, string | number>; keys: string[][]};
 
-const IS_MAC = typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent);
-const ALT = IS_MAC ? 'Option' : 'Alt';
+export const IS_MAC = typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent);
+const CHAPTER_MOD = IS_MAC ? 'Option' : 'Ctrl';
 
 // Each row lists alternative key combos; each combo is a list of keycaps.
 const SECTIONS: {title: MessageKey; rows: Row[]}[] = [
@@ -28,8 +28,8 @@ const SECTIONS: {title: MessageKey; rows: Row[]}[] = [
       {label: 'pc.keys.seekPercent', keys: [['0'], ['…'], ['9']]},
       {label: 'pc.keys.toStart', keys: [['Home']]},
       {label: 'pc.keys.toEnd', keys: [['End']]},
-      {label: 'pc.keys.prevChapter', keys: [[ALT, '←']]},
-      {label: 'pc.keys.nextChapter', keys: [[ALT, '→']]},
+      {label: 'pc.keys.prevChapter', keys: [[CHAPTER_MOD, '←']]},
+      {label: 'pc.keys.nextChapter', keys: [[CHAPTER_MOD, '→']]},
     ],
   },
   {
