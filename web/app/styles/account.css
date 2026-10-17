@@ -66,6 +66,13 @@
   max-width: 440px;
 }
 
+/* Inside the fullscreen player (AuthPrompt container): still content-sized. */
+.sheet-layer-contained .sheet.auth-sheet,
+.sheet-layer-contained .sheet.auth-sheet[data-snap='full'] {
+  height: auto;
+  max-height: calc(100% - 24px);
+}
+
 .auth-sheet-head {
   padding: 0 20px 12px;
   display: flex;
@@ -101,6 +108,11 @@
     border-radius: 16px;
     max-height: calc(100vh - 64px);
     animation: sheet-fade 0.2s ease-out;
+  }
+
+  .sheet-layer-contained .sheet.auth-sheet,
+  .sheet-layer-contained .sheet.auth-sheet[data-snap='full'] {
+    height: fit-content;
   }
 
   .auth-sheet .sheet-handle {
