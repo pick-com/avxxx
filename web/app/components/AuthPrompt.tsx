@@ -8,7 +8,8 @@ import {clearGuestHistory, deleteGuestEntry, guestStore} from '../lib/guestProgr
 import {useT} from '../lib/i18n';
 import type {MessageKey} from '../lib/messages.zh-CN';
 import {useLocation} from '../lib/nav';
-import {clearPending, savePending, setPendingMethod, takePending, type PendingPayload} from '../lib/pendingAction';
+import {track} from '../lib/analytics';
+import {clearPending, markPromptOAuth, savePending, takePending, takePromptOAuth, type PendingPayload} from '../lib/pendingAction';
 
 // Guest sign-in prompt (CTA). A guest action that needs an account (收藏,
 // 稍后观看, 关注, 预约, 弹幕, 评论, 短评, 点赞, 举报) opens this sheet instead of
@@ -120,6 +121,7 @@ export function AuthPromptProvider({children}: {children: ReactNode}) {
         if (resume?.target) savePending({kind: next, target: resume.target, payload: resume.payload});
         else clearPending();
         setAction(next);
+        track('auth_prompt_shown', {action: next, method: 'sheet'});
       }
       return false;
     },
@@ -127,6 +129,13 @@ export function AuthPromptProvider({children}: {children: ReactNode}) {
   );
 
   const notify = useCallback((text: string) => setToast({text, id: Date.now()}), []);
+
+  // Back signed in from a provider sign-in that the sheet started.
+  useEffect(() => {
+    if (status !== 'user') return;
+    const oauth = takePromptOAuth();
+    if (oauth) track('auth_prompt_converted', {action: oauth.action, method: oauth.method as 'google' | 'apple'});
+  }, [status]);
 
   useEffect(() => {
     if (!toast) return;
@@ -141,9 +150,12 @@ export function AuthPromptProvider({children}: {children: ReactNode}) {
       {action && (
         <AuthSheet
           action={action}
-          onClose={signedIn => {
-            // Dismissed without signing in: nothing is left waiting.
-            if (!signedIn) clearPending();
+          onClose={how => {
+            if (how !== 'signed_in') {
+              // Dismissed without signing in: nothing is left waiting.
+              clearPending();
+              track('auth_prompt_closed', {action, method: how});
+            }
             setAction(null);
           }}
         />
@@ -159,7 +171,9 @@ export function AuthPromptProvider({children}: {children: ReactNode}) {
   );
 }
 
-function AuthSheet({action, onClose}: {action: AuthAction; onClose: (signedIn: boolean) => void}) {
+type CloseReason = 'signed_in' | 'skip' | 'dismiss' | 'navigate';
+
+function AuthSheet({action, onClose}: {action: AuthAction; onClose: (how: CloseReason) => void}) {
   const t = useT();
   const {status, signIn} = useAuth();
   const location = useLocation();
@@ -172,13 +186,13 @@ function AuthSheet({action, onClose}: {action: AuthAction; onClose: (signedIn: b
 
   // Leaving the page (忘记密码, the legal links) closes the sheet.
   useEffect(() => {
-    if (location.pathname !== openedAt.current) closeRef.current(false);
+    if (location.pathname !== openedAt.current) closeRef.current('navigate');
   }, [location.pathname]);
 
   return (
     <Sheet
       open
-      onClose={() => onClose(status === 'user')}
+      onClose={() => onClose(status === 'user' ? 'signed_in' : 'dismiss')}
       label={title}
       className="auth-sheet"
       header={
@@ -196,16 +210,16 @@ function AuthSheet({action, onClose}: {action: AuthAction; onClose: (signedIn: b
           idPrefix="sheet"
           forgotHref="/login?mode=forgot"
           ssoFirst
-          onOAuthStart={provider => setPendingMethod(provider)}
+          onOAuthStart={provider => markPromptOAuth(action, provider)}
           onSignedIn={(result, remember, method) => {
-            setPendingMethod(method);
             signIn(result, remember);
+            if (method === 'password' || method === 'register') track('auth_prompt_converted', {action, method});
             // A sign-in that cancelled a pending deletion keeps the sheet for its notice and 继续.
-            if (!result.deletion_cancelled) onClose(true);
+            if (!result.deletion_cancelled) onClose('signed_in');
           }}
-          onContinue={() => onClose(true)}
+          onContinue={() => onClose('signed_in')}
           footer={
-            <button type="button" className="auth-skip text-btn" onClick={() => onClose(status === 'user')}>
+            <button type="button" className="auth-skip text-btn" onClick={() => onClose(status === 'user' ? 'signed_in' : 'skip')}>
               {t('authPrompt.skip')}
             </button>
           }

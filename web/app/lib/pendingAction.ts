@@ -21,8 +21,6 @@ export type PendingAction = {
   target: string;
   payload?: PendingPayload;
   created_at: number;
-  /** How the sign-in started (password, register, google): set by the sheet. */
-  method?: string;
 };
 
 type StorageLike = Pick<Storage, 'getItem' | 'setItem' | 'removeItem'>;
@@ -50,7 +48,7 @@ export function parsePending(raw: string | null, now = Date.now()): PendingActio
   const age = now - p.created_at;
   if (!(age >= 0 && age < PENDING_TTL_MS)) return null;
   const payload = p.payload && typeof p.payload === 'object' && !Array.isArray(p.payload) ? p.payload : undefined;
-  return {kind: p.kind, target: p.target, created_at: p.created_at, ...(payload ? {payload} : {}), ...(typeof p.method === 'string' ? {method: p.method} : {})};
+  return {kind: p.kind, target: p.target, created_at: p.created_at, ...(payload ? {payload} : {})};
 }
 
 /** Bounds the payload: strings are cut to PENDING_DRAFT_MAX characters. */
@@ -66,7 +64,6 @@ export function savePending(action: Omit<PendingAction, 'created_at'>, now = Dat
   const value: PendingAction = {kind: action.kind, target: action.target, created_at: now};
   const payload = boundPayload(action.payload);
   if (payload) value.payload = payload;
-  if (action.method) value.method = action.method;
   try {
     store.setItem(KEY, JSON.stringify(value));
   } catch {
@@ -96,21 +93,43 @@ export function takePending(kind: string, target: string, now = Date.now(), stor
   return p;
 }
 
-/** Records how the sign-in started, keeping the action and its age. */
-export function setPendingMethod(method: string, now = Date.now(), store: StorageLike | null = session()) {
-  const p = peekPending(now, store);
-  if (!p || !store) return;
-  try {
-    store.setItem(KEY, JSON.stringify({...p, method}));
-  } catch {
-    /* ignore */
-  }
-}
-
 export function clearPending(store: StorageLike | null = session()) {
   try {
     store?.removeItem(KEY);
   } catch {
     /* ignore */
+  }
+}
+
+// A provider sign-in started from the sheet (auth_prompt_converted is sent
+// when the page is back signed in). Kept apart from the action itself, which
+// not every prompt has. Same 10-minute limit.
+const OAUTH_KEY = 'reel.authPromptOAuth.v1';
+
+export function markPromptOAuth(action: string, method: string, now = Date.now(), store: StorageLike | null = session()) {
+  try {
+    store?.setItem(OAUTH_KEY, JSON.stringify({action, method, at: now}));
+  } catch {
+    /* ignore */
+  }
+}
+
+/** Removes and returns the marker when still fresh. */
+export function takePromptOAuth(now = Date.now(), store: StorageLike | null = session()): {action: string; method: string} | null {
+  if (!store) return null;
+  let raw: string | null = null;
+  try {
+    raw = store.getItem(OAUTH_KEY);
+    if (raw) store.removeItem(OAUTH_KEY);
+  } catch {
+    return null;
+  }
+  try {
+    const v = raw ? JSON.parse(raw) : null;
+    if (!v || typeof v.action !== 'string' || typeof v.method !== 'string' || typeof v.at !== 'number') return null;
+    const age = now - v.at;
+    return age >= 0 && age < PENDING_TTL_MS ? {action: v.action, method: v.method} : null;
+  } catch {
+    return null;
   }
 }

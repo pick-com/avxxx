@@ -58,6 +58,10 @@ var validProps = map[string]map[string]any{
 	"onboarding_step": {"step": "pick_actors", "skipped": false},
 	"consent_change":  {"categories": []any{"necessary"}, "gpc": true},
 	"age_gate":        {"passed": true},
+
+	"auth_prompt_shown":     {"action": "favorite", "method": "sheet"},
+	"auth_prompt_closed":    {"action": "danmaku", "method": "skip"},
+	"auth_prompt_converted": {"action": "later", "method": "google"},
 }
 
 func baseEvent(name string, props map[string]any) map[string]any {

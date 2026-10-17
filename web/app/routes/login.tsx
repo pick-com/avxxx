@@ -6,7 +6,7 @@ import {ThemeToggle} from '../components/TopBar';
 import {exchangeOAuthCode, type SignInResult} from '../lib/account';
 import {useAuth} from '../lib/auth';
 import {t, useT} from '../lib/i18n';
-import {clearPending} from '../lib/pendingAction';
+import {clearPending, takePromptOAuth} from '../lib/pendingAction';
 import type {MessageKey} from '../lib/messages.zh-CN';
 import '../styles/account.css';
 
@@ -66,7 +66,9 @@ export default function LoginPage() {
   // from the address bar and history.
   // A failed provider sign-in drops the action the sign-in sheet left waiting.
   useEffect(() => {
-    if (params.get('oauth_error')) clearPending();
+    if (!params.get('oauth_error')) return;
+    clearPending();
+    takePromptOAuth();
   }, [params]);
 
   useEffect(() => {
@@ -80,6 +82,7 @@ export default function LoginPage() {
       result => finish(result, result.remember !== false, !!result.created),
       () => {
         clearPending();
+        takePromptOAuth();
         setError(t('login.oauthExpired'));
         setBusy(false);
       },

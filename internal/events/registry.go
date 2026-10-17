@@ -39,6 +39,8 @@ var (
 	// bucketsField is the optional PRD 14.3 replay table in the r1
 	// run-length format (buckets.go); a malformed table quarantines the event.
 	bucketsField = Field{Name: "buckets", Type: String, MaxLen: BucketsMaxLen, Format: checkBuckets}
+	// authPromptAction is the guest action behind a sign-in prompt.
+	authPromptAction = enum("action", "favorite", "later", "follow", "reserve", "danmaku", "comment", "review", "like", "report", "sync", "other")
 )
 
 // v1 is the initial version of every event's props (schema_ver 1).
@@ -152,6 +154,12 @@ var v1 = []Schema{
 	}},
 	// Site-entry 18+ gate; there is no teen mode (DESIGN_ALIGNMENT #8).
 	{Event: "age_gate", Props: []Field{req("passed", Bool)}},
+	// Guest sign-in prompt (web components/AuthPrompt.tsx). action: what the
+	// guest tried; method: how it was shown (the sheet, or the sync reminder
+	// bar), how it was closed without signing in, or how they signed in.
+	{Event: "auth_prompt_shown", Props: []Field{authPromptAction, enum("method", "sheet", "reminder")}},
+	{Event: "auth_prompt_closed", Props: []Field{authPromptAction, enum("method", "skip", "dismiss", "navigate")}},
+	{Event: "auth_prompt_converted", Props: []Field{authPromptAction, enum("method", "password", "register", "google", "apple")}},
 }
 
 // Registry maps event name → schema_ver → Schema.
