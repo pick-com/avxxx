@@ -10,3 +10,12 @@
 CREATE INDEX IF NOT EXISTS comments_top
   ON comments (release_id, (CASE WHEN status='deleted' THEN 0 ELSE likes END) DESC, created_at DESC, id DESC)
   WHERE parent_id IS NULL;
+
+-- GET /api/releases?sort=runtime (发现 时长): the expression and directions
+-- match releaseSorts["runtime"] (internal/store/catalog_query.go), like
+-- releases_public_newest / _oldest do for the date sorts. Without it every
+-- page sorted all published releases: 32 ms, or 75 ms with a common tag;
+-- with it 0.02 ms / 0.5 ms (a rare tag still starts from release_tags).
+CREATE INDEX IF NOT EXISTS releases_public_runtime
+  ON releases ((COALESCE(runtime_minutes,0)) DESC, id DESC)
+  WHERE status='published' AND merged_into_id IS NULL;
