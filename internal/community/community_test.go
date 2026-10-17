@@ -260,7 +260,7 @@ func TestMemoryLimiter(t *testing.T) {
 	now = now.Add(time.Hour)
 	l.Allow(ctx, "u3", 3, time.Minute)
 	l.mu.Lock()
-	_, kept := l.hits["u1"]
+	_, kept := l.keys["u1"]
 	l.mu.Unlock()
 	if kept {
 		t.Error("idle key not swept")
