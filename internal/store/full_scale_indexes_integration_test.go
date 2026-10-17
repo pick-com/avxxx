@@ -92,6 +92,50 @@ func TestCommentsTopUsesIndexIntegration(t *testing.T) {
 	}
 }
 
+func TestRatingAggregateUsesCoveringIndexIntegration(t *testing.T) {
+	s := openTestStore(t)
+	ctx := context.Background()
+	sfx := fmt.Sprint(time.Now().UnixNano())
+	var rel int64
+	if err := s.QueryRow(ctx, `INSERT INTO releases(slug,canonical_title,status) VALUES($1,'Rated','published') RETURNING id`, "rated-"+sfx).Scan(&rel); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.Exec(ctx, `INSERT INTO ratings(release_id,voter_key,device_id,score,weight,status)
+		SELECT $1,'d:'||md5(g::text),md5(g::text),1+g%5,CASE WHEN g%3=0 THEN 0.5 ELSE 1 END,CASE WHEN g%10=0 THEN 'removed' ELSE 'active' END
+		FROM generate_series(1,50) g`, rel); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.Exec(ctx, `VACUUM ANALYZE ratings`); err != nil {
+		t.Fatal(err)
+	}
+	sql := releaseRatingAggSQL("$1")
+	if plan := planWithoutSort(t, s, sql, rel); !strings.Contains(plan, `"Index Only Scan"`) || !strings.Contains(plan, `"ratings_active_release"`) {
+		t.Errorf("rating aggregate should be an index-only scan of ratings_active_release:\n%s", plan)
+	}
+	var n int
+	var w, ws float64
+	if err := s.QueryRow(ctx, sql, rel).Scan(&n, &w, &ws); err != nil {
+		t.Fatal(err)
+	}
+	// 45 active votes: 15 at weight 0.5 (g%3=0, minus the removed g%30=0
+	// ones: 12), the rest at 1.
+	var wantW, wantWS float64
+	for g := 1; g <= 50; g++ {
+		if g%10 == 0 {
+			continue
+		}
+		wt := 1.0
+		if g%3 == 0 {
+			wt = 0.5
+		}
+		wantW += wt
+		wantWS += wt * float64(1+g%5)
+	}
+	if n != 45 || w != wantW || ws != wantWS {
+		t.Errorf("aggregate n=%d w=%v ws=%v, want 45 %v %v", n, w, ws, wantW, wantWS)
+	}
+}
+
 func TestReleaseRuntimeSortUsesIndexIntegration(t *testing.T) {
 	s := openTestStore(t)
 	ctx := context.Background()

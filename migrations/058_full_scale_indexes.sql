@@ -16,6 +16,15 @@ CREATE INDEX IF NOT EXISTS comments_top
 -- releases_public_newest / _oldest do for the date sorts. Without it every
 -- page sorted all published releases: 32 ms, or 75 ms with a common tag;
 -- with it 0.02 ms / 0.5 ms (a rare tag still starts from release_tags).
+-- Per-release rating aggregates (GET /api/recs hydration via
+-- releaseRatingAggSQL, the rating summary, the site-wide prior, 高分短片)
+-- read every active vote of a release. Covering them makes that an
+-- index-only scan: hydrating ~160 recs candidates 98 ms -> 9 ms, most of
+-- it heap reads for the busiest releases' votes.
+CREATE INDEX IF NOT EXISTS ratings_active_release
+  ON ratings (release_id) INCLUDE (weight, score)
+  WHERE status='active';
+
 CREATE INDEX IF NOT EXISTS releases_public_runtime
   ON releases ((COALESCE(runtime_minutes,0)) DESC, id DESC)
   WHERE status='published' AND merged_into_id IS NULL;
