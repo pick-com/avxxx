@@ -3,13 +3,14 @@ import {isGated} from '../lib/ageGate.server';
 import {serverApi} from '../lib/api.server';
 import {routeLang} from '../lib/langs';
 import {breadcrumbs, seoMeta, type SeoHandle} from '../lib/seo';
-import {Link, useLocation, useNavigate} from '../lib/nav';
+import {Link} from '../lib/nav';
 import {PerformerChip, ReleaseRow, SectionHeader} from '../components/Cards';
 import {RecommendedPerformers} from '../components/PerformerRecs';
 import {parsePeriod, PeriodTabs, TrendingBoard} from '../components/Trending';
 import {Icon} from '../components/Icon';
 import {LoadMore} from '../components/Paging';
 import {FilterBar, RELEASE_PAGE_SIZE, ReleaseResults} from '../components/ReleaseFilters';
+import {usePendingAction, useRequireAuth} from '../components/AuthPrompt';
 import {LaterButton, ReserveButton} from '../components/SocialButtons';
 import {CardGridSkeleton, EmptyState, ErrorBanner} from '../components/States';
 import {Switch} from '../components/Switch';
@@ -337,8 +338,7 @@ function Upcoming() {
   const t = useT();
   const [params, setParams] = useSearchParams();
   const {status} = useAuth();
-  const navigate = useNavigate();
-  const location = useLocation();
+  const requireAuth = useRequireAuth();
   const followedOnly = params.get('followed') === '1';
   const followed = followedOnly && status === 'user';
   const list = usePaged<UpcomingItem>(
@@ -346,17 +346,19 @@ function Upcoming() {
     [followed, status],
     status !== 'unknown',
   );
-  const toggle = (next: boolean) => {
-    if (next && status !== 'user') {
-      navigate(`/login?next=${encodeURIComponent(location.pathname + location.search)}`);
-      return;
-    }
+  const setFollowedOnly = (next: boolean) => {
     const p = new URLSearchParams(params);
     p.set('tab', 'upcoming');
     if (next) p.set('followed', '1');
     else p.delete('followed');
     setParams(p, {replace: true});
   };
+  // A guest turning it on gets the sign-in sheet; it is switched on once signed in.
+  const toggle = (next: boolean) => {
+    if (next && !requireAuth('followed_only', {target: 'upcoming'})) return;
+    setFollowedOnly(next);
+  };
+  usePendingAction('followed_only', 'upcoming', () => setFollowedOnly(true));
 
   return (
     <section className="shelf upcoming">

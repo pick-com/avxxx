@@ -39,12 +39,27 @@ import {clearPending, markPromptOAuth, savePending, takePending, takePromptOAuth
 // first); while the new account has not finished onboarding a small
 // dismissible prompt links to /welcome?next=<this page> (lib/onboardingNudge).
 
-export type AuthAction = 'favorite' | 'later' | 'follow' | 'reserve' | 'danmaku' | 'comment' | 'review' | 'like' | 'report' | 'sync' | 'other';
+export type AuthAction =
+  | 'favorite'
+  | 'later'
+  | 'watched'
+  | 'follow'
+  | 'followed_only'
+  | 'reserve'
+  | 'danmaku'
+  | 'comment'
+  | 'review'
+  | 'like'
+  | 'report'
+  | 'sync'
+  | 'other';
 
 const TITLES: Record<AuthAction, MessageKey> = {
   favorite: 'authPrompt.titleFavorite',
   later: 'authPrompt.titleLater',
+  watched: 'authPrompt.titleWatched',
   follow: 'authPrompt.titleFollow',
+  followed_only: 'authPrompt.titleFollowedOnly',
   reserve: 'authPrompt.titleReserve',
   danmaku: 'authPrompt.titleDanmaku',
   comment: 'authPrompt.titleComment',

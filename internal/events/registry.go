@@ -40,7 +40,7 @@ var (
 	// run-length format (buckets.go); a malformed table quarantines the event.
 	bucketsField = Field{Name: "buckets", Type: String, MaxLen: BucketsMaxLen, Format: checkBuckets}
 	// authPromptAction is the guest action behind a sign-in prompt.
-	authPromptAction = enum("action", "favorite", "later", "follow", "reserve", "danmaku", "comment", "review", "like", "report", "sync", "other")
+	authPromptAction = enum("action", "favorite", "later", "watched", "follow", "followed_only", "reserve", "danmaku", "comment", "review", "like", "report", "sync", "other")
 )
 
 // v1 is the initial version of every event's props (schema_ver 1).
