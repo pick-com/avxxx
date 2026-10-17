@@ -484,6 +484,14 @@ func (s *Store) Recall(ctx context.Context, q RecQuery) (RecallResult, error) {
 	return res, br.Close()
 }
 
+// releaseRatingAggSQL aggregates the active votes of release id (n, w, ws:
+// community.RatingAggregate). Migration 058's ratings_active_release covers
+// it, so it is an index-only scan rather than a heap read per vote.
+func releaseRatingAggSQL(id string) string {
+	return `SELECT count(*)::int AS n, COALESCE(sum(weight),0)::float8 AS w, COALESCE(sum(weight*score),0)::float8 AS ws
+			FROM ratings WHERE release_id=` + id + ` AND status='active'`
+}
+
 // RecInfos hydrates published, unmerged releases: display fields, primary
 // performer, playability (an active or degraded source), whether a source
 // has audio or subtitles in lang, the public rating and, with seed, the
@@ -513,8 +521,7 @@ func (s *Store) RecInfos(ctx context.Context, ids []int64, seed int64, lang stri
 		LEFT JOIN LATERAL (SELECT p.id, p.slug, p.canonical_name FROM release_performers rp
 			JOIN performers p ON p.id=rp.performer_id AND `+activeP+`
 			WHERE rp.release_id=r.id ORDER BY rp.is_primary DESC, rp.billing_order NULLS LAST, p.id LIMIT 1) pp ON true
-		CROSS JOIN LATERAL (SELECT count(*)::int AS n, COALESCE(sum(weight),0)::float8 AS w, COALESCE(sum(weight*score),0)::float8 AS ws
-			FROM ratings WHERE release_id=r.id AND status='active') rt
+		CROSS JOIN LATERAL (`+releaseRatingAggSQL("r.id")+`) rt
 		WHERE r.id = ANY(@ids) AND `+publishedR,
 		pgx.NamedArgs{"ids": ids, "seed": seed, "lang": lang, "base": base})
 	if err != nil {
