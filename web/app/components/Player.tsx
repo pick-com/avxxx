@@ -39,7 +39,7 @@ import {PlayerPlaybackPanel} from './PlayerPlaybackPanel';
 import {PlayerSettingsSheet, type Choice, type SettingsTab} from './PlayerSettingsSheet';
 import {BufferingSpinner, CenterPlay, EndScreen, ResumeToast, useBuffering, type EndItem} from './PlayerStates';
 import {PlayerTouchLayer} from './PlayerTouchLayer';
-import {ShortcutsDialog} from './ShortcutsDialog';
+import {IS_MAC, ShortcutsDialog} from './ShortcutsDialog';
 
 const SAVE_INTERVAL_MS = 15_000;
 const FLASH_MS = 700;
@@ -1074,9 +1074,12 @@ export function Player({slug, releaseId, title, resumeAt, startAt, onBack, theat
   useEffect(() => {
     if (phase !== 'ready' || mini) return;
     const onKey = (event: KeyboardEvent) => {
-      if (event.defaultPrevented || event.ctrlKey || event.metaKey) return;
-      // Alt is reserved for Option+← / → (YouTube: previous / next chapter).
-      if (event.altKey && event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') return;
+      if (event.defaultPrevented || event.metaKey) return;
+      // Chapter jumps (YouTube): Option+← / → on macOS, Ctrl+← / → elsewhere,
+      // where Alt+← / → stays browser back / forward.
+      const chapterMod = IS_MAC ? event.altKey && !event.ctrlKey : event.ctrlKey && !event.altKey;
+      const isArrow = event.key === 'ArrowLeft' || event.key === 'ArrowRight';
+      if (chapterMod ? !isArrow : event.ctrlKey || event.altKey) return;
       const shell = shellRef.current;
       const video = videoRef.current;
       if (!shell || !video) return;
@@ -1100,7 +1103,7 @@ export function Player({slug, releaseId, title, resumeAt, startAt, onBack, theat
         go();
         return;
       }
-      if (event.altKey) {
+      if (chapterMod) {
         // Previous chapter goes back to the current chapter's start unless within 3 s of it.
         const list = chaptersRef.current;
         if (!list.length) return;
