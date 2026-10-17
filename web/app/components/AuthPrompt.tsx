@@ -1,10 +1,12 @@
 import {createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode} from 'react';
+import {createPortal} from 'react-dom';
 import {AuthForm, type AuthMode} from './AuthForm';
 import {Sheet} from './Sheet';
 import {mergeWatchProgress} from '../lib/api';
 import {useAuth} from '../lib/auth';
 import {selectGuestMerge, uploadGuestHistory} from '../lib/guestMerge';
 import {clearGuestHistory, deleteGuestEntry, guestStore} from '../lib/guestProgress';
+import {needsFullscreenExit, useOverlayHost} from '../lib/fullscreenHost';
 import {useT} from '../lib/i18n';
 import type {MessageKey} from '../lib/messages.zh-CN';
 import {useLocation} from '../lib/nav';
@@ -24,6 +26,13 @@ import {clearPending, markPromptOAuth, savePending, takePending, takePromptOAuth
 // usePendingAction: in place after a password sign-in, or when the page is
 // back after the Google redirect. It runs once and says so in a toast
 // (「已登录，并已收藏」); drafts go back into their input, never posted.
+//
+// In fullscreen (发送弹幕 from the fullscreen player) the sheet and the toast
+// render inside the fullscreen element, like the player's own sheets, so the
+// video keeps playing full screen and the guest is back where they were
+// after signing in. Exiting fullscreen instead would shrink the player and
+// lose the viewer's place for a two-field form. Only a bare <video> in
+// fullscreen (no room for our DOM) is taken out of fullscreen first.
 
 export type AuthAction = 'favorite' | 'later' | 'follow' | 'reserve' | 'danmaku' | 'comment' | 'review' | 'like' | 'report' | 'sync' | 'other';
 
@@ -118,6 +127,7 @@ export function AuthPromptProvider({children}: {children: ReactNode}) {
     (next: AuthAction, resume?: ResumeSpec) => {
       if (status === 'user') return true;
       if (status === 'anon') {
+        if (needsFullscreenExit(document.fullscreenElement)) void document.exitFullscreen?.().catch(() => {});
         if (resume?.target) savePending({kind: next, target: resume.target, payload: resume.payload});
         else clearPending();
         setAction(next);
@@ -144,12 +154,24 @@ export function AuthPromptProvider({children}: {children: ReactNode}) {
   }, [toast]);
 
   const value = useMemo(() => ({requireAuth, notify}), [requireAuth, notify]);
+  // Leaving fullscreen while the sheet is open moves it back to the page.
+  const host = useOverlayHost();
+  const toastRegion = (
+    <div className="auth-toast-region" role="status" aria-live="polite">
+      {toast && (
+        <div key={toast.id} className="auth-toast">
+          {toast.text}
+        </div>
+      )}
+    </div>
+  );
   return (
     <PromptContext.Provider value={value}>
       {children}
       {action && (
         <AuthSheet
           action={action}
+          container={host}
           onClose={how => {
             if (how !== 'signed_in') {
               // Dismissed without signing in: nothing is left waiting.
@@ -160,20 +182,14 @@ export function AuthPromptProvider({children}: {children: ReactNode}) {
           }}
         />
       )}
-      <div className="auth-toast-region" role="status" aria-live="polite">
-        {toast && (
-          <div key={toast.id} className="auth-toast">
-            {toast.text}
-          </div>
-        )}
-      </div>
+      {host ? createPortal(toastRegion, host) : toastRegion}
     </PromptContext.Provider>
   );
 }
 
 type CloseReason = 'signed_in' | 'skip' | 'dismiss' | 'navigate';
 
-function AuthSheet({action, onClose}: {action: AuthAction; onClose: (how: CloseReason) => void}) {
+function AuthSheet({action, container, onClose}: {action: AuthAction; container: HTMLElement | null; onClose: (how: CloseReason) => void}) {
   const t = useT();
   const {status, signIn} = useAuth();
   const location = useLocation();
@@ -195,6 +211,7 @@ function AuthSheet({action, onClose}: {action: AuthAction; onClose: (how: CloseR
       onClose={() => onClose(status === 'user' ? 'signed_in' : 'dismiss')}
       label={title}
       className="auth-sheet"
+      container={container}
       header={
         <div className="auth-sheet-head">
           <h2 className="sheet-title">{title}</h2>
