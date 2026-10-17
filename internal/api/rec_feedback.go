@@ -6,6 +6,7 @@ package api
 //	POST   /api/recs/feedback {kind, target}            give feedback (rate-limited)
 //	DELETE /api/recs/feedback?kind=&target=             撤销
 //	GET    /api/me/rec-feedback                         the caller's active feedback
+//	POST   /api/recs/feedback/claim                     move this device's feedback to the account
 //
 // kind: not_interested_release (target = release slug),
 // not_interested_performer (performer slug), not_interested_tag
@@ -13,8 +14,10 @@ package api
 // X-Device-ID (stored hashed, like ratings and 赞 / 踩). Feedback only ever
 // goes back to its owner; GET /api/recs applies it (recs.go).
 //
-// Visitor feedback is not moved to the account on sign-in: there is no
-// device-to-user merge for ratings or reactions either.
+// Visitor feedback moves to the account when the browser signs in: the web
+// app's post-sign-in guest merge (components/AuthPrompt.tsx) calls claim
+// with the token and the browser's X-Device-ID. Ratings and reactions have
+// no such merge.
 
 import (
 	"avxxx/internal/community"
@@ -32,6 +35,7 @@ type recFeedbackStore interface {
 	AddRecFeedback(ctx context.Context, owner store.RecFeedbackOwner, kind, target string) (store.RecFeedback, error)
 	UndoRecFeedback(ctx context.Context, owner store.RecFeedbackOwner, kind, target string) (bool, error)
 	ListRecFeedback(ctx context.Context, owner store.RecFeedbackOwner) ([]store.RecFeedback, error)
+	ClaimRecFeedback(ctx context.Context, userID int64, deviceID string) (int64, error)
 }
 
 var (
@@ -176,4 +180,32 @@ func (srv *Server) listRecFeedback(w http.ResponseWriter, r *http.Request) {
 		items = []store.RecFeedback{}
 	}
 	reply(w, map[string]any{"items": items}, err)
+}
+
+// claimRecFeedback: POST /api/recs/feedback/claim with the user token and
+// the browser's X-Device-ID → {"claimed": n}. Moves that device's
+// 「不感兴趣」 rows to the account (store.ClaimRecFeedback); a second call
+// finds nothing left and returns 0.
+func (srv *Server) claimRecFeedback(w http.ResponseWriter, r *http.Request) {
+	if srv.accounts == nil {
+		reply(w, nil, errUnauthorized)
+		return
+	}
+	uid, err := srv.userID(r)
+	if err != nil {
+		reply(w, nil, err)
+		return
+	}
+	d := strings.TrimSpace(r.Header.Get(deviceHeader))
+	if !community.ValidDeviceID(d) {
+		reply(w, nil, badRequest("send a valid "+deviceHeader+" header", nil))
+		return
+	}
+	owner := store.RecFeedbackOwner{UserID: uid}
+	if !srv.allow(r, "recfb-ip:"+srv.ip(r), limitRecFeedbackIP) || !srv.allow(r, "recfb:"+owner.Key(), limitRecFeedbackOwner) {
+		reply(w, nil, tooManyRequests("too many requests"))
+		return
+	}
+	n, err := srv.recFeedback.ClaimRecFeedback(r.Context(), uid, d)
+	reply(w, map[string]any{"claimed": n}, feedbackErr(err))
 }

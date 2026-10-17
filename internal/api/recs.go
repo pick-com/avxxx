@@ -77,6 +77,7 @@ func (srv *Server) recsRoutes() []route {
 		{"POST /api/recs/feedback", srv.withRecFeedback(srv.postRecFeedback)},
 		{"DELETE /api/recs/feedback", srv.withRecFeedback(srv.deleteRecFeedback)},
 		{"GET /api/me/rec-feedback", srv.withRecFeedback(srv.listRecFeedback)},
+		{"POST /api/recs/feedback/claim", srv.withRecFeedback(srv.claimRecFeedback)},
 	}
 }
 

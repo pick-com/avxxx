@@ -6,6 +6,7 @@ import (
 	"avxxx/internal/store"
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -20,6 +21,7 @@ type stubFeedback struct {
 	added  []string
 	undone []string
 	items  []store.RecFeedback
+	claims []string
 }
 
 func (s *stubFeedback) AddRecFeedback(_ context.Context, o store.RecFeedbackOwner, kind, target string) (store.RecFeedback, error) {
@@ -43,6 +45,11 @@ func (s *stubFeedback) UndoRecFeedback(_ context.Context, o store.RecFeedbackOwn
 func (s *stubFeedback) ListRecFeedback(_ context.Context, o store.RecFeedbackOwner) ([]store.RecFeedback, error) {
 	s.owners = append(s.owners, o)
 	return s.items, nil
+}
+
+func (s *stubFeedback) ClaimRecFeedback(_ context.Context, userID int64, deviceID string) (int64, error) {
+	s.claims = append(s.claims, fmt.Sprintf("%d:%s", userID, deviceID))
+	return 3, nil
 }
 
 const testDevice = "device-abcdef123456"
@@ -222,5 +229,38 @@ func TestRecsAppliesFeedback(t *testing.T) {
 	}
 	if rec := doDevice(mux, "GET", "/api/recs?slot=home", "", "", ""); rec.Header().Get("Cache-Control") == "private, no-store" {
 		t.Error("plain visitor recs should stay cacheable")
+	}
+}
+
+// POST /api/recs/feedback/claim needs a valid token and a valid device id,
+// and hands both to the store.
+func TestRecFeedbackClaim(t *testing.T) {
+	for _, c := range []struct {
+		token, device string
+		want          int
+	}{
+		{"good", testDevice, 200},
+		{"", testDevice, 401},          // a visitor cannot claim
+		{"bad-token", testDevice, 401}, // the token must be valid
+		{"good", "", 400},              // no device
+		{"good", "short", 400},         // invalid device id
+	} {
+		fb := &stubFeedback{}
+		rec := doDevice(feedbackMux(newStubRecs(), fb), "POST", "/api/recs/feedback/claim", c.token, c.device, "")
+		if rec.Code != c.want {
+			t.Errorf("claim (token %q device %q): %d, want %d: %s", c.token, c.device, rec.Code, c.want, rec.Body)
+		}
+		if c.want != 200 {
+			if len(fb.claims) != 0 {
+				t.Errorf("claim (token %q device %q) reached the store: %v", c.token, c.device, fb.claims)
+			}
+			continue
+		}
+		if len(fb.claims) != 1 || fb.claims[0] != "1:"+testDevice {
+			t.Errorf("claims = %v", fb.claims)
+		}
+		if !strings.Contains(rec.Body.String(), `"claimed":3`) || rec.Header().Get("Cache-Control") != "private, no-store" {
+			t.Errorf("claim reply %s (Cache-Control %q)", rec.Body, rec.Header().Get("Cache-Control"))
+		}
 	}
 }
