@@ -1,8 +1,8 @@
 # AVXXX Roadmap 状态
 
-> 状态更新时间：2026-10-16（#109 之后；#97–#109 的用户功能、后台和合规已并入）
+> 状态更新时间：2026-10-17（#169 之后；#118–#169 的播放器、YouTube 对齐、页内登录与片段已并入，浏览器 QA 见 [QA_REPORT.md](QA_REPORT.md) Round 2）
 >
-> 当前完成度约为 **86%**。计算方法：本页所有勾选项（`- [x]` / `- [ ]`，含「进行中」小节）计数；「代码已完成、只差外部凭据或真实页面」的 4 项（DMM、ThePornDB、厂商目录 adapter、Google/Apple 登录）计入完成。共 106 项：87 项已勾选 + 4 项待凭据 = 91/106 ≈ 85.8%（只算已勾选为 87/106 ≈ 82%）。比 #92 时的 93%（78/84）低，是因为本次把 PRD/设计稿的用户功能与后台（22 项，见「用户功能与后台」）纳入了统计口径，不是有功能退回。
+> 当前完成度约为 **92%**。计算方法：用正则数本页所有行首的勾选项（`- [x]` / `- [ ]`，含缩进的子项和「进行中」小节；「不适用」等无复选框的行不计）；「代码已完成、只差外部凭据或真实页面」的 3 项（DMM、厂商目录 adapter、Google/Apple 登录；ThePornDB 已于 2026-10-17 实测并勾选）计入完成。共 120 项：108 项已勾选 + 3 项待凭据 = 111/120 ≈ 92.5%（只算已勾选为 108/120 ≈ 90.0%）。上次（2026-10-16）为 91/106 ≈ 86%；本次勾选 YouTube 对齐第二批 8 项（#142–#145、#155–#158）与 ThePornDB 实测，计数口径不变（106 → 120 是 #110 之后新增的 YouTube 对齐小节等条目）。
 >
 > 基础架构、目录采集、调度、审核后台、图片存储、部署/备份/恢复与全量验收（#92 之前）已完成；#97–#109 又交付了统计重建规则 G、首页运营位与公告、收藏夹、账号与 OAuth、发现/搜索/演员统计、赞踩评论、合规、观看统计、后台个人账号与 2FA、服务令牌与夜间任务页、弹幕过滤与选集。剩余项分四类：外部输入、产品决策（广告与会员）、依赖媒体资产的功能，以及少量不依赖外部输入的代码工作（见文末「剩余事项」）。进站 18+ 自我声明正在实现（定位已定为成人站，不做青少年模式）。
 >
@@ -64,7 +64,7 @@
 - [ ] DMM/FANZA 官方目录或 Affiliate API — **已实现，待凭据实测**：`dmm` adapter（ItemList digital/videoa + ActressSearch `sort=-id`）已接入 baseline/增量/verify 阶段（增量用增量 checkpoint 水位推导 `gte_date` 并按头部记录停止，baseline 独立游标），走 robots/许可门禁；官方目录（优先级 10）按字段策略胜出作品身份字段。来源以 `official_api` 默认停用、`terms_reviewed_at` 为空：配置 `DMM_API_ID`/`DMM_AFFILIATE_ID`/`CATALOG_CONTACT` 后先跑 `go run ./cmd/scraper -dry-run -adapter dmm` 用真实响应核对字段（含 `sort=date`/`sort=-id` 排序方向），再记录条款审核并启用
 - [ ] 厂商目录 adapter — **已实现，待真实页面与条款审核**：一个配置驱动的 `maker:<slug>` adapter（`internal/catalog/maker.go`），每个厂商一份 profile（`maker_profiles.json`，可用 `MAKER_PROFILES_FILE` 覆盖/新增）：列表/详情/演员 URL 正则、CSS 选择器（`@attr` 取属性）、日期格式、品番前缀 `code_pattern`（只收本厂商作品，外厂商作品在发现阶段丢弃/解析时跳过）。走通用 baseline/增量（新到旧列表、头部水位）/verify、robots、联系 UA、按来源限速与许可门禁；`official_maker` 层级（优先级 20）在本厂商作品上胜过 JAV Database 和聚合站；作用域恒为 `maker:<slug>`。已附 S1、IDEA POCKET 两个 profile，选择器只按合成 fixture 编写（`testdata/maker-*/README.md`）；migration 034 以 `review_required`、`terms_reviewed_at`/`terms_url` 为空、停用状态播种。启用步骤见 `docs/MAKER_CATALOG.md`（保存真实页面 → 调整 profile → `-dry-run -adapter maker:<slug>` → verify → 记录条款审核 → 启用）
 - [ ] JavDB、IAFD、ThePornDB、javinfo 交叉验证 adapter
-  - [ ] ThePornDB — **已实现，待凭据实测**：`theporndb` adapter 按官方 OpenAPI（`https://api.theporndb.net/specs?openapi.json`，文档 `https://api.theporndb.net/docs`）映射 `GET /jav`、`/jav/{id}`、`/performers`、`/performers/{id}`，`THEPORNDB_API_TOKEN` 只以 Bearer 头发往 API 主机并全程脱敏。主模式是 `crosscheck` 任务（cmd/scheduler 每 `CROSSCHECK_EVERY` 入队、cmd/audit 执行）：对缺发售日/厂商/演员/封面证据或有待审字段冲突的作品按品番查询，唯一精确品番匹配才保存为证据，尝试记录在 `crosscheck_attempts`（未找到 14 天、3 次后 60 天重试；错误指数退避）；次要模式是 `GET /jav`（按发售日倒序）的 baseline/增量/verify 抓取。`third_party_api` 层级（优先级 50）只附着到已有作品/演员、只补缺字段、不单独开字段冲突、不新建演员，作品已有他源署名时不加署名；ThePornDB 演员 UUID 写入 `performer_external_ids(namespace='theporndb_performer')`。来源（migration 032）以 `official_api` 默认停用、`terms_reviewed_at` 为空，API 文档未给出条款/署名要求，审核时需确认。配置 token 与 `CATALOG_CONTACT` 后先跑 `go run ./cmd/scraper -dry-run -adapter theporndb` 核对 JAV 品番所在字段（`sku`/`external_id`）、`duration` 单位和 `meta.last` 含义，再记录条款审核并启用
+  - [x] ThePornDB — **已实测（2026-10-17，本地 20/20 匹配）**：真实 token dry-run 搜索 SHKD 返回 10 条、映射正确，品番取自 `external_id`；本地一次 crosscheck 检查 20 部作品，20 找到、0 歧义、0 错误，20 条记录均附为证据，未开字段冲突、未改动已有数据。生产启用前仍需记录条款审核。原说明：`theporndb` adapter 按官方 OpenAPI（`https://api.theporndb.net/specs?openapi.json`，文档 `https://api.theporndb.net/docs`）映射 `GET /jav`、`/jav/{id}`、`/performers`、`/performers/{id}`，`THEPORNDB_API_TOKEN` 只以 Bearer 头发往 API 主机并全程脱敏。主模式是 `crosscheck` 任务（cmd/scheduler 每 `CROSSCHECK_EVERY` 入队、cmd/audit 执行）：对缺发售日/厂商/演员/封面证据或有待审字段冲突的作品按品番查询，唯一精确品番匹配才保存为证据，尝试记录在 `crosscheck_attempts`（未找到 14 天、3 次后 60 天重试；错误指数退避）；次要模式是 `GET /jav`（按发售日倒序）的 baseline/增量/verify 抓取。`third_party_api` 层级（优先级 50）只附着到已有作品/演员、只补缺字段、不单独开字段冲突、不新建演员，作品已有他源署名时不加署名；ThePornDB 演员 UUID 写入 `performer_external_ids(namespace='theporndb_performer')`。来源（migration 032）以 `official_api` 默认停用、`terms_reviewed_at` 为空，API 文档未给出条款/署名要求，审核时需确认。配置 token 与 `CATALOG_CONTACT` 后先跑 `go run ./cmd/scraper -dry-run -adapter theporndb` 核对 JAV 品番所在字段（`sku`/`external_id`）、`duration` 单位和 `meta.last` 含义，再记录条款审核并启用
   - [ ] JavDB、IAFD：没有官方 API，条款未确认前保持在许可门禁后，只能人工 verify，不实现自动抓取
   - [x] javinfo：已评估，**拒绝**（付费的实时抓取转售 API，无服务条款与数据许可，上游含 DMM/JAV Database（已直接接入）、JavDB/JAVLibrary（自身待审核）与 MissAV 等盗版源，会丢失字段来源；详见 `docs/SOURCE_EVALUATIONS.md`）
 
@@ -144,16 +144,16 @@
 - [x] 页面隐藏时暂停（#132）
 - [x] 「不感兴趣」推荐反馈（#141，迁移 051）：推荐卡片「⋯」菜单的不感兴趣 / 不推荐此演员，设置页可撤销
 
-进行中（已获批）：
+已完成（第二批，2026-10-17 浏览器 QA 见 [QA_REPORT.md](QA_REPORT.md) Round 2）：
 
-- [ ] 循环播放
-- [ ] 睡眠定时器
-- [ ] 氛围模式（播放器背后的画面取色光晕）
-- [ ] 片段（截取一段分享）
-- [ ] 评论、短评与弹幕列表中的时间戳可点击跳转
-- [ ] 添加到播放队列（卡片菜单，`?list=queue`，会话内、未登录可用）
-- [ ] `/` 聚焦搜索框
-- [ ] 播放记录内搜索（片名、演员、番号）
+- [x] 循环播放与 A-B 循环（#155）
+- [x] 睡眠定时器（#156：15/30/45/60 分钟、播完本集，音量渐弱后暂停）
+- [x] 氛围模式（#157，播放器背后的画面取色光晕；跨域片源读不到画面时设置面板说明不可用）
+- [x] 片段（#158 截取 5–60 秒分享，#167 我的片段，#168 片段标题审核）
+- [x] 评论、短评与弹幕列表中的时间戳可点击跳转（#142）
+- [x] 添加到播放队列（#143，卡片菜单，`?list=queue`，会话内、未登录可用；#165 菜单改为 portal 不被横滑货架裁切）
+- [x] `/` 聚焦搜索框（#144）
+- [x] 播放记录内搜索（#145，片名、演员、番号；登录走 API，未登录在本地过滤）
 
 不适用：
 
@@ -209,7 +209,7 @@ JAV Database adapter 已接入 scraper，可完成发现、详情抓取、解析
 
 ### 需要外部输入
 
-1. **来源凭据**：DMM（`DMM_API_ID`/`DMM_AFFILIATE_ID`）、ThePornDB（`THEPORNDB_API_TOKEN`）拿到后 dry-run → 条款审核 → 启用；Google / Apple 登录（OIDC 客户端凭据）拿到后对真实 provider 实测。
+1. **来源凭据**：DMM（`DMM_API_ID`/`DMM_AFFILIATE_ID`）拿到后 dry-run → 条款审核 → 启用；ThePornDB 已用真实 token 实测（2026-10-17，本地 20/20 匹配），生产启用前仍需记录条款审核；Google / Apple 登录（OIDC 客户端凭据）拿到后对真实 provider 实测。
 2. **VPN / 授权**：XSList、JAVLibrary 确认访问条件后启用；JavDB、IAFD 条款确认前保持人工 verify。
 3. **真实保存的页面**：JAV Database、XCITY、Jav.Guru 各 20 个演员、100 个作品页面作为 recorded fixture（`make fixturecheck` 达标后 CI 加 `-strict`）；厂商目录（S1、IDEA POCKET）按 `docs/MAKER_CATALOG.md` 保存真实页面、校准 profile、记录条款审核后启用。
 4. **法务答复**：[COMPLIANCE.md](COMPLIANCE.md) 与 [DATA_RETENTION_AND_IMAGES.md](DATA_RETENTION_AND_IMAGES.md) 中所有 **[法务]** 条目（含 DMM 图片转存、样图、肖像权、法律文本定稿、数据保存期限）。
