@@ -59,8 +59,12 @@ type Clip struct {
 	CreatedAt   time.Time `json:"created_at"`
 	// Mine: the viewer made it (may delete it).
 	Mine bool `json:"mine"`
-	// internal id (reports.target_id); never in JSON.
-	RowID int64 `json:"-"`
+	// ReleaseCover is the release's stored cover, set by the API (the clip
+	// page's og:image without a second request).
+	ReleaseCover *model.Image `json:"release_cover"`
+	// internal ids (reports.target_id; the cover lookup); never in JSON.
+	RowID     int64 `json:"-"`
+	ReleaseID int64 `json:"-"`
 }
 
 // ClipInput is POST /api/me/clips.
@@ -159,7 +163,7 @@ func (s *Store) CreateClip(ctx context.Context, userID int64, in ClipInput, titl
 		if err != nil {
 			return Clip{}, err
 		}
-		c := Clip{ID: id, ReleaseSlug: slug, ReleaseTitle: releaseTitle, StartMs: in.StartMs, EndMs: in.EndMs, Title: title, Status: status, TitleStatus: titleStatus, Mine: true}
+		c := Clip{ID: id, ReleaseID: releaseID, ReleaseSlug: slug, ReleaseTitle: releaseTitle, StartMs: in.StartMs, EndMs: in.EndMs, Title: title, Status: status, TitleStatus: titleStatus, Mine: true}
 		err = s.QueryRow(ctx, `INSERT INTO clips(public_id,release_id,user_id,start_ms,end_ms,title,status,title_status) VALUES($1,$2,$3,$4,$5,$6,$7,$8)
 			RETURNING id,created_at`, id, releaseID, userID, in.StartMs, in.EndMs, title, status, titleStatus).Scan(&c.RowID, &c.CreatedAt)
 		var pgErr *pgconn.PgError
@@ -180,11 +184,11 @@ func (s *Store) ClipByPublicID(ctx context.Context, publicID string, viewerID in
 	var c Clip
 	var owner int64
 	var titleStatus string
-	err := s.QueryRow(ctx, `SELECT c.id,c.public_id,r.slug,r.canonical_title,c.start_ms,c.end_ms,`+clipTitleSQL+`,c.title_status,c.status,COALESCE(u.display_name,''),c.created_at,c.user_id
+	err := s.QueryRow(ctx, `SELECT c.id,c.public_id,r.id,r.slug,r.canonical_title,c.start_ms,c.end_ms,`+clipTitleSQL+`,c.title_status,c.status,COALESCE(u.display_name,''),c.created_at,c.user_id
 		FROM clips c JOIN releases r ON r.id=c.release_id JOIN users u ON u.id=c.user_id
 		WHERE c.public_id=$1 AND r.status='published' AND r.merged_into_id IS NULL
 		  AND (c.status IN ('visible','folded') OR (c.status='shadow' AND c.user_id=$2))`, publicID, viewerID).
-		Scan(&c.RowID, &c.ID, &c.ReleaseSlug, &c.ReleaseTitle, &c.StartMs, &c.EndMs, &c.Title, &titleStatus, &c.Status, &c.AuthorName, &c.CreatedAt, &owner)
+		Scan(&c.RowID, &c.ID, &c.ReleaseID, &c.ReleaseSlug, &c.ReleaseTitle, &c.StartMs, &c.EndMs, &c.Title, &titleStatus, &c.Status, &c.AuthorName, &c.CreatedAt, &owner)
 	c.Mine = viewerID != 0 && owner == viewerID
 	if c.Mine {
 		c.TitleStatus = titleStatus
@@ -208,13 +212,9 @@ func (s *Store) DeleteClip(ctx context.Context, userID int64, publicID string) e
 // ClipSort is the cursor sort of GET /api/me/clips.
 const ClipSort = "clips"
 
-// MyClip is one row of the author's clip list (GET /api/me/clips): the clip
-// plus its release's cover (set by the API from the stored images).
+// MyClip is one row of the author's clip list (GET /api/me/clips).
 type MyClip struct {
 	Clip
-	ReleaseCover *model.Image `json:"release_cover"`
-	// ReleaseID looks the cover up; never in JSON.
-	ReleaseID int64 `json:"-"`
 }
 
 // MyClips lists userID's clips, newest first, keyset-paginated on

@@ -24,8 +24,8 @@ export const handle: ShellHandle & SeoHandle = {immersive: true, seo: true};
 
 // 片段 page (/clips/{id}; internal/api/clips.go): plays the clip's release
 // from the clip start and loops the segment (or stops once at its end), with
-// a link to the full video. Server rendered from GET /api/clips/{id} plus the
-// release (cover, for og:image); behind the 18+ gate the loader keeps only
+// a link to the full video. Server rendered from GET /api/clips/{id} alone
+// (it carries the release cover, for og:image); behind the 18+ gate the loader keeps only
 // what the head needs, as the release loader does (#111). Clips are
 // noindex: they are shared links, the release page is the canonical one.
 
@@ -38,8 +38,12 @@ export async function loader({params, request}: LoaderFunctionArgs) {
   const headers = {'X-Robots-Tag': 'noindex'};
   try {
     const clip = await serverApi<Clip>(`clips/${encodeURIComponent(id)}`, {signal: request.signal});
-    const release = await serverApi<ReleaseDetail>(`releases/${encodeURIComponent(clip.release_slug)}`, {lang, signal: request.signal}).catch(() => null);
-    const cover = release?.cover?.url;
+    // The clip carries its release's cover; only an older API needs the
+    // release detail for it.
+    const cover =
+      'release_cover' in clip
+        ? clip.release_cover?.url
+        : (await serverApi<ReleaseDetail>(`releases/${encodeURIComponent(clip.release_slug)}`, {lang, signal: request.signal}).catch(() => null))?.cover?.url;
     // 18+ gate: the head needs the clip's titles and the cover, nothing else.
     if (isGated(request)) return data({id, clip: {...clip, author_name: undefined}, cover} satisfies ClipLoad, {headers});
     return data({id, clip, cover} satisfies ClipLoad, {headers});

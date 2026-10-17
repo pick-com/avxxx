@@ -79,7 +79,7 @@ func TestClipsIntegration(t *testing.T) {
 	// Public read: anyone; Mine only for the author.
 	got, err := s.ClipByPublicID(ctx, c.ID, 0)
 	must(err)
-	if got.Mine || got.AuthorName != "Alice" || got.StartMs != 85_000 || got.EndMs != 100_000 {
+	if got.Mine || got.AuthorName != "Alice" || got.StartMs != 85_000 || got.EndMs != 100_000 || got.ReleaseID != withSource {
 		t.Errorf("public read %+v", got)
 	}
 	if got, _ = s.ClipByPublicID(ctx, c.ID, alice); !got.Mine {

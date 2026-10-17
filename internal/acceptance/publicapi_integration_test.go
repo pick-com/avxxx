@@ -27,6 +27,11 @@ const (
 	commenterDomain = "commenter-mail.invalid"
 	shadowCanary    = "SHADOW-COMMENT-CANARY"
 	deletedCanary   = "DELETED-COMMENT-CANARY"
+	// Clip canaries.
+	shadowClipTitleCanary = "SHADOW-CLIP-TITLE-CANARY"
+	shadowClipCanary      = "SHADOW-CLIP-CANARY"
+	deletedClipCanary     = "DELETED-CLIP-CANARY"
+	draftClipCanary       = "DRAFT-RELEASE-CLIP-CANARY"
 )
 
 var (
@@ -153,11 +158,34 @@ func TestPublicAPINeverLeaksIntegration(t *testing.T) {
 	e.exec(`INSERT INTO comments(release_id,user_id,body,status) VALUES($1,$2,$3,'shadow')`, rel, other, shadowCanary)
 	e.exec(`INSERT INTO comments(release_id,user_id,body) VALUES($1,$2,'a visible comment')`, rel, commenter)
 	e.exec(`INSERT INTO release_reactions(release_id,voter_key,user_id,value) VALUES($1,'u:'||$2::bigint::text,$2::bigint,-1)`, rel, commenter)
+	// 片段 (migrations 054 / 055): the commenter's clips — a visible one, one
+	// whose title is shadowed (keyword hit: author only), a shadowed clip, a
+	// moderator-deleted clip and a clip of a non-public release. None of the
+	// hidden titles, the author's email or the author-only title_status may
+	// show, signed out or signed in as another user.
+	clipIDs := []string{"ClipVisib1", "ClipShadT1", "ClipShadow", "ClipDeletd", "ClipDraft1", "ClipNone00"}
+	for _, c := range []struct {
+		id, slug, title, status, titleStatus string
+	}{
+		{"ClipVisib1", "juq-743", "a visible clip", "visible", "visible"},
+		{"ClipShadT1", "juq-743", shadowClipTitleCanary, "visible", "shadow"},
+		{"ClipShadow", "juq-743", shadowClipCanary, "shadow", "visible"},
+		{"ClipDeletd", "juq-743", deletedClipCanary, "deleted", "visible"},
+		{"ClipDraft1", "abc-002", draftClipCanary, "visible", "visible"},
+	} {
+		e.exec(`INSERT INTO clips(public_id,release_id,user_id,start_ms,end_ms,title,status,title_status)
+			SELECT $1,id,$3,1000,16000,$4,$5,$6 FROM releases WHERE slug=$2`, c.id, c.slug, commenter, c.title, c.status, c.titleStatus)
+	}
+	viewer, err := e.s.Register(ctx, "viewer@viewer-mail.invalid", "password123", "")
+	must(err)
+	viewerToken := viewer["token"].(string)
 
 	leaks := map[string]string{
 		commenterDomain: "a commenter's email", shadowCanary: "a shadowed comment", deletedCanary: "a deleted comment's body",
-		`"dislikes"`: "the private 踩 count",
-		"raw_data":   "the raw_data column", rawCanary: "a source payload canary", "raw_html": "raw HTML",
+		`"dislikes"`:          "the private 踩 count",
+		shadowClipTitleCanary: "a clip's shadowed title", shadowClipCanary: "a shadowed clip", deletedClipCanary: "a deleted clip",
+		draftClipCanary: "a clip of a non-public release", `"title_status"`: "a clip's author-only title status",
+		"raw_data": "the raw_data column", rawCanary: "a source payload canary", "raw_html": "raw HTML",
 		dmmAPIID: "the DMM API id", dmmAffiliate: "the DMM affiliate id", "api_id=": "a DMM credential parameter", "affiliate_id=": "a DMM credential parameter",
 		overrideNote: "an override / review reason", overrideActor: "an override / review actor", "1995-01-01": "a hidden birthday",
 		tdName: "a takedown claimant name", tdEmail: "a takedown claimant email", tdPhone: "a takedown claimant phone", tdAddress: "a takedown address",
@@ -196,7 +224,10 @@ func TestPublicAPINeverLeaksIntegration(t *testing.T) {
 		}
 		routes++
 		values := []string{""}
+		clipRoute := strings.HasPrefix(path, "/api/clips/") || strings.HasPrefix(path, "/api/me/clips")
 		switch {
+		case strings.HasPrefix(path, "/api/clips/"):
+			values = clipIDs
 		case !strings.Contains(path, "{slug}"):
 		case strings.HasPrefix(path, "/api/performers/"):
 			values = performerSlugs
@@ -207,18 +238,35 @@ func TestPublicAPINeverLeaksIntegration(t *testing.T) {
 		}
 		for _, v := range values {
 			p := strings.ReplaceAll(strings.ReplaceAll(path, "{slug}", v), "{lang}", "en")
+			if strings.HasPrefix(path, "/api/clips/") {
+				p = strings.ReplaceAll(p, "{id}", v)
+			}
 			p = wildcard.ReplaceAllString(restWildcard.ReplaceAllString(p, "a/b"), "1")
-			for _, q := range queries {
-				rec := httptest.NewRecorder()
-				h.ServeHTTP(rec, httptest.NewRequest(method, p+q, nil))
-				body, _ := io.ReadAll(rec.Body)
-				walked++
-				if rec.Code >= 500 {
-					failures = append(failures, fmt.Sprintf("GET %s%s: HTTP %d %s", p, q, rec.Code, body))
-				}
-				for marker, what := range leaks {
-					if strings.Contains(string(body), marker) {
-						failures = append(failures, fmt.Sprintf("GET %s%s leaks %s (%q)", p, q, what, marker))
+			// Clip routes are walked signed out and signed in as a user who
+			// is not the clips' author.
+			tokens := []string{""}
+			if clipRoute {
+				tokens = append(tokens, viewerToken)
+			}
+			for _, tok := range tokens {
+				for _, q := range queries {
+					req := httptest.NewRequest(method, p+q, nil)
+					who := "anonymous"
+					if tok != "" {
+						req.Header.Set("Authorization", "Bearer "+tok)
+						who = "another user"
+					}
+					rec := httptest.NewRecorder()
+					h.ServeHTTP(rec, req)
+					body, _ := io.ReadAll(rec.Body)
+					walked++
+					if rec.Code >= 500 {
+						failures = append(failures, fmt.Sprintf("GET %s%s (%s): HTTP %d %s", p, q, who, rec.Code, body))
+					}
+					for marker, what := range leaks {
+						if strings.Contains(string(body), marker) {
+							failures = append(failures, fmt.Sprintf("GET %s%s (%s) leaks %s (%q)", p, q, who, what, marker))
+						}
 					}
 				}
 			}
@@ -276,6 +324,8 @@ func TestPublicAPINeverLeaksIntegration(t *testing.T) {
 		"/api/releases/juq-743/comments":    `a visible comment`,
 		"/api/comments/1/replies":           `a visible reply`,
 		"/api/releases/juq-743/reaction":    `"likes":0`,
+		"/api/clips/ClipVisib1":             `a visible clip`,
+		"/api/clips/ClipShadT1":             `"title":""`,
 	} {
 		rec := httptest.NewRecorder()
 		h.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, p, nil))
