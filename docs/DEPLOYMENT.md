@@ -66,11 +66,11 @@ deploy.yml 依次：检出 `git_branch`（默认 main）→ 由 vault 变量渲�
 	email ops@example.com            # ACME 账户联系人（证书到期通知）
 }
 
-www.reel.example {
-	redir https://reel.example{uri} permanent
+www.javpick.com {
+	redir https://javpick.com{uri} permanent
 }
 
-reel.example {
+javpick.com {
 	encode zstd gzip
 
 	header {
@@ -119,8 +119,8 @@ reel.example {
   - 只列 Caddy 实际连到 API 时使用的地址，不要放宽到整个 Docker 网段（web 容器等也在其中）。启用后看一条经 Caddy 的请求日志：`client_ip` 应是真实客户端网段；如果仍是 `172.x.x.0/24` 之类的 Docker 网桥地址（发布端口经 docker-proxy 转发时，API 看到的对端是网桥网关），把该网关地址（`docker network inspect avxxx_default` 的 `Gateway`）以 `/32` 加进 `TRUSTED_PROXIES`。
   - 值无法解析时 API 拒绝启动（`client ip config`）。
 - 访客地区（按地区投放的首页推荐位与公告、play-config 的 `region_allow` / `region_blocked`）：API 依次取 `?region=`、Cloudflare 的 `CF-IPCountry`、`GEOIP_HEADER` 指定的请求头（Ansible 变量 `geoip_header`，例如 `X-Country-Code`；只填由可信代理 / CDN 设置并覆盖的头）。web 的 SSR loader 经内网直连 API，收不到这些头，所以用同样的规则（`web/app/lib/region.server.ts`，读同一个 `GEOIP_HEADER`）取出国家后以 `?region=` 传给 API；浏览器请求经 Caddy 原样带着这些头到 API。**没有 CDN 国家头时地区功能不生效**：只出现不限地区的推荐位和公告，`region_allow` 限定地区的片源不提供。项目不带 GeoIP 数据库。地区只是展示规则，客户端可以自己传 `?region=`，不是访问控制。
-- `PUBLIC_BASE_URL` 必须等于对外域名（`https://reel.example`），否则 canonical、hreflang、站点地图指向错误的 origin。
-- 验证：`curl -sI https://reel.example/ | head -1`，`curl -s https://reel.example/api/health`，`curl -s https://reel.example/sitemap.xml | head`。
+- `PUBLIC_BASE_URL` 必须等于对外域名（`https://javpick.com`），否则 canonical、hreflang、站点地图指向错误的 origin。
+- 验证：`curl -sI https://javpick.com/ | head -1`，`curl -s https://javpick.com/api/health`，`curl -s https://javpick.com/sitemap.xml | head`。
 
 ### 2.6 首次运行：来源许可门禁清单（恢复抓取前必做）
 
@@ -222,7 +222,7 @@ reel.example {
 | `seo_report_token` | `SEO_REPORT_TOKEN` | 建议 | 每日 SEO 检查上报收录健康分用的服务令牌（`svc_…`，范围 `POST /api/admin/seo/report`，2.7）；为空时 cron 回退用 `ADMIN_TOKEN` |
 | `admin_token_disabled` | `ADMIN_TOKEN_DISABLED` | 否 | `true` 时紧急令牌全部 401（默认 false）；有两位以上超级管理员后建议开启 |
 | `admin_totp_key` | `ADMIN_TOTP_KEY` | 是 | 加密管理员 TOTP 密钥的键（AES-256-GCM）；api 与 `admin` 命令用同一值。更换后需重置所有人的两步验证 |
-| `public_base_url` / `base_url` | `PUBLIC_BASE_URL` / `BASE_URL` | 是 | 对外 origin（`https://reel.example`）；SSR canonical/站点地图、通知里的链接 |
+| `public_base_url` / `base_url` | `PUBLIC_BASE_URL` / `BASE_URL` | 是 | 对外 origin（`https://javpick.com`）；SSR canonical/站点地图、通知里的链接 |
 | `catalog_contact` | `CATALOG_CONTACT` | 抓取需要 | 爬虫 User-Agent 联系方式；空则目录任务 `config_error` |
 | `age_gate_key` | `AGE_GATE_KEY` | 是 | 进站 18+ 确认 Cookie 的 HMAC 键（`openssl rand -hex 32`）；api 与 web 共用。空则用公开的开发键，任何人都能伪造确认 Cookie。更换后所有访客需重新确认 |
 | `log_hash_key` | `LOG_HASH_KEY` | 建议 | 日志中用户 id 的 HMAC 键；空则每次重启随机（哈希不可跨重启关联） |

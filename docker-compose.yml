@@ -92,7 +92,7 @@ services:
     environment:
       # SSR loaders, sitemaps and the optional /api proxy reach the API here.
       API_INTERNAL_URL: http://api:8080
-      # Public origin for canonical / hreflang / sitemap URLs (e.g. https://reel.example).
+      # Public origin for canonical / hreflang / sitemap URLs (e.g. https://javpick.com).
       PUBLIC_BASE_URL: ${PUBLIC_BASE_URL:-${BASE_URL:-}}
       # Verifies the 18+ gate cookie before rendering (same value as the api).
       AGE_GATE_KEY: ${AGE_GATE_KEY:-}

@@ -256,7 +256,7 @@ PRD 13 SEO 要求视频页、演员页、分类页服务端渲染。此前 `web/
 `/api/` 应直接交给 API：API 只用连接地址记录 `client_ip` 和做投稿限流，经 web 转发时看到的都是 web 容器。`WEB_API_PROXY=true`（默认）时 web 也会转发 `/api/*`，只用于单上游的简易部署和本地运行。示例（Caddy）：
 
 ```
-reel.example {
+javpick.com {
   encode zstd gzip
   handle /api/* {
     reverse_proxy 127.0.0.1:8080
