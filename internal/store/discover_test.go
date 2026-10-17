@@ -85,9 +85,13 @@ func TestBuildPerformerQueryStats(t *testing.T) {
 			t.Errorf("%s: %v\n%s", sort, err, sql)
 		}
 	}
-	// name / works keep listing performers without a stats row.
-	if sql, _, _, _ = buildPerformerQuery(PerformerFilter{Sort: "works"}); strings.Contains(sql, "ps.performer_id IS NOT NULL") {
-		t.Errorf("works requires stats:\n%s", sql)
+	// name / works keep listing performers without a stats row (works: in
+	// a branch of its own, sorted on the live count).
+	if sql, _, _, _ = buildPerformerQuery(PerformerFilter{Sort: "name"}); strings.Contains(sql, "ps.performer_id IS NOT NULL") {
+		t.Errorf("name requires stats:\n%s", sql)
+	}
+	if sql, _, _, _ = buildPerformerQuery(PerformerFilter{Sort: "works"}); !strings.Contains(sql, "UNION ALL") || !strings.Contains(sql, "ps.performer_id IS NULL") {
+		t.Errorf("works drops performers without stats:\n%s", sql)
 	}
 }
 

@@ -140,14 +140,21 @@ func TestBuildPerformerQuery(t *testing.T) {
 		t.Errorf("args = %#v", args)
 	}
 
+	// works sorts on performer_stats; performers the hourly run has not
+	// seen yet sort on a live count in a branch of their own.
+	live := "(SELECT count(*) FROM release_performers lrp JOIN releases lr ON lr.id=lrp.release_id WHERE lrp.performer_id=p.id AND lr.status='published' AND lr.merged_into_id IS NULL)"
 	sql, args, _, err = buildPerformerQuery(PerformerFilter{Q: "ai", Sort: "works", Cursor: &Cursor{Sort: "works", Key: "12", ID: 3}, Limit: 10})
 	if err != nil {
 		t.Fatal(err)
 	}
 	for _, want := range []string{
 		"p.canonical_name ILIKE '%'||$1||'%'",
-		"(st.works < $2 OR (st.works = $2 AND p.id > $3))",
-		"ORDER BY st.works DESC,p.id ASC LIMIT $4",
+		"ps.performer_id IS NOT NULL AND (ps.works_count < $2 OR (ps.works_count = $2 AND p.id > $3)) ORDER BY ps.works_count DESC,p.id ASC LIMIT $4",
+		"ps.performer_id IS NULL AND (" + live + " < $2 OR (" + live + " = $2 AND p.id > $3)) ORDER BY " + live + " DESC,p.id ASC LIMIT $4",
+		"ORDER BY u.sk DESC,u.id ASC LIMIT $4) pg",
+		// The live counts are only computed for the page's rows.
+		"LIMIT $4) pg\n\tCROSS JOIN LATERAL (SELECT count(*) works",
+		"ORDER BY pg.sk DESC,pg.id ASC",
 	} {
 		if !strings.Contains(sql, want) {
 			t.Errorf("sql missing %q:\n%s", want, sql)
@@ -158,7 +165,8 @@ func TestBuildPerformerQuery(t *testing.T) {
 	}
 
 	sql, _, _, err = buildPerformerQuery(PerformerFilter{Sort: "newest_work"})
-	if err != nil || !strings.Contains(sql, "ORDER BY COALESCE(st.newest,DATE '0001-01-01') DESC,p.id DESC") {
+	if err != nil || !strings.Contains(sql, "ORDER BY COALESCE(ps.latest_work_date,DATE '0001-01-01') DESC,p.id DESC LIMIT") ||
+		!strings.Contains(sql, "ORDER BY COALESCE((SELECT max(lr.release_date) FROM") || !strings.Contains(sql, "ORDER BY pg.sk DESC,pg.id DESC") {
 		t.Errorf("newest_work: %v\n%s", err, sql)
 	}
 	if _, _, _, err = buildPerformerQuery(PerformerFilter{Sort: "popular"}); !errors.Is(err, ErrInvalidQuery) {
