@@ -75,13 +75,6 @@ type Neighbor struct {
 	Support    int // co-watching users (CoWatch only)
 }
 
-type pair struct{ a, b int64 }
-
-type pairAgg struct {
-	sum     float64
-	support int
-}
-
 // CoWatch is item-based collaborative filtering ("看过 A 的人也看了 B"):
 //
 //	f_u      = 1 / log2(2 + n_u)                   (heavy users count less)
@@ -92,36 +85,50 @@ type pairAgg struct {
 // where w is the completion weight and s the number of users who watched
 // both. sim is in [0, 1). Pairs below MinSupport are dropped; each item keeps
 // its TopK neighbours, best first (ties by neighbour id).
+//
+// Memory is O(interactions + items): it walks one item at a time, summing
+// its co-watch row into dense per-item arrays (users in ascending id order,
+// so the float sums do not depend on map order), and keeps only that item's
+// TopK. A map of every co-watched pair (the previous approach) grew to
+// ~50M entries and several GB at 200k users.
 func CoWatch(in []Interaction, cfg CoWatchConfig) []Neighbor {
 	cfg = cfg.withDefaults()
-	byUser := map[int64]map[int64]float64{}
+	xs := make([]Interaction, 0, len(in))
 	for _, x := range in {
 		if x.Weight <= 0 || x.UserID == 0 || x.ItemID == 0 {
 			continue
 		}
-		m := byUser[x.UserID]
-		if m == nil {
-			m = map[int64]float64{}
-			byUser[x.UserID] = m
-		}
-		m[x.ItemID] = max(m[x.ItemID], min(x.Weight, 1))
+		x.Weight = min(x.Weight, 1)
+		xs = append(xs, x)
 	}
-	norm := map[int64]float64{}
-	pairs := map[pair]*pairAgg{}
+	if len(xs) == 0 {
+		return nil
+	}
+	slices.SortFunc(xs, func(a, b Interaction) int {
+		if c := cmp.Compare(a.UserID, b.UserID); c != 0 {
+			return c
+		}
+		return cmp.Compare(a.ItemID, b.ItemID)
+	})
+	// Per user (ascending id): the deduplicated items, heaviest first, cut
+	// to MaxItemsPerUser; flattened into kept with userStart offsets.
 	type iw struct {
 		id int64
 		w  float64
 	}
-	users := make([]int64, 0, len(byUser))
-	for u := range byUser {
-		users = append(users, u)
-	}
-	slices.Sort(users) // deterministic float summation
-	for _, u := range users {
-		m := byUser[u]
-		items := make([]iw, 0, len(m))
-		for id, w := range m {
-			items = append(items, iw{id, w})
+	var kept []iw
+	var userStart []int
+	var userF []float64
+	items := []iw{}
+	for i := 0; i < len(xs); {
+		u := xs[i].UserID
+		items = items[:0]
+		for ; i < len(xs) && xs[i].UserID == u; i++ {
+			if n := len(items); n > 0 && items[n-1].id == xs[i].ItemID {
+				items[n-1].w = max(items[n-1].w, xs[i].Weight)
+				continue
+			}
+			items = append(items, iw{xs[i].ItemID, xs[i].Weight})
 		}
 		slices.SortFunc(items, func(a, b iw) int {
 			if c := cmp.Compare(b.w, a.w); c != 0 {
@@ -132,37 +139,97 @@ func CoWatch(in []Interaction, cfg CoWatchConfig) []Neighbor {
 		if len(items) > cfg.MaxItemsPerUser {
 			items = items[:cfg.MaxItemsPerUser]
 		}
-		f := 1 / math.Log2(2+float64(len(items)))
-		for _, it := range items {
-			norm[it.id] += f * it.w
+		userStart = append(userStart, len(kept))
+		userF = append(userF, 1/math.Log2(2+float64(len(items))))
+		kept = append(kept, items...)
+	}
+	userStart = append(userStart, len(kept))
+	xs = nil
+
+	// Dense item indexes (ascending id) and each item's viewers.
+	ids := make([]int64, len(kept))
+	for k, x := range kept {
+		ids[k] = x.id
+	}
+	slices.Sort(ids)
+	ids = slices.Compact(ids)
+	idx := make(map[int64]int32, len(ids))
+	for k, id := range ids {
+		idx[id] = int32(k)
+	}
+	type entry struct {
+		ref int32 // user index (in viewers) or item index (in rows)
+		w   float64
+	}
+	rows := make([]entry, len(kept)) // kept, with dense item indexes
+	count := make([]int32, len(ids)+1)
+	norm := make([]float64, len(ids))
+	for u := range userF {
+		for k := userStart[u]; k < userStart[u+1]; k++ {
+			it := idx[kept[k].id]
+			rows[k] = entry{it, kept[k].w}
+			norm[it] += userF[u] * kept[k].w
+			count[it+1]++
 		}
-		for i := range items {
-			for j := i + 1; j < len(items); j++ {
-				a, b := items[i], items[j]
-				k := pair{min(a.id, b.id), max(a.id, b.id)}
-				p := pairs[k]
-				if p == nil {
-					p = &pairAgg{}
-					pairs[k] = p
+	}
+	kept, idx = nil, nil
+	for k := 1; k < len(count); k++ {
+		count[k] += count[k-1]
+	}
+	viewers := make([]entry, len(rows))
+	fill := slices.Clone(count[:len(ids)])
+	for u := range userF {
+		for k := userStart[u]; k < userStart[u+1]; k++ {
+			it := rows[k].ref
+			viewers[fill[it]] = entry{int32(u), rows[k].w}
+			fill[it]++
+		}
+	}
+	fill = nil
+
+	sum := make([]float64, len(ids))
+	support := make([]int32, len(ids))
+	var touched []int32
+	var cand []Neighbor
+	var out []Neighbor
+	for a := range ids {
+		touched = touched[:0]
+		for _, v := range viewers[count[a]:count[a+1]] {
+			f := userF[v.ref]
+			for _, r := range rows[userStart[v.ref]:userStart[v.ref+1]] {
+				b := r.ref
+				if int(b) == a {
+					continue
 				}
-				p.sum += f * min(a.w, b.w)
-				p.support++
+				if support[b] == 0 {
+					touched = append(touched, b)
+				}
+				sum[b] += f * min(v.w, r.w)
+				support[b]++
 			}
 		}
-	}
-	var out []Neighbor
-	for k, p := range pairs {
-		if p.support < cfg.MinSupport {
-			continue
+		cand = cand[:0]
+		for _, b := range touched {
+			s, n := sum[b], int(support[b])
+			sum[b], support[b] = 0, 0
+			if n < cfg.MinSupport {
+				continue
+			}
+			d := math.Sqrt(norm[min(a, int(b))] * norm[max(a, int(b))])
+			if d == 0 {
+				continue
+			}
+			cand = append(cand, Neighbor{ids[a], ids[b], s / d * float64(n) / (float64(n) + cfg.Shrink), n})
 		}
-		d := math.Sqrt(norm[k.a] * norm[k.b])
-		if d == 0 {
-			continue
-		}
-		s := p.sum / d * float64(p.support) / (float64(p.support) + cfg.Shrink)
-		out = append(out, Neighbor{k.a, k.b, s, p.support}, Neighbor{k.b, k.a, s, p.support})
+		slices.SortFunc(cand, func(x, y Neighbor) int {
+			if c := cmp.Compare(y.Score, x.Score); c != 0 {
+				return c
+			}
+			return cmp.Compare(x.NeighborID, y.NeighborID)
+		})
+		out = append(out, cand[:min(len(cand), cfg.TopK)]...)
 	}
-	return TopKPerItem(out, cfg.TopK)
+	return out
 }
 
 // TopKPerItem keeps the k best neighbours of each item, ordered by item,
@@ -213,6 +280,14 @@ type ContentConfig struct {
 	PostingCap int
 	TopK       int     // default 50
 	MinScore   float64 // default 0.05
+	// KindOnly leaves ContentMatch.Shared nil and fills only Kind. The
+	// release job stores just the reason, and 300k releases × TopK shared
+	// lists are about a GB of garbage.
+	KindOnly bool
+	// MaxSharedPerKind keeps at most this many shared features of each kind
+	// in ContentMatch.Shared (still biggest first); 0 keeps all. Performers
+	// share hundreds of tags, and the evidence shows three.
+	MaxSharedPerKind int
 }
 
 func (c ContentConfig) withDefaults() ContentConfig {
@@ -237,46 +312,101 @@ type ContentMatch struct {
 	Kind   string // prefix of the biggest shared feature: "t", "m" or "s"
 }
 
+// featureWeight is one entry of a normalized sparse vector: feature id,
+// weight and the entity's position in that feature's posting list (-1 when
+// the feature has no posting list, df = 1).
+type featureWeight struct {
+	f   int32
+	pos int32
+	w   float64
+}
+
+// posting is one entity in a feature's posting list with its weight there.
+type posting struct {
+	i int32
+	w float64
+}
+
 // ContentNeighbors returns, per entity id, its TopK most similar entities by
 // cosine over TF-IDF vectors (idf = ln(1 + N/df), times the kind weight).
+// Each entity's slice holds exactly its matches (no spare capacity).
 func ContentNeighbors(sets []FeatureSet, cfg ContentConfig) map[int64][]ContentMatch {
+	out := make(map[int64][]ContentMatch, len(sets))
+	EachContentNeighbors(sets, cfg, func(id int64, ms []ContentMatch) {
+		top := make([]ContentMatch, len(ms))
+		copy(top, ms)
+		out[id] = top
+	})
+	return out
+}
+
+// EachContentNeighbors is ContentNeighbors without the result map: it calls
+// emit once per entity that has matches, in sets order. ms is reused after
+// emit returns, so emit must copy what it keeps.
+//
+// Features are interned to ints and the per-entity scores accumulate in a
+// dense array, so the inner loop does no map lookups.
+func EachContentNeighbors(sets []FeatureSet, cfg ContentConfig, emit func(id int64, ms []ContentMatch)) {
 	cfg = cfg.withDefaults()
 	n := len(sets)
-	df := map[string]int{}
+	// Feature ids in name order: vectors sorted by id sum in a fixed order,
+	// so scores (and ties at the TopK cut) do not depend on map order.
+	fid := map[string]int32{}
+	var names []string
 	for _, s := range sets {
 		for f, v := range s.Features {
-			if v > 0 {
-				df[f]++
+			if _, ok := fid[f]; v > 0 && !ok {
+				fid[f] = 0
+				names = append(names, f)
 			}
 		}
 	}
-	// Normalized vectors.
-	vecs := make([]map[string]float64, n)
+	slices.Sort(names)
+	for k, f := range names {
+		fid[f] = int32(k)
+	}
+	df := make([]int, len(names))
+	for _, s := range sets {
+		for f, v := range s.Features {
+			if v > 0 {
+				df[fid[f]]++
+			}
+		}
+	}
+	kindW := make([]float64, len(names))
+	for k, f := range names {
+		kindW[k] = 1
+		if kw, ok := cfg.KindWeights[kindOf(f)]; ok {
+			kindW[k] = kw
+		}
+	}
+	// Normalized vectors, sorted by feature id.
+	vecs := make([][]featureWeight, n)
 	for i, s := range sets {
-		v := make(map[string]float64, len(s.Features))
-		var sq float64
+		v := make([]featureWeight, 0, len(s.Features))
 		for f, tf := range s.Features {
 			if tf <= 0 {
 				continue
 			}
-			w := tf * math.Log(1+float64(n)/float64(df[f]))
-			if kw, ok := cfg.KindWeights[kindOf(f)]; ok {
-				w *= kw
+			id := fid[f]
+			if w := tf * math.Log(1+float64(n)/float64(df[id])) * kindW[id]; w > 0 {
+				v = append(v, featureWeight{f: id, pos: -1, w: w})
 			}
-			if w > 0 {
-				v[f] = w
-				sq += w * w
-			}
+		}
+		slices.SortFunc(v, func(a, b featureWeight) int { return cmp.Compare(a.f, b.f) })
+		var sq float64
+		for _, x := range v {
+			sq += x.w * x.w
 		}
 		if sq > 0 {
 			l := math.Sqrt(sq)
-			for f := range v {
-				v[f] /= l
+			for k := range v {
+				v[k].w /= l
 			}
 		}
 		vecs[i] = v
 	}
-	// Posting lists sorted by (Order, ID); pos[f][i] is i's index in f's list.
+	// Posting lists sorted by (Order, ID).
 	order := make([]int, n)
 	for i := range order {
 		order[i] = i
@@ -287,52 +417,55 @@ func ContentNeighbors(sets []FeatureSet, cfg ContentConfig) map[int64][]ContentM
 		}
 		return cmp.Compare(sets[a].ID, sets[b].ID)
 	})
-	postings := map[string][]int{}
+	postings := make([][]posting, len(names))
 	for _, i := range order {
-		for f := range vecs[i] {
-			if df[f] > 1 {
-				postings[f] = append(postings[f], i)
+		for k, fw := range vecs[i] {
+			if df[fw.f] > 1 {
+				vecs[i][k].pos = int32(len(postings[fw.f]))
+				postings[fw.f] = append(postings[fw.f], posting{int32(i), fw.w})
 			}
-		}
-	}
-	pos := map[string]map[int]int{}
-	for f, p := range postings {
-		if len(p) > cfg.PostingCap {
-			m := make(map[int]int, len(p))
-			for k, i := range p {
-				m[i] = k
-			}
-			pos[f] = m
 		}
 	}
 	index := make(map[int64]int, n)
 	for i, s := range sets {
 		index[s.ID] = i
 	}
-	out := make(map[int64][]ContentMatch, n)
-	acc := map[int]float64{}
+	acc := make([]float64, n)
+	seen := make([]bool, n)
+	var touched []int32
+	var ms []ContentMatch
+	var scratch []sharedContribution
 	for i := range sets {
-		clear(acc)
-		for f, w := range vecs[i] {
-			p := postings[f]
+		touched = touched[:0]
+		for _, fw := range vecs[i] {
+			p := postings[fw.f]
 			if len(p) > cfg.PostingCap {
-				k := pos[f][i]
+				k := int(fw.pos)
 				lo := max(0, k-cfg.PostingCap/2)
 				hi := min(len(p), lo+cfg.PostingCap+1)
 				lo = max(0, hi-cfg.PostingCap-1)
 				p = p[lo:hi]
 			}
-			for _, j := range p {
-				if j != i {
-					acc[j] += w * vecs[j][f]
+			for _, e := range p {
+				if int(e.i) == i {
+					continue
 				}
+				if !seen[e.i] {
+					seen[e.i] = true
+					touched = append(touched, e.i)
+				}
+				acc[e.i] += fw.w * e.w
 			}
 		}
-		ms := make([]ContentMatch, 0, len(acc))
-		for j, sc := range acc {
-			if sc >= cfg.MinScore {
+		ms = ms[:0]
+		for _, j := range touched {
+			if sc := acc[j]; sc >= cfg.MinScore {
 				ms = append(ms, ContentMatch{ID: sets[j].ID, Score: min(sc, 1)})
 			}
+			acc[j], seen[j] = 0, false
+		}
+		if len(ms) == 0 {
+			continue
 		}
 		slices.SortFunc(ms, func(a, b ContentMatch) int {
 			if c := cmp.Compare(b.Score, a.Score); c != 0 {
@@ -340,18 +473,12 @@ func ContentNeighbors(sets []FeatureSet, cfg ContentConfig) map[int64][]ContentM
 			}
 			return cmp.Compare(a.ID, b.ID)
 		})
-		if len(ms) > cfg.TopK {
-			ms = ms[:cfg.TopK]
+		top := ms[:min(len(ms), cfg.TopK)]
+		for k := range top {
+			top[k].Shared, top[k].Kind = sharedFeatures(vecs[i], vecs[index[top[k].ID]], names, cfg, &scratch)
 		}
-		if len(ms) == 0 {
-			continue
-		}
-		for k := range ms {
-			ms[k].Shared, ms[k].Kind = sharedFeatures(vecs[i], vecs[index[ms[k].ID]])
-		}
-		out[sets[i].ID] = ms
+		emit(sets[i].ID, top)
 	}
-	return out
 }
 
 func kindOf(f string) string {
@@ -359,31 +486,72 @@ func kindOf(f string) string {
 	return k
 }
 
-// sharedFeatures lists the features of a and b by contribution a[f]*b[f],
-// biggest first, and the kind of the biggest.
-func sharedFeatures(a, b map[string]float64) ([]string, string) {
-	type fc struct {
-		f string
-		c float64
-	}
-	var xs []fc
-	for f, w := range a {
-		if v, ok := b[f]; ok {
-			xs = append(xs, fc{f, w * v})
+// sharedContribution is one shared feature and its contribution a[f]*b[f].
+type sharedContribution struct {
+	f string
+	c float64
+}
+
+// sharedFeatures lists the features of a and b (sorted by feature id) by
+// contribution a[f]*b[f], biggest first (ties by name), and the kind of the
+// biggest. cfg.KindOnly returns only the kind; cfg.MaxSharedPerKind caps the
+// list per kind. buf is reused scratch space.
+func sharedFeatures(a, b []featureWeight, names []string, cfg ContentConfig, buf *[]sharedContribution) ([]string, string) {
+	xs := (*buf)[:0]
+	var best sharedContribution
+	found := false
+	for x, y := 0, 0; x < len(a) && y < len(b); {
+		switch {
+		case a[x].f < b[y].f:
+			x++
+		case a[x].f > b[y].f:
+			y++
+		default:
+			e := sharedContribution{names[a[x].f], a[x].w * b[y].w}
+			if cfg.KindOnly {
+				if !found || e.c > best.c || (e.c == best.c && e.f < best.f) {
+					best, found = e, true
+				}
+			} else {
+				xs = append(xs, e)
+			}
+			x++
+			y++
 		}
 	}
-	slices.SortFunc(xs, func(x, y fc) int {
+	*buf = xs
+	if cfg.KindOnly {
+		if !found {
+			return nil, ""
+		}
+		return nil, kindOf(best.f)
+	}
+	if len(xs) == 0 {
+		return nil, ""
+	}
+	slices.SortFunc(xs, func(x, y sharedContribution) int {
 		if c := cmp.Compare(y.c, x.c); c != 0 {
 			return c
 		}
 		return strings.Compare(x.f, y.f)
 	})
-	out := make([]string, len(xs))
-	for i, x := range xs {
-		out[i] = x.f
+	var perKind map[string]int
+	if cfg.MaxSharedPerKind > 0 {
+		perKind = map[string]int{}
 	}
-	if len(xs) == 0 {
-		return nil, ""
+	out := make([]string, 0, len(xs))
+	for _, x := range xs {
+		if perKind != nil {
+			k := kindOf(x.f)
+			if perKind[k] >= cfg.MaxSharedPerKind {
+				continue
+			}
+			perKind[k]++
+		}
+		out = append(out, x.f)
+	}
+	if perKind != nil && len(out) < len(xs) {
+		out = slices.Clone(out) // do not keep the len(xs) array alive
 	}
 	return out, kindOf(xs[0].f)
 }

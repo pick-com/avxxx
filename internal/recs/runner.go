@@ -118,25 +118,36 @@ func (r *Runner) RunSimilarity(ctx context.Context) (rep SimilarityReport, err e
 	}
 	rep.Interactions = len(inter)
 
-	var rows []ReleaseSimilarRow
-	for _, nb := range CoWatch(inter, r.CoWatch) {
+	// Performers first: their working set is freed before the release rows
+	// (about 15M at 300k releases) are built, which lowers the peak.
+	perf := PerformerSimilarity(docs, PerformerInteractions(inter, docs), w, r.Performer)
+	rep.PerformerRows = len(perf)
+	if err = ctx.Err(); err != nil {
+		return rep, err
+	}
+
+	cw := CoWatch(inter, r.CoWatch)
+	content := ReleaseContentConfig
+	content.KindOnly = true // release_similar stores the reason only
+	rows := make([]ReleaseSimilarRow, 0, len(cw)+len(docs)*content.withDefaults().TopK)
+	for _, nb := range cw {
 		rows = append(rows, ReleaseSimilarRow{nb.ItemID, nb.NeighborID, nb.Score, ReasonCoWatch})
 	}
 	rep.CoWatchRows = len(rows)
 	if err = ctx.Err(); err != nil {
 		return rep, err
 	}
-	for id, ms := range ContentNeighbors(ReleaseFeatureSets(docs), ReleaseContentConfig) {
+	// Streamed straight into rows: holding every release's matches as well
+	// doubled the peak memory.
+	EachContentNeighbors(ReleaseFeatureSets(docs), content, func(id int64, ms []ContentMatch) {
 		for _, m := range ms {
 			rows = append(rows, ReleaseSimilarRow{id, m.ID, m.Score, ContentReason(m.Kind)})
 		}
-	}
+	})
 	rep.ContentRows = len(rows) - rep.CoWatchRows
 	if err = ctx.Err(); err != nil {
 		return rep, err
 	}
-	perf := PerformerSimilarity(docs, PerformerInteractions(inter, docs), w, r.Performer)
-	rep.PerformerRows = len(perf)
 
 	at := r.now()
 	if err = r.Store.ReplaceReleaseSimilar(ctx, rows, at); err != nil {
