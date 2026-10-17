@@ -146,6 +146,18 @@ func collectComments(rows pgx.Rows) ([]Comment, error) {
 	return pgx.CollectRows(rows, func(r pgx.CollectableRow) (Comment, error) { return scanComment(r) })
 }
 
+// commentTopOrder is the 热门 (top) order. Migration 058's comments_top
+// index has the same expression and directions, so a page reads the
+// release's comments in order instead of sorting all of them.
+const commentTopOrder = `CASE WHEN c.status='deleted' THEN 0 ELSE c.likes END DESC, c.created_at DESC, c.id DESC`
+
+// commentListSQL is the page query of Comments; LIMIT and OFFSET are the
+// last two of nargs parameters.
+func commentListSQL(where, order string, nargs int) string {
+	return fmt.Sprintf(`SELECT %s FROM comments c JOIN users u ON u.id=c.user_id WHERE %s ORDER BY %s LIMIT $%d OFFSET $%d`,
+		commentColumns, where, order, nargs-1, nargs)
+}
+
 // Comments lists a page of top-level comments with their first replies.
 // "newest" uses a keyset cursor; "top" (likes) changes as people like, so its
 // cursor is an offset.
@@ -167,7 +179,7 @@ func (s *Store) Comments(ctx context.Context, f CommentFilter) ([]Comment, strin
 	offset := 0
 	switch f.Sort {
 	case community.CommentSortTop:
-		order = `CASE WHEN c.status='deleted' THEN 0 ELSE c.likes END DESC, c.created_at DESC, c.id DESC`
+		order = commentTopOrder
 		if f.Cursor != nil {
 			n, err := strconv.Atoi(f.Cursor.Key)
 			if err != nil || n < 0 || n > maxTopOffset {
@@ -186,8 +198,7 @@ func (s *Store) Comments(ctx context.Context, f CommentFilter) ([]Comment, strin
 		}
 	}
 	args = append(args, limit+1, offset)
-	rows, err := s.Query(ctx, fmt.Sprintf(`SELECT %s FROM comments c JOIN users u ON u.id=c.user_id WHERE %s ORDER BY %s LIMIT $%d OFFSET $%d`,
-		commentColumns, where, order, len(args)-1, len(args)), args...)
+	rows, err := s.Query(ctx, commentListSQL(where, order, len(args)), args...)
 	if err != nil {
 		return nil, "", err
 	}
