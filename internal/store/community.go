@@ -36,8 +36,7 @@ type communityCache struct {
 	mu        sync.Mutex
 	matcher   *community.Matcher
 	matcherAt time.Time
-	prior     float64
-	priorAt   time.Time
+	prior     staleCache[float64]
 }
 
 const (
@@ -461,27 +460,19 @@ type RatingSummary struct {
 }
 
 // RatingPrior is the site-wide weighted mean (1-5), cached for priorTTL.
+// One caller reloads it when it expires; the others keep the previous value
+// meanwhile (staleCache).
 func (s *Store) RatingPrior(ctx context.Context) (float64, error) {
-	c := s.cache()
-	c.mu.Lock()
-	if !c.priorAt.IsZero() && time.Since(c.priorAt) < priorTTL {
-		p := c.prior
-		c.mu.Unlock()
-		return p, nil
-	}
-	c.mu.Unlock()
-	var mean *float64
-	if err := s.QueryRow(ctx, `SELECT sum(weight*score)/NULLIF(sum(weight),0) FROM ratings WHERE status='active'`).Scan(&mean); err != nil {
-		return 0, err
-	}
-	p := community.DefaultPriorMean
-	if mean != nil {
-		p = *mean
-	}
-	c.mu.Lock()
-	c.prior, c.priorAt = p, time.Now()
-	c.mu.Unlock()
-	return p, nil
+	return s.cache().prior.get(priorTTL, time.Now, func() (float64, error) {
+		var mean *float64
+		if err := s.QueryRow(ctx, `SELECT sum(weight*score)/NULLIF(sum(weight),0) FROM ratings WHERE status='active'`).Scan(&mean); err != nil {
+			return 0, err
+		}
+		if mean == nil {
+			return community.DefaultPriorMean, nil
+		}
+		return *mean, nil
+	})
 }
 
 // RatingSummary aggregates the active votes of a release. voterKey ("" for
