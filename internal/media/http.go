@@ -129,7 +129,9 @@ func (h *Handler) resolve(ctx context.Context, source, id string, refresh bool) 
 	if !c.enabled() {
 		return h.service.Resolve(ctx, source, id)
 	}
-	key := "resolve:" + strings.ToLower(source) + ":" + id
+	// The id is the caller's choice: cacheKey hashes an over-long key so
+	// the L1 entries, the refresh throttle and the L2 row stay small.
+	key := cacheKey("resolve:" + strings.ToLower(source) + ":" + id)
 	if refresh && c.allowRefresh(key) {
 		c.evict(ctx, key)
 	} else if v, ok := c.get(ctx, key); ok {
@@ -154,7 +156,7 @@ func writeMediaError(w http.ResponseWriter, err error) {
 	if errors.Is(err, ErrAdapterNotFound) {
 		code, status = "source_not_configured", http.StatusNotImplemented
 	}
-	if err.Error() == "query is required" {
+	if err.Error() == "query is required" || errors.Is(err, ErrQueryTooLong) {
 		code, status = "invalid_query", http.StatusBadRequest
 	}
 	w.WriteHeader(status)
