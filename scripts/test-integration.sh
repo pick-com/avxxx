@@ -15,7 +15,7 @@ password=avxxx_test
 db=avxxx_test
 
 cleanup() {
-	docker rm -f "$name" >/dev/null 2>&1 || true
+	docker rm -f -v "$name" >/dev/null 2>&1 || true
 }
 trap cleanup EXIT INT TERM
 
