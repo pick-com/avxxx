@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 )
 
 // CatalogCheckpoints adapts the checkpoint data-access layer to
@@ -92,6 +93,8 @@ func (s *Store) CrawlPolicies(ctx context.Context) ([]CrawlPolicy, error) {
 
 // UpsertCrawlPolicy writes a source's schedule and budgets. Empty intervals
 // are NULL (no schedule); BaselinePagesPerRun <= 0 keeps the default.
+// Validation messages are matched by the back office
+// (web/app/lib/crawlPolicyErrors.ts): keep them in step.
 func (s *Store) UpsertCrawlPolicy(ctx context.Context, p CrawlPolicy) error {
 	if p.BaselinePagesPerRun <= 0 {
 		p.BaselinePagesPerRun = defaultBaselinePagesPerRun
@@ -116,6 +119,23 @@ func (s *Store) UpsertCrawlPolicy(ctx context.Context, p CrawlPolicy) error {
 		proxy_url=CASE WHEN $10::boolean THEN EXCLUDED.proxy_url ELSE source_crawl_policies.proxy_url END`,
 		p.SourceID, p.DiscoveryInterval, p.DetailRefreshInterval, p.MinRequestInterval, p.DailyPageBudget, p.DailyByteBudget,
 		p.BaselineDailyPageBudget, p.BaselineDailyByteBudget, p.BaselinePagesPerRun, p.ProxyURL != nil, strOr(p.ProxyURL))
+	return crawlPolicyError(err)
+}
+
+// crawlPolicyError turns the admin's input errors that PostgreSQL catches
+// (a malformed interval, an unknown source) into 400s with a stable message
+// the back office translates, instead of 500 "request failed".
+func crawlPolicyError(err error) error {
+	var pgErr *pgconn.PgError
+	if !errors.As(err, &pgErr) {
+		return err
+	}
+	switch pgErr.Code {
+	case "22007", "22008", "22015", "22P02": // invalid_datetime_format, datetime_field_overflow, interval_field_overflow, invalid_text_representation
+		return invalid("invalid interval")
+	case "23503": // foreign_key_violation: no such source
+		return invalid("unknown source")
+	}
 	return err
 }
 
