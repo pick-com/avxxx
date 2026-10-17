@@ -57,9 +57,6 @@
 }
 
 .card-menu-list {
-  position: absolute;
-  top: calc(100% + 4px);
-  left: 0;
   min-width: 180px;
   padding: 6px;
   border-radius: 12px;
@@ -70,9 +67,16 @@
   flex-direction: column;
 }
 
-.release-row .card-menu-list {
-  left: auto;
-  right: 0;
+/* Portalled out of the card (CardMenu): fixed against the 「⋯」 button, so
+   scrolling shelves do not clip it; top / left come from lib/menuPlacement. */
+.card-menu-floating {
+  position: fixed;
+  z-index: 75;
+}
+
+.card-menu-list.card-menu-floating {
+  overflow-y: auto;
+  overscroll-behavior: contain;
 }
 
 .card-menu-item {

@@ -596,10 +596,6 @@ a.notif-main:hover {
 /* 添加到播放队列 confirmation under a card's 「⋯」 (CardMenu.tsx). */
 
 .card-menu-note {
-  position: absolute;
-  top: calc(100% + 4px);
-  left: 0;
-  z-index: 3;
   padding: 6px 10px;
   border-radius: 8px;
   background: rgba(15, 16, 18, 0.88);
@@ -608,9 +604,8 @@ a.notif-main:hover {
   white-space: nowrap;
 }
 
-.release-row .card-menu-note {
-  left: auto;
-  right: 0;
+.card-menu-note.card-menu-floating {
+  pointer-events: none;
 }
 
 .card-menu-note:empty {
