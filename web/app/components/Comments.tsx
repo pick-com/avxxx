@@ -19,6 +19,7 @@ import {
   type CommentSort,
 } from '../lib/interactions';
 import type {MessageKey} from '../lib/messages.zh-CN';
+import {listReadyForAccount} from '../lib/pendingAction';
 import {usePendingAction, useRequireAuth} from './AuthPrompt';
 import {Icon} from './Icon';
 import {ReportPicker} from './ReportPicker';
@@ -144,8 +145,10 @@ function CommentComposer({slug, releaseId, parent, onPosted, onCancel}: {
   );
 }
 
-function CommentItem({comment, onChange, onRemove, onReply}: {
+function CommentItem({comment, ready, onChange, onRemove, onReply}: {
   comment: Comment;
+  /** The list holds the signed-in account's state (pending actions wait for it). */
+  ready: boolean;
   onChange: (c: Comment) => void;
   onRemove: () => void;
   /** Top-level comments only: open the reply box. */
@@ -162,20 +165,26 @@ function CommentItem({comment, onChange, onRemove, onReply}: {
   const [editing, setEditing] = useState(false);
   const latest = useRef(comment);
   latest.current = comment;
-  // Back from the sign-in sheet: like it (once; an existing like stays).
-  usePendingAction('like', `comment:${comment.id}`, async () => {
-    if (!latest.current.liked_by_me) {
-      try {
-        const r = await likeComment(comment.id, true);
-        onChange({...latest.current, liked_by_me: r.liked, likes: r.likes});
-        track('comment_like', {comment_id: comment.id});
-      } catch (cause) {
-        setError(postErrorMessage(cause));
-        return null;
+  // Back from the sign-in sheet: like it (once; an existing like stays), after
+  // the list has been refetched for the account so the refetch cannot undo it.
+  usePendingAction(
+    'like',
+    `comment:${comment.id}`,
+    async () => {
+      if (!latest.current.liked_by_me) {
+        try {
+          const r = await likeComment(comment.id, true);
+          onChange({...latest.current, liked_by_me: r.liked, likes: r.likes});
+          track('comment_like', {comment_id: comment.id});
+        } catch (cause) {
+          setError(postErrorMessage(cause));
+          return null;
+        }
       }
-    }
-    return t('authPrompt.doneLike');
-  });
+      return t('authPrompt.doneLike');
+    },
+    ready,
+  );
 
   if (comment.deleted) {
     return <p className="muted comment-deleted">{t('comment.deleted')}</p>;
@@ -276,7 +285,7 @@ function CommentItem({comment, onChange, onRemove, onReply}: {
               {t('comment.reply')}
             </button>
           ) : (
-            <button type="button" className="text-btn" onClick={() => requireAuth('comment')}>
+            <button type="button" className="text-btn" onClick={() => requireAuth('comment', {target: `reply:${comment.id}`})}>
               {t('comment.reply')}
             </button>
           ))}
@@ -399,14 +408,16 @@ function CommentEditor({comment, onSaved, onCancel}: {comment: Comment; onSaved:
 }
 
 /** One top-level comment with its replies and reply box. */
-function Thread({slug, releaseId, comment, onChange, onRemove}: {
+function Thread({slug, releaseId, comment, ready, onChange, onRemove}: {
   slug: string;
   releaseId: number;
   comment: Comment;
+  ready: boolean;
   onChange: (c: Comment) => void;
   onRemove: () => void;
 }) {
   const t = useT();
+  const {status} = useAuth();
   const [replying, setReplying] = useState(false);
   const [replies, setReplies] = useState<Comment[]>(comment.replies ?? []);
   const [cursor, setCursor] = useState<string | null>(null);
@@ -416,6 +427,32 @@ function Thread({slug, releaseId, comment, onChange, onRemove}: {
   useEffect(() => {
     if (!expanded) setReplies(comment.replies ?? []);
   }, [comment.replies, expanded]);
+  // Replies paged in as a guest have no liked_by_me / mine for the account:
+  // after a sign-in (or sign-out) they are reloaded from the start.
+  const [repliesReady, setRepliesReady] = useState(true);
+  const repliesAs = useRef(status);
+  useEffect(() => {
+    if (status === 'unknown' || repliesAs.current === status) return;
+    repliesAs.current = status;
+    if (!expanded) return;
+    const controller = new AbortController();
+    setRepliesReady(false);
+    getReplies(comment.id, PAGE, null, controller.signal).then(
+      page => {
+        setReplies(page.items);
+        setCursor(page.nextCursor);
+        setRepliesReady(true);
+      },
+      cause => {
+        if (isAbort(cause)) return;
+        setExpanded(false);
+        setRepliesReady(true);
+      },
+    );
+    return () => controller.abort();
+  }, [status, expanded, comment.id]);
+  // Back from the sign-in sheet after 回复: open the reply box.
+  usePendingAction('comment', comment.deleted ? '' : `reply:${comment.id}`, () => setReplying(true), ready);
   const hidden = Math.max(0, comment.reply_count - replies.length);
 
   const loadMore = async () => {
@@ -442,12 +479,12 @@ function Thread({slug, releaseId, comment, onChange, onRemove}: {
 
   return (
     <li className="review comment">
-      <CommentItem comment={comment} onChange={onChange} onRemove={onRemove} onReply={comment.deleted ? undefined : () => setReplying(r => !r)} />
+      <CommentItem comment={comment} ready={ready} onChange={onChange} onRemove={onRemove} onReply={comment.deleted ? undefined : () => setReplying(r => !r)} />
       {(replies.length > 0 || replying) && (
         <ul className="review-list comment-replies" aria-label={t('comment.replies', {n: comment.reply_count})}>
           {replies.map(r => (
             <li key={r.id} className="review comment comment-reply">
-              <CommentItem comment={r} onChange={update} onRemove={() => removeReply(r.id)} />
+              <CommentItem comment={r} ready={ready && repliesReady} onChange={update} onRemove={() => removeReply(r.id)} />
             </li>
           ))}
         </ul>
@@ -490,6 +527,9 @@ export function Comments({slug, releaseId}: {slug: string; releaseId: number}) {
   const [error, setError] = useState<Error | null>(null);
   const [off, setOff] = useState(false);
   const [nonce, setNonce] = useState(0);
+  // Which session the shown page was loaded for (signed in, it carries liked_by_me / mine).
+  const [loadedAs, setLoadedAs] = useState<string | null>(null);
+  const ready = listReadyForAccount(loadedAs, status, loading);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -499,6 +539,7 @@ export function Comments({slug, releaseId}: {slug: string; releaseId: number}) {
       page => {
         setItems(page.items);
         setCursor(page.nextCursor);
+        setLoadedAs(status);
         setLoading(false);
       },
       cause => {
@@ -554,6 +595,7 @@ export function Comments({slug, releaseId}: {slug: string; releaseId: number}) {
               slug={slug}
               releaseId={releaseId}
               comment={c}
+              ready={ready}
               onChange={next => setItems(list => list.map(x => (x.id === next.id ? next : x)))}
               onRemove={() =>
                 // A thread with replies keeps a placeholder, as on reload.
