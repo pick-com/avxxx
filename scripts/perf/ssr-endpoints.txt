@@ -1,0 +1,10 @@
+# SSR pages replayed by scripts/perf/loadgen against the web server
+# (web: npm run build && node server.mjs, API_INTERNAL_URL -> the API).
+# Same placeholders as endpoints.txt. Pass the age-gate cookie with
+# -header "Cookie: ag=..." or every page renders the gate instead.
+ssr-home             /
+ssr-release          /releases/{r}
+ssr-performer        /performers/{p}
+ssr-discover         /discover
+ssr-search           /search?q={q}
+ssr-sitemap-index    /sitemap.xml
