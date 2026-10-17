@@ -23,7 +23,7 @@ export const meta = () => [{title: t('title.history')}];
 // user_settings.history_paused (the same setting as 设置 → 隐私).
 // Signed out: the same list from this browser's guest history
 // (lib/guestProgress), with delete / clear and a sign-in hint; no pause switch.
-// 搜索播放记录 (?q=, debounced): signed in, GET /api/me/watch-history?q=
+// 搜索观看记录 (?q=, debounced): signed in, GET /api/me/watch-history?q=
 // (title, performer, product code); signed out, the guest list filtered here
 // (lib/historyFilter: title and slug / code; the guest store has no cast).
 

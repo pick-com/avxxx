@@ -17,7 +17,7 @@
   align-self: flex-start;
 }
 
-/* 搜索播放记录 (history.tsx) */
+/* 搜索观看记录 (history.tsx) */
 .lib-search {
   display: flex;
   align-items: center;
