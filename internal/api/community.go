@@ -348,6 +348,21 @@ func (srv *Server) voterKeyFor(r *http.Request) string {
 	return ""
 }
 
+// limitAnonVoteIP bounds anonymous votes (ratings and 赞 / 踩) per client
+// address. Each anonymous vote counts once per X-Device-ID, but the device
+// id is the caller's own choice: without a per-address limit one client
+// could cast any number of votes by sending a new id with each.
+var limitAnonVoteIP = rateRule{60, 10 * time.Minute}
+
+// allowAnonVote applies limitAnonVoteIP to an anonymous voter (signed-in
+// voters are one vote per account and have their own limits).
+func (srv *Server) allowAnonVote(r *http.Request, v community.Voter) error {
+	if v.UserID != 0 || srv.allow(r, "anon-vote:"+srv.ip(r), limitAnonVoteIP) {
+		return nil
+	}
+	return tooManyRequests("too many votes from this address, try again later")
+}
+
 // voter identifies who casts a vote: a token (must be valid when sent) or an
 // anonymous X-Device-ID.
 func (srv *Server) voter(r *http.Request) (community.Voter, error) {
@@ -405,6 +420,10 @@ func (srv *Server) putRating(w http.ResponseWriter, r *http.Request) {
 	}
 	v, err := srv.voter(r)
 	if err != nil {
+		reply(w, nil, err)
+		return
+	}
+	if err := srv.allowAnonVote(r, v); err != nil {
 		reply(w, nil, err)
 		return
 	}
