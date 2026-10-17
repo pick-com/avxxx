@@ -21,9 +21,13 @@ export function TimestampScope({slug, maxSeconds, children}: Scope & {children: 
   return <ScopeContext.Provider value={{slug, maxSeconds}}>{children}</ScopeContext.Provider>;
 }
 
-/** Scrolls the release page's player into view (PlayerHost slot). */
+/**
+ * Scrolls the release page's player into view. The PlayerHost slot is
+ * display: contents (no box, so scrollIntoView on it does nothing): scroll
+ * its .video-main column, whose top is the player's.
+ */
 function revealPlayer() {
-  const el = document.querySelector('.video-main .player-slot');
+  const el = document.querySelector('.video-main .player-slot')?.closest('.video-main');
   if (el instanceof HTMLElement) el.scrollIntoView({block: 'start', behavior: 'smooth'});
 }
 
