@@ -4,7 +4,7 @@ import type {MessageKey} from '../lib/messages.zh-CN';
 import {Icon} from './Icon';
 import {Sheet, SheetTabs} from './Sheet';
 
-export type SettingsTab = 'source' | 'quality' | 'captions' | 'audio' | 'rate' | 'danmaku';
+export type SettingsTab = 'source' | 'quality' | 'captions' | 'audio' | 'rate' | 'playback' | 'danmaku';
 
 export type Choice<T> = {value: T; label: string; hint?: string};
 
@@ -14,6 +14,7 @@ const TAB_KEYS: {id: SettingsTab; label: MessageKey}[] = [
   {id: 'captions', label: 'player.captions'},
   {id: 'audio', label: 'player.audio'},
   {id: 'rate', label: 'player.rate'},
+  {id: 'playback', label: 'player.playbackTab'},
   {id: 'danmaku', label: 'danmaku.tab'},
 ];
 
@@ -54,7 +55,7 @@ function ChoiceList<T extends string | number>({label, options, value, onChange}
  * (片源 / 清晰度 / 字幕 / 音轨 / 倍速). Only what the current stream exposes is
  * listed; nothing is filled with sample data.
  */
-export function PlayerSettingsSheet({open, onClose, container, initialTab = 'quality', source, quality, rate, captions, audio, danmaku}: {
+export function PlayerSettingsSheet({open, onClose, container, initialTab = 'quality', source, quality, rate, captions, audio, playback, danmaku}: {
   open: boolean;
   onClose: () => void;
   container?: HTMLElement | null;
@@ -68,11 +69,13 @@ export function PlayerSettingsSheet({open, onClose, container, initialTab = 'qua
   rate: {options: Choice<number>[]; value: number; onChange: (value: number) => void};
   captions: {options: Choice<number>[]; value: number; onChange: (value: number) => void};
   audio: {options: Choice<number>[]; value: number; onChange: (value: number) => void};
+  /** 播放: 循环播放 / A-B loop (video sources only). */
+  playback?: ReactNode;
   /** 弹幕 settings (video sources only). */
   danmaku?: ReactNode;
 }) {
   const t = useT();
-  const TABS = TAB_KEYS.filter(x => x.id !== 'danmaku' || danmaku).map(x => ({id: x.id, label: t(x.label)}));
+  const TABS = TAB_KEYS.filter(x => (x.id !== 'danmaku' || danmaku) && (x.id !== 'playback' || playback)).map(x => ({id: x.id, label: t(x.label)}));
   const [tab, setTab] = useState<SettingsTab>(initialTab);
   useEffect(() => {
     if (open) setTab(initialTab);
@@ -137,6 +140,9 @@ export function PlayerSettingsSheet({open, onClose, container, initialTab = 'qua
       break;
     case 'rate':
       body = <ChoiceList label={t('player.rate')} options={rate.options} value={rate.value} onChange={rate.onChange} />;
+      break;
+    case 'playback':
+      body = playback ?? null;
       break;
     case 'danmaku':
       body = danmaku ?? null;

@@ -1,0 +1,49 @@
+import {formatClock} from '../lib/format';
+import {useT} from '../lib/i18n';
+import {abActive, type AbLoop} from '../lib/playerLoop';
+import {SwitchRow} from './Switch';
+
+/**
+ * 播放 tab of the player settings sheet (desktop gear and mobile sheet):
+ * 循环播放 and the A-B loop. The Player owns the state and applies it
+ * through the <video> API; this only renders and reports.
+ */
+export function PlayerPlaybackPanel({loop, ab}: {
+  loop: {on: boolean; onChange: (on: boolean) => void};
+  /** A / B from the current time; `time` labels the buttons. */
+  ab: {value: AbLoop; time: number; setA: () => void; setB: () => void; clear: () => void};
+}) {
+  const t = useT();
+  const {a, b} = ab.value;
+  const status = abActive(ab.value)
+    ? t('player.abActive', {a: formatClock(a!), b: formatClock(b!)})
+    : a !== null
+      ? t('player.abOnlyA', {a: formatClock(a)})
+      : t('player.abHint');
+  return (
+    <div className="pp-panel">
+      <SwitchRow label={t('player.loop')} description={t('player.loopHint')} checked={loop.on} onChange={loop.onChange} />
+      <div className="set-row set-row-stack" role="group" aria-label={t('player.abLoop')}>
+        <div className="set-text">
+          <span className="set-label">{t('player.abLoop')}</span>
+          <span className="set-desc" aria-live="polite">
+            {status}
+          </span>
+        </div>
+        <div className="pp-actions">
+          <button type="button" className="btn btn-secondary btn-sm" onClick={ab.setA}>
+            {t('player.abSetA', {time: formatClock(ab.time)})}
+          </button>
+          <button type="button" className="btn btn-secondary btn-sm" onClick={ab.setB}>
+            {t('player.abSetB', {time: formatClock(ab.time)})}
+          </button>
+          {(a !== null || b !== null) && (
+            <button type="button" className="btn btn-outline btn-sm" onClick={ab.clear}>
+              {t('player.abClear')}
+            </button>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}

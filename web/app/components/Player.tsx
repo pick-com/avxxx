@@ -24,12 +24,14 @@ import {useDanmakuPrefs} from '../lib/danmakuPrefs';
 import {useOnline} from '../lib/useOnline';
 import {applyVolume, writeVolume} from '../lib/volumePrefs';
 import {registerSeeker} from '../lib/playerSeek';
+import {NO_AB, abActive, abMarkers, abSeekTarget, endAction, setAbPoint, type AbLoop} from '../lib/playerLoop';
 import {DanmakuBar, DanmakuLayer, DanmakuListSheet, DanmakuSettings, useDanmakuFeed, type DanmakuLayerHandle} from './Danmaku';
 import {EpisodesSheet, type PlayerEpisodes} from './Episodes';
 import {Icon} from './Icon';
 import {PeakCurve} from './PeakCurve';
 import {PlayerControls, useVideoClock, type Chapter} from './PlayerControls';
 import {PlayerMenu} from './PlayerMenu';
+import {PlayerPlaybackPanel} from './PlayerPlaybackPanel';
 import {PlayerSettingsSheet, type Choice, type SettingsTab} from './PlayerSettingsSheet';
 import {BufferingSpinner, CenterPlay, EndScreen, ResumeToast, useBuffering, type EndItem} from './PlayerStates';
 import {PlayerTouchLayer} from './PlayerTouchLayer';
@@ -130,6 +132,11 @@ type LockableOrientation = ScreenOrientation & {lock?: (orientation: string) => 
  * so the controls, Media Session and progress saving follow the TV and its
  * remote. Remote Playback stays for Safari / AirPlay and as the fallback
  * when the SDK cannot load; never both.
+ *
+ * 播放 tab (settings sheet, lib/playerLoop.ts): 循环播放 restarts at the end
+ * instead of the end screen and onEnded (autoplay-next); the A-B loop jumps
+ * back to A on reaching B, with markers on the progress bar. Per video, not
+ * persisted. Both go through the <video> API, so they follow a cast TV.
  */
 export type PlayerProps = Parameters<typeof Player>[0];
 
@@ -249,6 +256,15 @@ export function Player({slug, releaseId, title, resumeAt, startAt, onBack, theat
   const [episodesOpen, setEpisodesOpen] = useState(false);
   const hasEpisodes = !!episodes && episodes.items.length > 1;
   useEffect(() => setEpisodesOpen(false), [slug]);
+  // 循环播放 / A-B loop: per video (reset on another release), never persisted.
+  const [loop, setLoop] = useState(false);
+  const [ab, setAb] = useState<AbLoop>(NO_AB);
+  const loopRef = useRef({loop, ab});
+  loopRef.current = {loop, ab};
+  useEffect(() => {
+    setLoop(false);
+    setAb(NO_AB);
+  }, [slug]);
   const rateRef = useRef(rate);
   rateRef.current = rate;
   fullscreenRef.current = fullscreen;
@@ -1195,6 +1211,33 @@ export function Player({slug, releaseId, title, resumeAt, startAt, onBack, theat
   const configSourceOptions: Choice<number>[] = configEntries.map(toChoice);
 
   const openSettings = (tab: SettingsTab) => setSettings({open: true, tab});
+
+  const chooseLoop = (on: boolean) => {
+    setLoop(on);
+    showFlash(on ? t('player.loopOn') : t('player.loopOff'));
+  };
+  const markAb = (which: 'a' | 'b') => {
+    const video = videoRef.current;
+    if (!video) return;
+    const next = setAbPoint(ab, which, video.currentTime, video.duration);
+    setAb(next);
+    if (abActive(next)) showFlash(t('player.abActive', {a: formatClock(next.a), b: formatClock(next.b)}));
+  };
+  const playbackPanel = stream ? (
+    <PlayerPlaybackPanel
+      loop={{on: loop, onChange: chooseLoop}}
+      ab={{
+        value: ab,
+        time: clock.time,
+        setA: () => markAb('a'),
+        setB: () => markAb('b'),
+        clear: () => {
+          setAb(NO_AB);
+          showFlash(t('player.abCleared'));
+        },
+      }}
+    />
+  ) : undefined;
   const loadingSources = mode === 'pending' || (mode === 'legacy' && info.loading);
 
   const canSwitchSource = sourceOptions.length > 1 || (mode === 'config' && configEntries.length > 1);
@@ -1297,12 +1340,29 @@ export function Player({slug, releaseId, title, resumeAt, startAt, onBack, theat
                 }
               }}
               onTimeUpdate={event => {
-                const t = event.currentTarget.currentTime;
+                const video = event.currentTarget;
+                const t = video.currentTime;
+                const backToA = abSeekTarget(loopRef.current.ab, t);
+                if (backToA !== null) {
+                  video.dataset.seekMethod = 'skip';
+                  video.currentTime = backToA;
+                }
                 if (!stream.alt && t > 0) sharedPos.current = t;
                 if (Date.now() - lastSaved.current.at >= SAVE_INTERVAL_MS) save(false);
               }}
               onPause={() => save(true)}
-              onEnded={() => {
+              // Native loop (seamless) for 循环播放 alone; the A-B loop and a cast
+              // TV (no loop attribute there) go through onEnded below.
+              loop={loop && !abActive(ab)}
+              onEnded={event => {
+                const video = event.currentTarget;
+                const action = endAction(loopRef.current.loop, loopRef.current.ab);
+                if (action !== 'end') {
+                  video.dataset.seekMethod = 'skip';
+                  video.currentTime = action === 'a' ? loopRef.current.ab.a ?? 0 : 0;
+                  void video.play().catch(() => undefined);
+                  return;
+                }
                 save(true);
                 onEnded?.();
               }}
@@ -1446,6 +1506,7 @@ export function Player({slug, releaseId, title, resumeAt, startAt, onBack, theat
               chapters={chapters}
               previewSrc={stream && !isHlsEntry(stream) ? stream.url : undefined}
               previewEnabled={finePointer}
+              abLoop={abMarkers(ab, clock.duration)}
               peak={peakNode}
               menus={
                 <>
@@ -1559,6 +1620,7 @@ export function Player({slug, releaseId, title, resumeAt, startAt, onBack, theat
               rate={{options: rateOptions, value: rate, onChange: chooseRate}}
               captions={{options: captionOptions, value: caption, onChange: chooseCaption}}
               audio={{options: audioOptions, value: audioTrack, onChange: chooseAudio}}
+              playback={playbackPanel}
               danmaku={stream ? <DanmakuSettings /> : undefined}
             />
 

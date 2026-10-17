@@ -97,6 +97,7 @@ export function PlayerControls({
   chapters,
   previewSrc,
   previewEnabled,
+  abLoop,
   peak,
   menus,
   captions,
@@ -116,6 +117,8 @@ export function PlayerControls({
   /** Progressive source for hover frames; undefined for HLS (text-only tooltip). */
   previewSrc?: string;
   previewEnabled: boolean;
+  /** A-B loop markers as fractions of the duration (lib/playerLoop.ts abMarkers). */
+  abLoop?: {a: number | null; b: number | null};
   /** PeakCurve, aligned above the progress bar. */
   peak?: ReactNode;
   /** Desktop inline menus (清晰度 / 倍速). */
@@ -147,6 +150,7 @@ export function PlayerControls({
         chapters={chapters}
         previewSrc={previewSrc}
         previewEnabled={previewEnabled}
+        abLoop={abLoop}
         onScrub={active => onHoldChange(active)}
       />
       <div className="pc-row" role="toolbar" aria-label={t('pc.controls')}>
@@ -214,12 +218,13 @@ export function PlayerControls({
   );
 }
 
-function ProgressBar({video, clock, chapters, previewSrc, previewEnabled, onScrub}: {
+function ProgressBar({video, clock, chapters, previewSrc, previewEnabled, abLoop, onScrub}: {
   video: HTMLVideoElement | null;
   clock: VideoClock;
   chapters: Chapter[];
   previewSrc?: string;
   previewEnabled: boolean;
+  abLoop?: {a: number | null; b: number | null};
   onScrub: (active: boolean) => void;
 }) {
   const t = useT();
@@ -361,6 +366,19 @@ function ProgressBar({video, clock, chapters, previewSrc, previewEnabled, onScru
         {segments.map(f => (
           <div key={f} className="pc-gap" style={{left: `${f * 100}%`}} />
         ))}
+        {abLoop?.a != null && abLoop.b != null && (
+          <div className="pc-ab-range" style={{left: `${abLoop.a * 100}%`, width: `${(abLoop.b - abLoop.a) * 100}%`}} aria-hidden="true" />
+        )}
+        {abLoop?.a != null && (
+          <div className="pc-ab-mark" data-point="a" style={{left: `${abLoop.a * 100}%`}} aria-hidden="true">
+            A
+          </div>
+        )}
+        {abLoop?.b != null && (
+          <div className="pc-ab-mark" data-point="b" style={{left: `${abLoop.b * 100}%`}} aria-hidden="true">
+            B
+          </div>
+        )}
         <div className="pc-thumb" style={{left: `${shown * 100}%`}} />
       </div>
       {hover && duration > 0 && (

@@ -202,6 +202,21 @@ export const zhCN = {
   'player.locked': '屏幕已锁定',
   'player.boost': '2× 倍速中',
 
+  // 播放 tab: 循环播放 / A-B loop (lib/playerLoop.ts)
+  'player.playbackTab': '播放',
+  'player.loop': '循环播放',
+  'player.loopHint': '播完从头再播，不进入下一个视频',
+  'player.loopOn': '循环播放已开启',
+  'player.loopOff': '循环播放已关闭',
+  'player.abLoop': 'A-B 循环',
+  'player.abHint': '在当前位置设 A 点和 B 点，到 B 点会跳回 A 点',
+  'player.abOnlyA': 'A 点 {a}，再设 B 点开始循环',
+  'player.abActive': 'A-B 循环：{a} – {b}',
+  'player.abSetA': '设为 A 点（{time}）',
+  'player.abSetB': '设为 B 点（{time}）',
+  'player.abClear': '清除',
+  'player.abCleared': '已清除 A-B 循环',
+
   // autoplay (PRD 5.4)
   'autoplay.label': '自动播放下一个',
   'autoplay.countdown': '{s} 秒后播放下一个',
