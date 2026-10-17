@@ -17,6 +17,11 @@
 //	{q}    a title word
 //
 // A line whose name starts with "auth:" sends Authorization: Bearer -token.
+// -header adds a header to every request (repeatable), e.g. the age-gate
+// cookie when -base is the SSR web server:
+//
+//	go run ./scripts/perf/loadgen -base http://127.0.0.1:3000 \
+//	  -endpoints scripts/perf/ssr-endpoints.txt -header "Cookie: ag=v1.ok...."
 package main
 
 import (
@@ -39,6 +44,18 @@ import (
 
 type endpoint struct{ name, path string }
 
+// headerFlags collects repeated -header "Name: value" flags.
+type headerFlags []string
+
+func (h *headerFlags) String() string { return strings.Join(*h, ", ") }
+func (h *headerFlags) Set(v string) error {
+	if name, _, ok := strings.Cut(v, ":"); !ok || strings.TrimSpace(name) == "" {
+		return fmt.Errorf("header %q: want \"Name: value\"", v)
+	}
+	*h = append(*h, v)
+	return nil
+}
+
 func main() {
 	base := flag.String("base", "http://127.0.0.1:38181", "API base URL")
 	file := flag.String("endpoints", "scripts/perf/endpoints.txt", "endpoint list")
@@ -50,6 +67,8 @@ func main() {
 	pid := flag.Int("pid", 0, "sample this process's RSS while running (0 = off)")
 	releases := flag.Int("releases", 5000, "seeded releases (PERF_RELEASES of setup.sh)")
 	performers := flag.Int("performers", 1000, "seeded performers (PERF_PERFORMERS of setup.sh)")
+	var headers headerFlags
+	flag.Var(&headers, "header", `extra request header "Name: value" (repeatable)`)
 	flag.Parse()
 
 	eps, err := readEndpoints(*file, *only)
@@ -68,7 +87,7 @@ func main() {
 	fmt.Printf("%-28s %6s %8s %8s %8s %8s %6s\n", "endpoint", "n", "p50ms", "p95ms", "p99ms", "maxms", "errs")
 	for _, ep := range eps {
 		for range *warm {
-			do(client, *base, ep, g, *token)
+			do(client, *base, ep, g, *token, headers)
 		}
 		lat := make([]float64, 0, *n)
 		var mu sync.Mutex
@@ -80,7 +99,7 @@ func main() {
 			go func() {
 				defer wg.Done()
 				for range jobs {
-					d, ok := do(client, *base, ep, g, *token)
+					d, ok := do(client, *base, ep, g, *token, headers)
 					if !ok {
 						errs.Add(1)
 					}
@@ -158,8 +177,12 @@ func code(g int) string {
 	return fmt.Sprintf("%c%c%c-%03d", 'a'+x%26, 'a'+(x/26)%26, 'a'+(x*7)%26, g/400+1)
 }
 
-func do(c *http.Client, base string, ep endpoint, g gen, token string) (float64, bool) {
+func do(c *http.Client, base string, ep endpoint, g gen, token string, headers []string) (float64, bool) {
 	req, _ := http.NewRequest(http.MethodGet, base+g.fill(ep.path), nil)
+	for _, h := range headers {
+		name, value, _ := strings.Cut(h, ":")
+		req.Header.Add(strings.TrimSpace(name), strings.TrimSpace(value))
+	}
 	if strings.HasPrefix(ep.name, "auth:") && token != "" {
 		req.Header.Set("Authorization", "Bearer "+token)
 	}

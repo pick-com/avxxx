@@ -1,14 +1,58 @@
 # Endpoints replayed by scripts/perf/loadgen (name, path). Placeholders:
 # {r} release slug, {p} performer slug, {tag}, {code}, {q} (see loadgen).
 # Names starting with "auth:" send -token as a bearer token.
-home                 /api/home
+#
+# Run the API with MEDIA_LINK_ON_DEMAND=false: otherwise /playback for an
+# unmapped release asks the real media provider.
+
+# home (SSR loader: web/app/routes/home.tsx)
+home-slots           /api/home/slots
+home-short           /api/home/top-rated-short?limit=12
+recs-home            /api/recs?slot=home&limit=30
+auth:recs-home       /api/recs?slot=home&limit=30
+trending-week        /api/trending?period=week&limit=10
+trending-performers  /api/trending/performers?period=week&limit=12
+
+# release page (web/app/routes/release.tsx)
+release-detail       /api/releases/{r}
+release-performers   /api/releases/{r}/performers
+release-play-config  /api/releases/{r}/play-config
+release-playback     /api/releases/{r}/playback?source=javtiful
+release-related      /api/recs?slot=related&release={r}&limit=20
+comments-top         /api/releases/{r}/comments?sort=top&limit=20
+comments-newest      /api/releases/{r}/comments?sort=newest&limit=20
+
+# performer page
+performer-detail     /api/performers/{p}
+performer-releases   /api/performers/{p}/releases?limit=12
+
+# discover / lists
 releases-newest      /api/releases?sort=newest
 releases-tag         /api/releases?tag={tag}
-release-detail       /api/releases/{r}
+releases-tag-runtime /api/releases?tag={tag}&sort=runtime
+releases-hd-sub      /api/releases?min_height=1080&subtitle=any
 performers-name      /api/performers?sort=name
 performers-works     /api/performers?sort=works
 performers-newest    /api/performers?sort=newest_work
 performers-heat      /api/performers?sort=heat
-performer-detail     /api/performers/{p}
-catalog-search       /api/catalog/search?q={q}
 upcoming             /api/upcoming
+catalog-facets       /api/catalog/facets
+
+# search
+catalog-search       /api/catalog/search?q={q}
+catalog-search-cnt   /api/catalog/search?q={q}&type=release&counts=1
+catalog-search-code  /api/catalog/search?q={code}
+releases-q           /api/releases?q={q}
+
+# signed in
+auth:history         /api/me/watch-history
+auth:history-q       /api/me/watch-history?q={q}
+auth:me-clips        /api/me/clips
+auth:me-favorites    /api/me/favorites
+
+# sitemaps (first page; the SSR walker pages through them)
+sitemap-releases     /api/sitemap/releases?limit=5000
+sitemap-performers   /api/sitemap/performers?limit=5000
+sitemap-tags         /api/sitemap/tags?limit=5000
+sitemap-playlists    /api/sitemap/playlists?limit=5000
+sitemap-counts       /api/sitemap/counts
