@@ -1039,6 +1039,7 @@
   "pc.keys.mute": "Bật/tắt tiếng",
   "pc.keys.volume": "Tăng / giảm âm lượng",
   "pc.keys.toggleCaptions": "Bật/tắt phụ đề",
+  "pc.keys.search": "Chuyển đến ô tìm kiếm",
   "pc.keys.help": "Hiện phím tắt",
   "mini.label": "Trình phát mini",
   "mini.expand": "Mở rộng trình phát: {title}",

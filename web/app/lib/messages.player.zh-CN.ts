@@ -66,6 +66,7 @@ export const playerZhCN = {
   'pc.keys.mute': '切换静音',
   'pc.keys.volume': '音量增大/减小',
   'pc.keys.toggleCaptions': '开启/关闭字幕',
+  'pc.keys.search': '转到搜索框',
   'pc.keys.help': '显示键盘快捷键',
 
   // mini player (MobileHome M1)
