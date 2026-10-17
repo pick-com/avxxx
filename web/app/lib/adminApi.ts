@@ -12,6 +12,7 @@
 //                    similarity preview (admin-performers PR; may 404)
 
 import {ApiError, api, isMissingEndpoint} from './api';
+import {crawlPolicyErrorText} from './crawlPolicyErrors';
 
 const enc = encodeURIComponent;
 
@@ -186,7 +187,11 @@ export const getCrawlPolicies = () => api<CrawlPolicy[] | null>('admin/crawl-pol
 export const addIngestSource = (name: string, url: string) => api<{ok: boolean}>('admin/sources', {method: 'POST', body: {name, url}});
 export const enqueueIngestJob = (sourceId: number) => api<{ok: boolean}>(`admin/sources/${sourceId}/jobs`, {method: 'POST'});
 export const putCrawlPolicy = (sourceId: number, p: CrawlPolicyInput) =>
-  api<{ok: boolean}>(`admin/sources/${sourceId}/crawl-policy`, {method: 'PUT', body: p});
+  api<{ok: boolean}>(`admin/sources/${sourceId}/crawl-policy`, {method: 'PUT', body: p}).catch(cause => {
+    // Validation messages are English; the back office is zh-CN.
+    if (cause instanceof ApiError && cause.detail) throw new ApiError(cause.message, cause.status, crawlPolicyErrorText(cause.detail));
+    throw cause;
+  });
 
 // ---------------------------------------------------------------- release editor (PR #61)
 

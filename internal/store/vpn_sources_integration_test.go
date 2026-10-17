@@ -122,6 +122,18 @@ func TestCrawlPolicyProxyIntegration(t *testing.T) {
 	if rp, _ = s.FetchPolicy(ctx, id, catalog.PhaseIncremental); rp.ProxyURL != "" {
 		t.Fatalf("proxy not cleared: %q", rp.ProxyURL)
 	}
+	// A malformed interval and an unknown source are 400s with stable
+	// messages (the back office translates them), not 500s.
+	bad := p
+	bad.MinRequestInterval = "every now and then"
+	if err := s.UpsertCrawlPolicy(ctx, bad); !errors.As(err, &inv) || inv.Msg != "invalid interval" {
+		t.Fatalf("bad interval: %v", err)
+	}
+	bad = p
+	bad.SourceID = -1
+	if err := s.UpsertCrawlPolicy(ctx, bad); !errors.As(err, &inv) || inv.Msg != "unknown source" {
+		t.Fatalf("unknown source: %v", err)
+	}
 }
 
 // TestVPNSourceFieldPolicyIntegration: XSList profile data and JAVLibrary
