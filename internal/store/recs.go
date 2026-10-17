@@ -9,6 +9,7 @@ package store
 import (
 	"avxxx/internal/community"
 	"avxxx/internal/recs"
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -192,7 +193,7 @@ func (s *Store) SyncReleaseSimilar(ctx context.Context, rows []recs.ReleaseSimil
 	})
 	d := &recs.SimilarDiff{Eps: eps}
 	err := pgx.BeginFunc(ctx, s, func(tx pgx.Tx) error {
-		d.Upsert, d.Delete, d.Write = nil, nil, recs.ReleaseSimilarWrite{}
+		d.Upsert, d.UpsertSrc, d.Delete, d.Write = nil, nil, nil, recs.ReleaseSimilarWrite{}
 		i := 0
 		// next plans the releases with only new rows before id, then id.
 		next := func(id int64, stored []recs.StoredSimilar) {
@@ -284,8 +285,17 @@ func (s *Store) SyncReleaseSimilar(ctx context.Context, rows []recs.ReleaseSimil
 	return d.Write, err
 }
 
-// ReplacePerformerSimilar swaps the whole performer_similar table.
-func (s *Store) ReplacePerformerSimilar(ctx context.Context, rows []recs.PerformerMatch, at time.Time) error {
+// ReplacePerformerSimilar implements recs.Store with SyncPerformerSimilar
+// and recs.PerformerSimilarEpsilon.
+func (s *Store) ReplacePerformerSimilar(ctx context.Context, rows []recs.PerformerMatch, at time.Time) (recs.ReleaseSimilarWrite, error) {
+	return s.SyncPerformerSimilar(ctx, rows, at, recs.PerformerSimilarEpsilon)
+}
+
+// RewritePerformerSimilar swaps the whole performer_similar table: DELETE
+// and COPY in one transaction. It is the reference SyncPerformerSimilar is
+// tested against; the job does not use it (~2.4M rows written and as many
+// left dead every night at full scale).
+func (s *Store) RewritePerformerSimilar(ctx context.Context, rows []recs.PerformerMatch, at time.Time) error {
 	return pgx.BeginFunc(ctx, s, func(tx pgx.Tx) error {
 		if _, err := tx.Exec(ctx, `DELETE FROM performer_similar`); err != nil {
 			return err
@@ -298,6 +308,124 @@ func (s *Store) ReplacePerformerSimilar(ctx context.Context, rows []recs.Perform
 			}))
 		return err
 	})
+}
+
+// SyncPerformerSimilar makes performer_similar equivalent to rows (see
+// recs.PerformerSimilarDiff: same pairs, scores within eps, same order per
+// performer, evidence accepted by recs.SameEvidence; identical with eps 0)
+// while writing only the rows that differ. It sorts rows by performer in
+// place. It works like SyncReleaseSimilar: one transaction, the current rows
+// streamed in performer order, the changes applied from a temp table with
+// one DELETE and one INSERT … ON CONFLICT DO UPDATE.
+func (s *Store) SyncPerformerSimilar(ctx context.Context, rows []recs.PerformerMatch, at time.Time, eps float64) (recs.ReleaseSimilarWrite, error) {
+	slices.SortFunc(rows, func(a, b recs.PerformerMatch) int { return cmpInt64(a.PerformerID, b.PerformerID) })
+	var d *recs.PerformerSimilarDiff
+	err := pgx.BeginFunc(ctx, s, func(tx pgx.Tx) error {
+		d = &recs.PerformerSimilarDiff{Eps: eps}
+		i := 0
+		// next plans the performers with only new rows before id, then id.
+		next := func(id int64, stored []recs.StoredPerformerSimilar) {
+			for i < len(rows) && rows[i].PerformerID < id {
+				j := i + 1
+				for j < len(rows) && rows[j].PerformerID == rows[i].PerformerID {
+					j++
+				}
+				d.Performer(rows[i].PerformerID, rows[i:j], nil)
+				i = j
+			}
+			j := i
+			for j < len(rows) && rows[j].PerformerID == id {
+				j++
+			}
+			if j > i || len(stored) > 0 {
+				d.Performer(id, rows[i:j], stored)
+			}
+			i = j
+		}
+		q, err := tx.Query(ctx, `SELECT performer_id, similar_id, score, evidence::text FROM performer_similar ORDER BY performer_id`)
+		if err != nil {
+			return err
+		}
+		cur := int64(-1)
+		var stored []recs.StoredPerformerSimilar
+		for q.Next() {
+			var id int64
+			var x recs.StoredPerformerSimilar
+			var ev []byte
+			if err := q.Scan(&id, &x.SimilarID, &x.Score, &ev); err != nil {
+				q.Close()
+				return err
+			}
+			x.EvidenceOK = decodeEvidence(ev, &x.Evidence)
+			if id != cur {
+				if cur >= 0 {
+					next(cur, stored)
+				}
+				cur, stored = id, stored[:0]
+			}
+			stored = append(stored, x)
+		}
+		q.Close()
+		if err := q.Err(); err != nil {
+			return err
+		}
+		if cur >= 0 {
+			next(cur, stored)
+		}
+		next(math.MaxInt64, nil)
+		if len(d.Upsert)+len(d.Delete) == 0 {
+			return nil
+		}
+		if _, err := tx.Exec(ctx, `CREATE TEMP TABLE performer_similar_changes (
+			performer_id bigint NOT NULL, similar_id bigint NOT NULL, score real, evidence jsonb
+		) ON COMMIT DROP`); err != nil {
+			return err
+		}
+		// score NULL marks a delete.
+		n := len(d.Upsert)
+		if _, err := tx.CopyFrom(ctx, pgx.Identifier{"performer_similar_changes"}, []string{"performer_id", "similar_id", "score", "evidence"},
+			pgx.CopyFromSlice(n+len(d.Delete), func(k int) ([]any, error) {
+				if k < n {
+					r := d.Upsert[k]
+					ev, err := json.Marshal(r.Evidence)
+					return []any{r.PerformerID, r.SimilarID, float32(r.Score), ev}, err
+				}
+				r := d.Delete[k-n]
+				return []any{r.PerformerID, r.SimilarID, nil, nil}, nil
+			})); err != nil {
+			return err
+		}
+		if _, err := tx.Exec(ctx, `DELETE FROM performer_similar t USING performer_similar_changes c
+			WHERE c.score IS NULL AND t.performer_id=c.performer_id AND t.similar_id=c.similar_id`); err != nil {
+			return err
+		}
+		_, err = tx.Exec(ctx, `INSERT INTO performer_similar (performer_id, similar_id, score, evidence, computed_at)
+			SELECT performer_id, similar_id, score, evidence, $1 FROM performer_similar_changes WHERE score IS NOT NULL
+			ON CONFLICT (performer_id, similar_id) DO UPDATE SET score=EXCLUDED.score, evidence=EXCLUDED.evidence, computed_at=EXCLUDED.computed_at`, at)
+		return err
+	})
+	if d == nil {
+		return recs.ReleaseSimilarWrite{}, err
+	}
+	return d.Write, err
+}
+
+// decodeEvidence decodes stored performer_similar evidence strictly: false
+// for bad JSON or keys Evidence does not have, so the row is rewritten.
+func decodeEvidence(b []byte, ev *recs.Evidence) bool {
+	dec := json.NewDecoder(bytes.NewReader(b))
+	dec.DisallowUnknownFields()
+	return dec.Decode(ev) == nil && !dec.More()
+}
+
+func cmpInt64(a, b int64) int {
+	switch {
+	case a < b:
+		return -1
+	case a > b:
+		return 1
+	}
+	return 0
 }
 
 // trendingInputsSQL counts per published release, window [$2,$3) and

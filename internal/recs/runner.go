@@ -65,7 +65,9 @@ type Store interface {
 	// differ, and reports how many it inserted, updated and deleted. It may
 	// reorder rows.
 	ReplaceReleaseSimilar(ctx context.Context, rows []ReleaseSimilarRow, at time.Time) (ReleaseSimilarWrite, error)
-	ReplacePerformerSimilar(ctx context.Context, rows []PerformerMatch, at time.Time) error
+	// ReplacePerformerSimilar does the same for performer_similar (see
+	// PerformerSimilarDiff, with PerformerSimilarEpsilon).
+	ReplacePerformerSimilar(ctx context.Context, rows []PerformerMatch, at time.Time) (ReleaseSimilarWrite, error)
 
 	// TrendingInputs counts plays (distinct play_request plays, or
 	// watch_history users if more), completed plays and previous-window
@@ -110,8 +112,10 @@ type SimilarityReport struct {
 	PerformerRows int       `json:"performer_rows"`
 	// ReleaseWrite is what the release_similar write changed.
 	ReleaseWrite ReleaseSimilarWrite `json:"release_write"`
-	Weights      Weights             `json:"weights"`
-	DurationMS   int64               `json:"duration_ms"`
+	// PerformerWrite is what the performer_similar write changed.
+	PerformerWrite ReleaseSimilarWrite `json:"performer_write"`
+	Weights        Weights             `json:"weights"`
+	DurationMS     int64               `json:"duration_ms"`
 }
 
 // RunSimilarity recomputes release_similar (co-watch + content) and
@@ -180,9 +184,11 @@ func (r *Runner) RunSimilarity(ctx context.Context) (rep SimilarityReport, err e
 		return rep, fmt.Errorf("write release_similar: %w", err)
 	}
 	rep.ReleaseWrite.WriteMS = r.now().Sub(at).Milliseconds()
-	if err = r.Store.ReplacePerformerSimilar(ctx, perf, at); err != nil {
+	pat := r.now()
+	if rep.PerformerWrite, err = r.Store.ReplacePerformerSimilar(ctx, perf, at); err != nil {
 		return rep, fmt.Errorf("write performer_similar: %w", err)
 	}
+	rep.PerformerWrite.WriteMS = r.now().Sub(pat).Milliseconds()
 	rep.DurationMS = r.now().Sub(start).Milliseconds()
 	return rep, nil
 }
