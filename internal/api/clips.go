@@ -1,0 +1,121 @@
+package api
+
+// 片段 (clips; migration 054, store/clips.go): a signed-in viewer shares a
+// 5–60 s segment of a published release. POST /api/me/clips is rate limited
+// with the community posting limits (kind "clip"; muted users are 403) and
+// validates the range against the release duration when it is known.
+// GET /api/clips/{id} is public and answers only for published releases;
+// DELETE /api/me/clips/{id} removes the caller's own clip. Clips join the
+// shared report inbox (POST /api/clips/{id}/report) and the moderator
+// actions (POST /api/admin/moderation/clips/{id}/action, moderation.go).
+
+import (
+	"avxxx/internal/community"
+	"avxxx/internal/store"
+	"context"
+	"net/http"
+)
+
+// clipStore is the subset of *store.Store used by the clip handlers.
+type clipStore interface {
+	CreateClip(ctx context.Context, userID int64, in store.ClipInput, status string) (store.Clip, error)
+	ClipByPublicID(ctx context.Context, publicID string, viewerID int64) (store.Clip, error)
+	DeleteClip(ctx context.Context, userID int64, publicID string) error
+}
+
+func (srv *Server) clipRoutes() []route {
+	return []route{
+		{"POST /api/me/clips", srv.withClips(srv.user(srv.createClip))},
+		{"DELETE /api/me/clips/{id}", srv.withClips(srv.user(srv.deleteClip))},
+		{"GET /api/clips/{id}", srv.withClips(srv.getClip)},
+		{"POST /api/clips/{id}/report", srv.withClips(srv.user(srv.reportClip))},
+	}
+}
+
+// withClips answers 404 when no clip store is wired (tests without a database).
+func (srv *Server) withClips(h http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if srv.clips == nil {
+			reply(w, nil, &httpError{status: http.StatusNotFound, msg: statusMessage(http.StatusNotFound)})
+			return
+		}
+		h(w, r)
+	}
+}
+
+// createClip: POST /api/me/clips {"release": slug, "start_ms", "end_ms", "title"?}.
+// A title with a moderation keyword is dropped (the clip stays shareable
+// without it; "title_removed": true says so).
+func (srv *Server) createClip(w http.ResponseWriter, r *http.Request, uid int64) {
+	var in store.ClipInput
+	if err := readJSON(r, &in, false); err != nil {
+		reply(w, nil, err)
+		return
+	}
+	if in.Release == "" {
+		reply(w, nil, badRequest("release is required", nil))
+		return
+	}
+	if err := store.ValidateClipRange(in.StartMs, in.EndMs, 0); err != nil {
+		reply(w, nil, err)
+		return
+	}
+	title, err := store.CleanClipTitle(in.Title)
+	if err != nil {
+		reply(w, nil, err)
+		return
+	}
+	removed := false
+	if srv.community != nil {
+		if _, err := srv.allowPost(r.Context(), "clip", uid); err != nil {
+			reply(w, nil, err)
+			return
+		}
+		if title != "" {
+			status, err := srv.moderationStatus(r.Context(), title)
+			if err != nil {
+				reply(w, nil, err)
+				return
+			}
+			if status != community.StatusVisible {
+				title, removed = "", true
+			}
+		}
+	}
+	in.Title = title
+	c, err := srv.clips.CreateClip(r.Context(), uid, in, community.StatusVisible)
+	if err != nil {
+		reply(w, nil, err)
+		return
+	}
+	replyStatus(w, http.StatusCreated, map[string]any{"clip": c, "title_removed": removed})
+}
+
+// getClip: GET /api/clips/{id} (public id). 404 for unknown, deleted or
+// moderated-away clips and for releases that are not published.
+func (srv *Server) getClip(w http.ResponseWriter, r *http.Request) {
+	c, err := srv.clips.ClipByPublicID(r.Context(), r.PathValue("id"), srv.viewerID(r))
+	reply(w, c, err)
+}
+
+// deleteClip: DELETE /api/me/clips/{id}; another user's clip is 404.
+func (srv *Server) deleteClip(w http.ResponseWriter, r *http.Request, uid int64) {
+	err := srv.clips.DeleteClip(r.Context(), uid, r.PathValue("id"))
+	reply(w, map[string]bool{"deleted": err == nil}, err)
+}
+
+// reportClip: POST /api/clips/{id}/report {"reason", "note"?} into the shared inbox.
+func (srv *Server) reportClip(w http.ResponseWriter, r *http.Request, uid int64) {
+	c, err := srv.clips.ClipByPublicID(r.Context(), r.PathValue("id"), uid)
+	if err != nil {
+		reply(w, nil, err)
+		return
+	}
+	var in reportInput
+	if err := readJSON(r, &in, false); err != nil {
+		reply(w, nil, err)
+		return
+	}
+	in.TargetType, in.TargetID = "clip", c.RowID
+	srv.fileReport(w, r, uid, in)
+}

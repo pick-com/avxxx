@@ -14,6 +14,8 @@ const (
 	DanmakuPerMinute   = 20
 	ReviewPerMinute    = 5
 	CommentPerMinute   = 5
+	// ClipPerMinute bounds 片段 creation per user (new accounts: NewPosterPerMinute).
+	ClipPerMinute = 5
 	// ReactionPerMinute bounds 赞 / 踩 toggles per voter (users and devices alike).
 	ReactionPerMinute   = 30
 	PostingLimitWindow  = time.Minute
@@ -22,7 +24,7 @@ const (
 )
 
 // PostingLimit is the per-minute limit for a poster of the given account
-// age; kind is "danmaku", "review" or "comment".
+// age; kind is "danmaku", "review", "comment" or "clip".
 func PostingLimit(kind string, accountAge time.Duration) int {
 	if accountAge < NewPosterAge {
 		return NewPosterPerMinute
@@ -32,6 +34,8 @@ func PostingLimit(kind string, accountAge time.Duration) int {
 		return ReviewPerMinute
 	case "comment":
 		return CommentPerMinute
+	case "clip":
+		return ClipPerMinute
 	}
 	return DanmakuPerMinute
 }

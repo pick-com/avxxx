@@ -7,10 +7,13 @@ import {SwitchRow} from './Switch';
 
 /**
  * 播放 tab of the player settings sheet (desktop gear and mobile sheet):
- * 循环播放, the A-B loop, 定时停止 and 氛围模式. The Player owns the state
- * and applies it through the <video> API; this only renders and reports.
+ * 循环播放, the A-B loop, 定时停止, 氛围模式 and the 剪辑 action. The Player
+ * owns the state and applies it through the <video> API; this only renders
+ * and reports.
  */
-export function PlayerPlaybackPanel({loop, ab, sleep, ambient}: {
+export function PlayerPlaybackPanel({loop, ab, sleep, ambient, onClip}: {
+  /** 剪辑: opens the clip panel. */
+  onClip?: () => void;
   loop: {on: boolean; onChange: (on: boolean) => void};
   /** 氛围模式; `available` false: the source's frames cannot be read (toggle hidden, hint shown). */
   ambient: {on: boolean; available: boolean; onChange: (on: boolean) => void};
@@ -32,6 +35,17 @@ export function PlayerPlaybackPanel({loop, ab, sleep, ambient}: {
       : t('player.abHint');
   return (
     <div className="pp-panel">
+      {onClip && (
+        <div className="set-row">
+          <div className="set-text">
+            <span className="set-label">{t('clip.title')}</span>
+            <span className="set-desc">{t('clip.menuHint')}</span>
+          </div>
+          <button type="button" className="btn btn-secondary btn-sm" onClick={onClip}>
+            {t('clip.open')}
+          </button>
+        </div>
+      )}
       <SwitchRow label={t('player.loop')} description={t('player.loopHint')} checked={loop.on} onChange={loop.onChange} />
       <div className="set-row set-row-stack" role="group" aria-label={t('player.abLoop')}>
         <div className="set-text">

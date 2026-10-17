@@ -28,6 +28,7 @@ import {NO_AB, abActive, abMarkers, abSeekTarget, endAction, setAbPoint, type Ab
 import {SLEEP_OFF, sleepOnNavigate, sleepSecondsLeft, sleepTick, startSleep, type SleepChoice, type SleepState} from '../lib/sleepTimer';
 import {ambientActive, readAmbientPref, writeAmbientPref} from '../lib/ambient';
 import {AmbientGlow} from './AmbientGlow';
+import {ClipPanel} from './ClipPanel';
 import {DanmakuBar, DanmakuLayer, DanmakuListSheet, DanmakuSettings, useDanmakuFeed, type DanmakuLayerHandle} from './Danmaku';
 import {EpisodesSheet, type PlayerEpisodes} from './Episodes';
 import {Icon} from './Icon';
@@ -147,10 +148,13 @@ type LockableOrientation = ScreenOrientation & {lock?: (orientation: string) => 
  * 氛围模式 (lib/ambient.ts, AmbientGlow): remembered in this browser; off in
  * fullscreen, the mini player and while casting; a source whose frames
  * cannot be read (tainted canvas) turns it off for that source.
+ * 剪辑 (ClipPanel, lib/clips.ts): a 5–60 s segment shared as /clips/{id}.
+ * `segment` (the clip page) starts at its start and loops it (the A-B
+ * loop) or stops once at its end.
  */
 export type PlayerProps = Parameters<typeof Player>[0];
 
-export function Player({slug, releaseId, title, resumeAt, startAt, onBack, theater = false, onToggleTheater, onEnded, autoStart = false, overlay, entryReason, related = [], onReplay, mini = false, episodes, poster, posterImage, artist, album, onPreviousTrack, onNextTrack, resumePending = false, deferResolve = false}: {
+export function Player({slug, releaseId, title, resumeAt, startAt, onBack, theater = false, onToggleTheater, onEnded, autoStart = false, overlay, entryReason, related = [], onReplay, mini = false, episodes, poster, posterImage, artist, album, onPreviousTrack, onNextTrack, resumePending = false, deferResolve = false, segment}: {
   slug: string;
   /** releases.id for analytics (play_request / progress); no tracking without it. */
   releaseId?: number;
@@ -192,6 +196,8 @@ export function Player({slug, releaseId, title, resumeAt, startAt, onBack, theat
   resumePending?: boolean;
   /** PLAYBACK_RESOLVE_ON=play: autoStart does not resolve a provider stream; the play button does. */
   deferResolve?: boolean;
+  /** A shared clip (seconds): loop it with the A-B loop, or stop once at its end. Pass startAt too. */
+  segment?: {start: number; end: number; loop: boolean};
 }) {
   const t = useT();
   const {status} = useAuth();
@@ -274,7 +280,29 @@ export function Player({slug, releaseId, title, resumeAt, startAt, onBack, theat
   useEffect(() => {
     setLoop(false);
     setAb(NO_AB);
+    setClipOpen(false);
   }, [slug]);
+  const [clipOpen, setClipOpen] = useState(false);
+  // A clip page's segment: the A-B loop, or a single stop at its end.
+  const segmentStop = useRef<number | null>(null);
+  const segStart = segment?.start;
+  const segEnd = segment?.end;
+  const segLoop = segment?.loop;
+  useEffect(() => {
+    if (segStart === undefined || segEnd === undefined) {
+      segmentStop.current = null;
+      return;
+    }
+    setAb(segLoop ? {a: segStart, b: segEnd} : NO_AB);
+    segmentStop.current = segLoop ? null : segEnd;
+  }, [slug, segStart, segEnd, segLoop]);
+  // Already playing this release (the clip page opened over it): jump to the clip.
+  useEffect(() => {
+    const video = videoRef.current;
+    if (segStart === undefined || !video || video.readyState < 1) return;
+    video.dataset.seekMethod = 'skip';
+    video.currentTime = segStart;
+  }, [slug, segStart, segEnd]);
   // 定时停止: survives source switches; another release ends a timed choice.
   const [sleep, setSleep] = useState<SleepState>(SLEEP_OFF);
   const sleepRef = useRef(sleep);
@@ -541,7 +569,7 @@ export function Player({slug, releaseId, title, resumeAt, startAt, onBack, theat
       if (i < 0) i = configEntries.findIndex(e => e.render !== 'external');
       if (i < 0) i = 0;
       pendingSeek.current = configEntries[i]?.alt ? 0 : resumeFrom;
-      resumeToastArmed.current = pendingSeek.current > 0;
+      resumeToastArmed.current = pendingSeek.current > 0 && !segment;
       beginTracking(configEntries[i]);
       setEntries(configEntries);
       setCurrent(i);
@@ -555,7 +583,7 @@ export function Player({slug, releaseId, title, resumeAt, startAt, onBack, theat
       if (result.length === 0) throw new Error(t('player.noStream'));
       resolvedStreams.current = result;
       pendingSeek.current = resumeFrom;
-      resumeToastArmed.current = resumeFrom > 0;
+      resumeToastArmed.current = resumeFrom > 0 && !segment;
       setEntries(entriesFromStreams(result, info.data.source === 'javtiful' ? 'Javtiful' : info.data.source));
       setCurrent(0);
       setPhase('ready');
@@ -1300,6 +1328,10 @@ export function Player({slug, releaseId, title, resumeAt, startAt, onBack, theat
       loop={{on: loop, onChange: chooseLoop}}
       ambient={{on: ambientPref, available: !ambientBlocked, onChange: chooseAmbient}}
       sleep={{value: sleep.choice, left: sleepLeft, onChange: chooseSleep}}
+      onClip={() => {
+        setSettings(s => ({...s, open: false}));
+        setClipOpen(true);
+      }}
       ab={{
         value: ab,
         time: clock.time,
@@ -1431,6 +1463,10 @@ export function Player({slug, releaseId, title, resumeAt, startAt, onBack, theat
                 if (backToA !== null) {
                   video.dataset.seekMethod = 'skip';
                   video.currentTime = backToA;
+                }
+                if (segmentStop.current !== null && t >= segmentStop.current) {
+                  segmentStop.current = null;
+                  video.pause();
                 }
                 if (!stream.alt && t > 0) sharedPos.current = t;
                 if (Date.now() - lastSaved.current.at >= SAVE_INTERVAL_MS) save(false);
@@ -1715,6 +1751,18 @@ export function Player({slug, releaseId, title, resumeAt, startAt, onBack, theat
               playback={playbackPanel}
               danmaku={stream ? <DanmakuSettings /> : undefined}
             />
+
+            {stream && (
+              <ClipPanel
+                open={clipOpen}
+                onClose={() => setClipOpen(false)}
+                container={fullscreen ? shellRef.current : null}
+                video={videoEl}
+                duration={clock.duration}
+                slug={slug}
+                signedIn={status === 'user'}
+              />
+            )}
 
             {episodes && hasEpisodes && (
               <EpisodesSheet open={episodesOpen} onClose={() => setEpisodesOpen(false)} episodes={episodes} container={fullscreen ? shellRef.current : null} />

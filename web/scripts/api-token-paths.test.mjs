@@ -31,13 +31,15 @@ test('signed-in routes get the token', () => {
     'comments/42/like',
     'comments/42/replies?cursor=x',
     'comments/42/report',
+    'clips/abcDEF1234',
+    'clips/abcDEF1234/report',
   ]) {
     assert.equal(sendsUserToken(path), true, path);
   }
 });
 
 test('public catalog routes do not', () => {
-  for (const path of ['releases/abc-123', 'releases?limit=10', 'performers/x', 'search?q=a', 'announcements?lang=en', 'playlists/tok', 'commentsx', 'comments/abc', 'recs/feedbackx']) {
+  for (const path of ['releases/abc-123', 'releases?limit=10', 'performers/x', 'search?q=a', 'announcements?lang=en', 'playlists/tok', 'commentsx', 'comments/abc', 'recs/feedbackx', 'clips', 'clips/short']) {
     assert.equal(sendsUserToken(path), false, path);
   }
 });

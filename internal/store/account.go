@@ -561,6 +561,9 @@ var exportSections = []struct{ name, sql string }{
 		LEFT JOIN releases r ON f.kind='not_interested_release' AND r.id=f.target_id
 		LEFT JOIN performers p ON f.kind='not_interested_performer' AND p.id=f.target_id
 		WHERE f.user_id=$1`},
+	// 片段 (migration 054): the shared link and segment of each clip.
+	{"clips", `SELECT COALESCE(json_agg(json_build_object('id',c.public_id,'release',r.slug,'start_ms',c.start_ms,'end_ms',c.end_ms,'title',c.title,'status',c.status,'created_at',c.created_at) ORDER BY c.created_at),'[]')
+		FROM clips c JOIN releases r ON r.id=c.release_id WHERE c.user_id=$1`},
 	{"search_history", `SELECT COALESCE(json_agg(json_build_object('query',COALESCE(display,query),'searched_at',searched_at) ORDER BY searched_at DESC),'[]') FROM user_search_history WHERE user_id=$1`},
 	{"consent_records", `SELECT COALESCE(json_agg(json_build_object('categories',categories,'policy_version',policy_version,'gpc',gpc,'source',source,'created_at',created_at) ORDER BY id),'[]') FROM consent_records WHERE user_id=$1`},
 	{"push_devices", `SELECT COALESCE(json_agg(json_build_object('user_agent',user_agent,'created_at',created_at,'last_success_at',last_success_at) ORDER BY id),'[]') FROM push_subscriptions WHERE user_id=$1`},
