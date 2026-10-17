@@ -402,8 +402,8 @@ export function parseAgeGate(cause: unknown): AgeGateFinding[] | null {
 
 // ---------------------------------------------------------------- moderation
 
-export type QueueKind = 'reports' | 'danmaku' | 'reviews' | 'rating_floods' | 'comments';
-export type QueueCounts = {reports: number; reports_overdue: number; danmaku: number; reviews: number; rating_floods: number; comments?: number};
+export type QueueKind = 'reports' | 'danmaku' | 'reviews' | 'rating_floods' | 'comments' | 'clips';
+export type QueueCounts = {reports: number; reports_overdue: number; danmaku: number; reviews: number; rating_floods: number; comments?: number; clips?: number};
 export type Report = {
   id: number;
   target_type: string;
@@ -461,6 +461,21 @@ export type QueuedComment = {
   edits?: number;
   edited_at?: string | null;
 };
+/** store.QueuedClip (待审片段: a clip whose title hit a keyword; title_status shadow | visible | removed). */
+export type QueuedClip = {
+  id: number;
+  public_id: string;
+  release_id: number;
+  release_slug: string;
+  user_id: number;
+  start_ms: number;
+  end_ms: number;
+  title: string;
+  title_status: string;
+  status: string;
+  open_reports: number;
+  created_at: string;
+};
 /** store.CommentHistory: the current text and every earlier version, oldest first. */
 export type CommentHistory = {
   id: number;
@@ -482,7 +497,8 @@ export type RatingFlood = {
   votes: number;
   anonymous: number;
 };
-export type ModerationAction = 'fold' | 'delete' | 'delete_mute' | 'approve';
+/** remove_title applies to clips only (clear the title, keep the clip). */
+export type ModerationAction = 'fold' | 'delete' | 'delete_mute' | 'approve' | 'remove_title';
 export type ModerationTarget = 'danmaku' | 'reviews' | 'comments' | 'ratings' | 'clips';
 export type Keyword = {word: string; category: string};
 export const KEYWORD_CATEGORIES = ['ad', 'abuse', 'spoiler', 'illegal', 'political', 'other'] as const;
@@ -492,7 +508,17 @@ export const getModerationOverview = (limit = 1) =>
 export const getModerationQueue = <T,>(kind: QueueKind, f: {status?: string; cursor?: string | null; limit?: number} = {}) =>
   api<{items: T[] | null; next_cursor: string | null}>(`admin/moderation/queue${qs({kind, ...f})}`).then(pageOf);
 export const moderate = (target: ModerationTarget, id: number, body: {action: ModerationAction; mute_days?: number; reason?: string}) =>
-  api<{target_type: string; id: number; before: string; after: string; reports_resolved: number; muted_until?: string}>(
+  api<{
+    target_type: string;
+    id: number;
+    before: string;
+    after: string;
+    reports_resolved: number;
+    muted_until?: string;
+    /** Clips: the title status before / after. */
+    title_status_before?: string;
+    title_status?: string;
+  }>(
     `admin/moderation/${target}/${id}/action`,
     {method: 'POST', body},
   );

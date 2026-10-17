@@ -18,6 +18,7 @@ import {
   type ModerationAction,
   type ModerationTarget,
   type QueueKind,
+  type QueuedClip,
   type QueuedComment,
   type QueuedDanmaku,
   type QueuedReview,
@@ -40,6 +41,7 @@ const TABS: {kind: QueueKind; label: string}[] = [
   {kind: 'danmaku', label: '待审弹幕'},
   {kind: 'reviews', label: '待审短评'},
   {kind: 'comments', label: '待审评论'},
+  {kind: 'clips', label: '待审片段'},
   {kind: 'rating_floods', label: '疑似刷分'},
 ];
 
@@ -56,7 +58,7 @@ const TARGET_LABELS: Record<string, string> = {
 };
 const CATEGORY_LABELS: Record<string, string> = {ad: '广告', abuse: '辱骂', spoiler: '剧透', illegal: '违法', political: '政治', other: '其他'};
 
-type Row = Report | QueuedDanmaku | QueuedReview | QueuedComment | RatingFlood;
+type Row = Report | QueuedDanmaku | QueuedReview | QueuedComment | QueuedClip | RatingFlood;
 
 function dueText(r: Report) {
   const ms = new Date(r.due_at).getTime() - Date.now();
@@ -189,11 +191,11 @@ export default function AdminModeration() {
   };
 
   const onAct = async (target: ModerationTarget, id: number, action: ModerationAction, muteDays?: number) => {
-    const label = {approve: '通过', fold: '折叠', delete: '删除', delete_mute: `删除并禁言 ${muteDays} 天`}[action];
+    const label = {approve: '通过', fold: '折叠', delete: '删除', delete_mute: `删除并禁言 ${muteDays} 天`, remove_title: '移除标题'}[action];
     const ok = await act.attempt(
       `${target}-${id}`,
       () => moderate(target, id, {action, mute_days: action === 'delete_mute' ? muteDays : undefined, reason: reason.trim() || undefined}),
-      v => `已${label}（${v.before} → ${v.after}${v.reports_resolved ? `，关闭 ${v.reports_resolved} 个举报` : ''}${v.muted_until ? `，禁言至 ${fmtTime(v.muted_until)}` : ''}）`,
+      v => `已${label}（${v.before} → ${v.after}${v.title_status && v.title_status !== v.title_status_before ? `，标题 ${v.title_status_before} → ${v.title_status}` : ''}${v.reports_resolved ? `，关闭 ${v.reports_resolved} 个举报` : ''}${v.muted_until ? `，禁言至 ${fmtTime(v.muted_until)}` : ''}）`,
     );
     if (ok) after();
   };
@@ -252,7 +254,9 @@ export default function AdminModeration() {
             ? counts.reviews
             : k === 'comments'
               ? (counts.comments ?? 0)
-              : counts.rating_floods;
+              : k === 'clips'
+                ? (counts.clips ?? 0)
+                : counts.rating_floods;
   const statusOptions =
     kind === 'reports'
       ? [
@@ -262,19 +266,25 @@ export default function AdminModeration() {
         ]
       : kind === 'rating_floods'
         ? []
-        : [
-            ['', '待审（shadow）'],
-            ['visible', '可见'],
-            ['folded', '已折叠'],
-            ['deleted', '已删除'],
-          ];
+        : kind === 'clips'
+          ? [
+              ['', '标题待审（shadow）'],
+              ['visible', '标题已通过'],
+              ['removed', '标题已移除'],
+            ]
+          : [
+              ['', '待审（shadow）'],
+              ['visible', '可见'],
+              ['folded', '已折叠'],
+              ['deleted', '已删除'],
+            ];
 
   return (
     <>
       <AdminHeader
         eyebrow="ADMIN · MODERATION"
         title="举报与审核"
-        sub="举报按处理时限排序；关键词命中的弹幕、短评和评论先对他人隐藏，等这里审核。"
+        sub="举报按处理时限排序；关键词命中的弹幕、短评、评论和片段标题先对他人隐藏，等这里审核。"
       />
       <AdminNotice error={act.error || overview.error} notice={act.notice} onClose={() => (act.setError(''), act.setNotice(''))} />
 
@@ -503,6 +513,70 @@ export default function AdminModeration() {
                     </td>
                   </tr>
                 ))}
+              </tbody>
+            </table>
+          )}
+
+          {kind === 'clips' && (
+            <table className="adm-table">
+              <thead>
+                <tr>
+                  <th>片段标题</th>
+                  <th>视频 / 片段</th>
+                  <th>用户</th>
+                  <th>举报</th>
+                  <th>时间</th>
+                  <th>操作</th>
+                </tr>
+              </thead>
+              <tbody>
+                {loaded && rows.length === 0 && <EmptyRow cols={6}>队列为空</EmptyRow>}
+                {(rows as QueuedClip[]).map(c => {
+                  const busyClip = act.pending === `clips-${c.id}`;
+                  return (
+                    <tr key={c.id}>
+                      <td className="wrap adm-mod-body">
+                        {c.title || <span className="muted">（无标题）</span>}
+                        {c.status !== 'visible' && <Pill tone="amber">片段 {c.status}</Pill>}
+                      </td>
+                      <td>
+                        <Link to={`/releases/${c.release_slug}`} target="_blank">
+                          {c.release_slug}
+                        </Link>
+                        <div className="adm-source-meta mono">
+                          {fmtMs(c.start_ms)} – {fmtMs(c.end_ms)} ·{' '}
+                          <Link to={`/clips/${c.public_id}`} target="_blank">
+                            打开片段
+                          </Link>
+                        </div>
+                      </td>
+                      <td className="mono">
+                        <button type="button" className="adm-link" title="填入解除禁言" onClick={() => setMuteUser(String(c.user_id))}>
+                          #{c.user_id}
+                        </button>
+                      </td>
+                      <td>{c.open_reports ? <Pill tone="red">{c.open_reports}</Pill> : '—'}</td>
+                      <td>{fmtTime(c.created_at)}</td>
+                      <td>
+                        <div className="actions">
+                          {c.title_status === 'shadow' && (
+                            <button type="button" className="adm-link" disabled={busyClip} onClick={() => void onAct('clips', c.id, 'approve')}>
+                              通过标题
+                            </button>
+                          )}
+                          {c.title_status !== 'removed' && (
+                            <button type="button" className="adm-link danger" disabled={busyClip} onClick={() => void onAct('clips', c.id, 'remove_title')}>
+                              移除标题
+                            </button>
+                          )}
+                          <button type="button" className="adm-link danger" disabled={busyClip} onClick={() => void onAct('clips', c.id, 'delete')}>
+                            删除片段
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           )}

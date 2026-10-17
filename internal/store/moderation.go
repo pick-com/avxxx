@@ -29,11 +29,20 @@ const (
 	QueueReviews      = "reviews"
 	QueueRatingFloods = "rating_floods"
 	QueueComments     = "comments"
+	QueueClips        = "clips" // clips with a shadowed title (待审片段)
 )
+
+// QueueKinds is every moderation queue, in tab order.
+var QueueKinds = []string{QueueReports, QueueDanmaku, QueueReviews, QueueRatingFloods, QueueComments, QueueClips}
 
 // ValidQueueKind reports whether k is a moderation queue.
 func ValidQueueKind(k string) bool {
-	return k == QueueReports || k == QueueDanmaku || k == QueueReviews || k == QueueRatingFloods || k == QueueComments
+	for _, q := range QueueKinds {
+		if k == q {
+			return true
+		}
+	}
+	return false
 }
 
 const (
@@ -45,7 +54,7 @@ const (
 // QueueFilter selects one page of a moderation queue.
 type QueueFilter struct {
 	Kind   string
-	Status string // danmaku / reviews: content status (default shadow); reports: open (default), resolved, dismissed
+	Status string // danmaku / reviews / comments: content status (default shadow); clips: title status (default shadow); reports: open (default), resolved, dismissed
 	Limit  int
 	Cursor string // opaque; offset-based
 }
@@ -58,6 +67,7 @@ type QueueCounts struct {
 	Reviews        int `json:"reviews"`
 	RatingFloods   int `json:"rating_floods"`
 	Comments       int `json:"comments"`
+	Clips          int `json:"clips"`
 }
 
 // ModerationCounts counts open work in every queue.
@@ -69,8 +79,9 @@ func (s *Store) ModerationCounts(ctx context.Context) (QueueCounts, error) {
 		(SELECT count(*) FROM danmaku WHERE status='shadow'),
 		(SELECT count(*) FROM reviews WHERE status='shadow'),
 		(SELECT count(*) FROM (`+ratingFloodSQL+`) f),
-		(SELECT count(*) FROM comments WHERE status='shadow')`,
-		community.FloodMinVotes).Scan(&c.Reports, &c.ReportsOverdue, &c.Danmaku, &c.Reviews, &c.RatingFloods, &c.Comments)
+		(SELECT count(*) FROM comments WHERE status='shadow'),
+		(SELECT count(*) FROM clips WHERE title_status='shadow' AND status<>'deleted')`,
+		community.FloodMinVotes).Scan(&c.Reports, &c.ReportsOverdue, &c.Danmaku, &c.Reviews, &c.RatingFloods, &c.Comments, &c.Clips)
 	return c, err
 }
 
@@ -127,6 +138,22 @@ type QueuedComment struct {
 	EditedAt *time.Time `json:"edited_at"`
 }
 
+// QueuedClip is a clip in the 待审片段 queue (its title is shadowed).
+type QueuedClip struct {
+	ID          int64     `json:"id"`
+	PublicID    string    `json:"public_id"`
+	ReleaseID   int64     `json:"release_id"`
+	ReleaseSlug string    `json:"release_slug"`
+	UserID      int64     `json:"user_id"`
+	StartMs     int       `json:"start_ms"`
+	EndMs       int       `json:"end_ms"`
+	Title       string    `json:"title"`
+	TitleStatus string    `json:"title_status"`
+	Status      string    `json:"status"`
+	OpenReports int       `json:"open_reports"`
+	CreatedAt   time.Time `json:"created_at"`
+}
+
 // QueuedReview is a review in the moderation queue.
 type QueuedReview struct {
 	ID          int64     `json:"id"`
@@ -169,6 +196,7 @@ func queueNext(offset, limit, got int) string {
 //     review the busiest moments first), then oldest;
 //   - reviews: shadowed reviews, oldest first;
 //   - comments: shadowed comments, oldest first;
+//   - clips: clips with a shadowed title (not deleted), oldest first;
 //   - rating_floods: suspected floods, largest first.
 func (s *Store) ModerationQueue(ctx context.Context, f QueueFilter) (any, string, error) {
 	limit := f.Limit
@@ -281,6 +309,29 @@ func (s *Store) ModerationQueue(ctx context.Context, f QueueFilter) (any, string
 		}
 		next := queueNext(offset, limit, len(items))
 		return nonNil(items[:min(len(items), limit)]), next, nil
+	case QueueClips:
+		status, err := clipTitleStatus(f.Status)
+		if err != nil {
+			return nil, "", err
+		}
+		rows, err := s.Query(ctx, `SELECT c.id,c.public_id,c.release_id,r.slug,c.user_id,c.start_ms,c.end_ms,c.title,c.title_status,c.status,
+				(SELECT count(*) FROM reports p WHERE p.target_type='clip' AND p.target_id=c.id AND p.status='open'),
+				c.created_at
+			FROM clips c JOIN releases r ON r.id=c.release_id WHERE c.title_status=$1 AND c.status<>'deleted'
+			ORDER BY c.created_at, c.id LIMIT $2 OFFSET $3`, status, limit+1, offset)
+		if err != nil {
+			return nil, "", err
+		}
+		items, err := pgx.CollectRows(rows, func(r pgx.CollectableRow) (QueuedClip, error) {
+			var x QueuedClip
+			return x, r.Scan(&x.ID, &x.PublicID, &x.ReleaseID, &x.ReleaseSlug, &x.UserID, &x.StartMs, &x.EndMs, &x.Title, &x.TitleStatus, &x.Status,
+				&x.OpenReports, &x.CreatedAt)
+		})
+		if err != nil {
+			return nil, "", err
+		}
+		next := queueNext(offset, limit, len(items))
+		return nonNil(items[:min(len(items), limit)]), next, nil
 	case QueueRatingFloods:
 		rows, err := s.Query(ctx, `SELECT f.release_id,r.slug,f.score,f.window_start,f.votes,f.anonymous
 			FROM (`+ratingFloodSQL+`) f JOIN releases r ON r.id=f.release_id
@@ -313,6 +364,17 @@ func contentStatus(s string) (string, error) {
 	return "", invalidQuery("status must be shadow, visible, folded or deleted")
 }
 
+// clipTitleStatus is the 待审片段 filter: shadow (default), visible or removed.
+func clipTitleStatus(s string) (string, error) {
+	switch s {
+	case "":
+		return ClipTitleShadow, nil
+	case ClipTitleShadow, ClipTitleVisible, ClipTitleRemoved:
+		return s, nil
+	}
+	return "", invalidQuery("status must be shadow, visible or removed")
+}
+
 func nonNil[T any](s []T) []T {
 	if s == nil {
 		return []T{}
@@ -336,7 +398,7 @@ func (s *Store) reportTarget(ctx context.Context, targetType string, id int64) a
 				'edited_at',c.edited_at,'edits',(SELECT count(*) FROM comment_edits e WHERE e.comment_id=c.id))
 			FROM comments c JOIN releases r ON r.id=c.release_id WHERE c.id=$1`
 	case "clip":
-		q = `SELECT json_build_object('body',c.title,'status',c.status,'user_id',c.user_id,'public_id',c.public_id,'start_ms',c.start_ms,'end_ms',c.end_ms,'release_slug',r.slug)
+		q = `SELECT json_build_object('body',c.title,'title_status',c.title_status,'status',c.status,'user_id',c.user_id,'public_id',c.public_id,'start_ms',c.start_ms,'end_ms',c.end_ms,'release_slug',r.slug)
 			FROM clips c JOIN releases r ON r.id=c.release_id WHERE c.id=$1`
 	case "rating":
 		q = `SELECT json_build_object('score',a.score,'status',a.status,'weight',a.weight,'release_slug',r.slug)
@@ -379,6 +441,9 @@ type ModerationResult struct {
 	ReportsResolved int64      `json:"reports_resolved"`
 	MutedUntil      *time.Time `json:"muted_until,omitempty"`
 	EventID         int64      `json:"event_id"`
+	// Clips: the title status before and after (visible | shadow | removed).
+	TitleBefore string `json:"title_status_before,omitempty"`
+	TitleAfter  string `json:"title_status,omitempty"`
 }
 
 func insertEvent(ctx context.Context, q dbtx, entityType string, entityID int64, action string, before, after any, reason, actor string) (int64, error) {
@@ -400,7 +465,8 @@ func jsonOrNil(v any) []byte {
 
 // Moderate applies a PRD 5.5 action: fold (spoiler), delete, delete + mute
 // N days, approve. On ratings, delete strikes the vote and approve restores
-// it. Open reports on the target are closed (approve dismisses them, other
+// it. On clips, approve also publishes a shadowed title and remove_title
+// clears the title (the clip stays). Open reports on the target are closed (approve dismisses them, other
 // actions resolve them) and the curve of the release is queued.
 func (s *Store) Moderate(ctx context.Context, a ModerationAction) (ModerationResult, error) {
 	res := ModerationResult{TargetType: a.TargetType, ID: a.ID}
@@ -412,13 +478,43 @@ func (s *Store) Moderate(ctx context.Context, a ModerationAction) (ModerationRes
 
 	var userID *int64
 	var releaseID int64
+	evBefore := map[string]any{}
 	switch a.TargetType {
-	case "danmaku", "review", "comment", "clip":
+	case "clip":
+		// Clips: the content actions plus remove_title; approve also
+		// publishes a shadowed title. review_events keeps the old title.
+		var uid int64
+		var title string
+		if err = tx.QueryRow(ctx, `SELECT status,title,title_status,user_id,release_id FROM clips WHERE id=$1 FOR UPDATE`, a.ID).
+			Scan(&res.Before, &title, &res.TitleBefore, &uid, &releaseID); err != nil {
+			return res, err
+		}
+		userID = &uid
+		evBefore["title"], evBefore["title_status"] = title, res.TitleBefore
+		res.TitleAfter = res.TitleBefore
+		if a.Action == community.ActionRemoveTitle {
+			res.After, res.TitleAfter = res.Before, ClipTitleRemoved
+			_, err = tx.Exec(ctx, `UPDATE clips SET title='',title_status=$2,updated_at=now() WHERE id=$1`, a.ID, ClipTitleRemoved)
+		} else {
+			after, ok := community.ActionStatus(a.Action)
+			if !ok {
+				return res, ErrInvalidAction
+			}
+			res.After = after
+			if a.Action == community.ActionApprove && res.TitleBefore == ClipTitleShadow {
+				res.TitleAfter = ClipTitleVisible
+			}
+			_, err = tx.Exec(ctx, `UPDATE clips SET status=$2,title_status=$3,updated_at=now() WHERE id=$1`, a.ID, after, res.TitleAfter)
+		}
+		if err != nil {
+			return res, err
+		}
+	case "danmaku", "review", "comment":
 		after, ok := community.ActionStatus(a.Action)
 		if !ok {
 			return res, ErrInvalidAction
 		}
-		table := map[string]string{"danmaku": "danmaku", "review": "reviews", "comment": "comments", "clip": "clips"}[a.TargetType]
+		table := map[string]string{"danmaku": "danmaku", "review": "reviews", "comment": "comments"}[a.TargetType]
 		var uid int64
 		if err = tx.QueryRow(ctx, `SELECT status,user_id,release_id FROM `+table+` WHERE id=$1 FOR UPDATE`, a.ID).Scan(&res.Before, &uid, &releaseID); err != nil {
 			return res, err
@@ -489,8 +585,12 @@ func (s *Store) Moderate(ctx context.Context, a ModerationAction) (ModerationRes
 		after["muted_until"] = res.MutedUntil
 		after["user_id"] = *userID
 	}
+	if res.TitleAfter != "" {
+		after["title_status"] = res.TitleAfter
+	}
+	evBefore["status"] = res.Before
 	if res.EventID, err = insertEvent(ctx, tx, a.TargetType, a.ID, "moderation."+a.Action,
-		map[string]any{"status": res.Before}, after, a.Reason, a.Actor); err != nil {
+		evBefore, after, a.Reason, a.Actor); err != nil {
 		return res, err
 	}
 	return res, tx.Commit(ctx)

@@ -71,8 +71,10 @@ const (
 	ActionDelete     = "delete"
 	ActionDeleteMute = "delete_mute"
 	ActionApprove    = "approve"
-	MaxMuteDays      = 365
-	DefaultMuteDays  = 7
+	// ActionRemoveTitle (clips only): clear a clip's title, keep the clip.
+	ActionRemoveTitle = "remove_title"
+	MaxMuteDays       = 365
+	DefaultMuteDays   = 7
 )
 
 // ActionStatus is the content status a moderation action leads to.

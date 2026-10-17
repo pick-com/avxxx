@@ -126,6 +126,8 @@ export default function ClipPage() {
         />
         <div className="video-head">
           <h1 className="video-title">{clipName(c)}</h1>
+          {c.mine && c.title_status === 'shadow' && <p className="field-hint">{t('clip.titleShadow')}</p>}
+          {c.mine && c.title_status === 'removed' && <p className="field-hint">{t('clip.titleRemovedByMod')}</p>}
           <p className="muted clip-meta">
             {[t('clip.span', {span: span(c), n: Math.round(end - start)}), c.author_name && t('clip.by', {name: c.author_name})].filter(Boolean).join(' · ')}
           </p>

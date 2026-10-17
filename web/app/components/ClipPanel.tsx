@@ -34,7 +34,7 @@ export function ClipPanel({open, onClose, container, video, duration, slug, sign
   const [title, setTitle] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
-  const [made, setMade] = useState<{clip: Clip; titleRemoved: boolean} | null>(null);
+  const [made, setMade] = useState<{clip: Clip; titlePending: boolean} | null>(null);
   const [message, setMessage] = useState('');
   const trackRef = useRef<HTMLDivElement>(null);
   const drag = useRef<{which: 'start' | 'end'; id: number; win: ClipRange} | null>(null);
@@ -136,7 +136,7 @@ export function ClipPanel({open, onClose, container, video, duration, slug, sign
     setError('');
     try {
       const out = await createClip(slug, range, title);
-      setMade({clip: out.clip, titleRemoved: out.title_removed});
+      setMade({clip: out.clip, titlePending: out.title_pending});
     } catch (e) {
       setError(e instanceof ApiError && e.status === 429 ? t('clip.rateLimited') : e instanceof Error ? e.message : String(e));
     } finally {
@@ -184,7 +184,7 @@ export function ClipPanel({open, onClose, container, video, duration, slug, sign
         {made ? (
           <div className="share-sheet">
             <p className="clip-done">{t('clip.created', {from: clock1(made.clip.start_ms / 1000), to: clock1(made.clip.end_ms / 1000)})}</p>
-            {made.titleRemoved && <p className="field-hint">{t('clip.titleRemoved')}</p>}
+            {made.titlePending && <p className="field-hint">{t('clip.titlePending')}</p>}
             <label className="sr-only" htmlFor="clip-url">
               {t('share.link')}
             </label>

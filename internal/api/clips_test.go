@@ -1,6 +1,7 @@
 package api
 
 import (
+	"avxxx/internal/community"
 	"avxxx/internal/store"
 	"context"
 	"encoding/json"
@@ -22,7 +23,7 @@ type stubClips struct {
 
 const stubClipID = "abcdefghij"
 
-func (s *stubClips) CreateClip(_ context.Context, _ int64, in store.ClipInput, status string) (store.Clip, error) {
+func (s *stubClips) CreateClip(_ context.Context, _ int64, in store.ClipInput, titleStatus string) (store.Clip, error) {
 	s.calls = append(s.calls, "Create")
 	if in.Release != "abc-1" {
 		return store.Clip{}, pgx.ErrNoRows
@@ -31,7 +32,7 @@ func (s *stubClips) CreateClip(_ context.Context, _ int64, in store.ClipInput, s
 		return store.Clip{}, err
 	}
 	s.created = append(s.created, in)
-	return store.Clip{ID: stubClipID, ReleaseSlug: in.Release, StartMs: in.StartMs, EndMs: in.EndMs, Title: in.Title, Status: status, Mine: true}, nil
+	return store.Clip{ID: stubClipID, ReleaseSlug: in.Release, StartMs: in.StartMs, EndMs: in.EndMs, Title: in.Title, Status: "visible", TitleStatus: titleStatus, Mine: true}, nil
 }
 
 func (s *stubClips) ClipByPublicID(_ context.Context, id string, viewer int64) (store.Clip, error) {
@@ -122,16 +123,47 @@ func TestCreateClipTrimsTitle(t *testing.T) {
 	}
 	var out struct {
 		Clip         store.Clip `json:"clip"`
-		TitleRemoved bool       `json:"title_removed"`
+		TitlePending bool       `json:"title_pending"`
 	}
 	if err := json.Unmarshal(rec.Body.Bytes(), &out); err != nil {
 		t.Fatal(err)
 	}
-	if out.Clip.Title != "名场面" || out.Clip.ID != stubClipID || out.Clip.Status != "visible" || out.TitleRemoved {
-		t.Errorf("clip = %+v removed=%v", out.Clip, out.TitleRemoved)
+	if out.Clip.Title != "名场面" || out.Clip.ID != stubClipID || out.Clip.Status != "visible" || out.Clip.TitleStatus != "visible" || out.TitlePending {
+		t.Errorf("clip = %+v pending=%v", out.Clip, out.TitlePending)
 	}
 	if strings.Contains(rec.Body.String(), `"RowID"`) || strings.Contains(rec.Body.String(), `"row_id"`) {
 		t.Error("internal id leaked")
+	}
+}
+
+// A keyword hit keeps the title but shadows it (author only, 待审片段);
+// a clean title, or none, is visible.
+func TestCreateClipShadowsKeywordTitle(t *testing.T) {
+	for _, tc := range []struct {
+		title, want string
+		pending     bool
+	}{
+		{"加微信看全集", "shadow", true},
+		{"名场面", "visible", false},
+		{"", "visible", false},
+	} {
+		c := &stubClips{}
+		srv := &Server{accounts: &stubAccounts{}, clips: c, community: &stubCommunity{words: []community.Keyword{{Word: "加微信", Category: "ad"}}}}
+		mux := http.NewServeMux()
+		for _, rt := range srv.routes() {
+			mux.HandleFunc(rt.pattern, rt.handler)
+		}
+		rec := do(mux, "POST", "/api/me/clips", "good", `{"release":"abc-1","start_ms":1000,"end_ms":16000,"title":"`+tc.title+`"}`)
+		var out struct {
+			Clip         store.Clip `json:"clip"`
+			TitlePending bool       `json:"title_pending"`
+		}
+		if err := json.Unmarshal(rec.Body.Bytes(), &out); err != nil || rec.Code != http.StatusCreated {
+			t.Fatalf("%q: %d %s", tc.title, rec.Code, rec.Body)
+		}
+		if out.Clip.Title != tc.title || out.Clip.TitleStatus != tc.want || out.TitlePending != tc.pending {
+			t.Errorf("%q: clip %+v pending=%v, want %s", tc.title, out.Clip, out.TitlePending, tc.want)
+		}
 	}
 }
 

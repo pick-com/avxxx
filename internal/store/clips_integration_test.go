@@ -6,6 +6,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"strings"
 	"testing"
 
 	"github.com/jackc/pgx/v5"
@@ -90,8 +91,33 @@ func TestClipsIntegration(t *testing.T) {
 	if _, err := s.ClipByPublicID(ctx, draftClip, alice); !errors.Is(err, pgx.ErrNoRows) {
 		t.Errorf("clip of a draft release: %v", err)
 	}
-	// Shadow: author only.
-	sh, err := s.CreateClip(ctx, bob, ClipInput{Release: "src", StartMs: 0, EndMs: 9000}, "shadow")
+	// A shadowed title (keyword hit, migration 055): the clip is public, the
+	// title reaches its author only; TitleStatus is never told to others.
+	sh, err := s.CreateClip(ctx, bob, ClipInput{Release: "src", StartMs: 0, EndMs: 9000, Title: "加微信 SHADOW-TITLE"}, ClipTitleShadow)
+	must(err)
+	if sh.Title == "" || sh.TitleStatus != ClipTitleShadow || sh.Status != "visible" {
+		t.Errorf("created %+v", sh)
+	}
+	for _, viewer := range []int64{0, alice} {
+		got, err := s.ClipByPublicID(ctx, sh.ID, viewer)
+		if err != nil || got.Title != "" || got.TitleStatus != "" {
+			t.Errorf("viewer %d sees %+v, %v", viewer, got, err)
+		}
+	}
+	if got, err := s.ClipByPublicID(ctx, sh.ID, bob); err != nil || got.Title != "加微信 SHADOW-TITLE" || got.TitleStatus != ClipTitleShadow {
+		t.Errorf("author sees %+v, %v", got, err)
+	}
+	if _, err := s.CreateClip(ctx, bob, ClipInput{Release: "src", StartMs: 0, EndMs: 9000, Title: "x"}, "removed"); err == nil {
+		t.Error("created with title status removed")
+	}
+	if got, err := s.CreateClip(ctx, bob, ClipInput{Release: "src", StartMs: 0, EndMs: 9000}, ClipTitleShadow); err != nil || got.TitleStatus != ClipTitleVisible {
+		t.Errorf("untitled clip with shadow status: %+v, %v", got, err)
+	} else {
+		must(s.DeleteClip(ctx, bob, got.ID))
+	}
+
+	// A shadowed clip (status shadow): author only.
+	_, err = s.Exec(ctx, `UPDATE clips SET status='shadow' WHERE id=$1`, sh.RowID)
 	must(err)
 	if _, err := s.ClipByPublicID(ctx, sh.ID, alice); !errors.Is(err, pgx.ErrNoRows) {
 		t.Errorf("shadow clip visible to others: %v", err)
@@ -121,6 +147,60 @@ func TestClipsIntegration(t *testing.T) {
 		t.Errorf("moderated clip still served: %v", err)
 	}
 
+	// 待审片段: clips with a shadowed title, oldest first; approve publishes
+	// the title, remove_title clears it (review_events keeps the old text).
+	ok1, err := s.CreateClip(ctx, alice, ClipInput{Release: "runtime", StartMs: 0, EndMs: 9000, Title: "审核通过的标题"}, ClipTitleShadow)
+	must(err)
+	rm, err := s.CreateClip(ctx, alice, ClipInput{Release: "runtime", StartMs: 10_000, EndMs: 19_000, Title: "要移除的标题"}, ClipTitleShadow)
+	must(err)
+	counts, err := s.ModerationCounts(ctx)
+	must(err)
+	if counts.Clips != 3 { // sh (a shadowed clip with a shadowed title), ok1, rm
+		t.Errorf("clips queue count = %d", counts.Clips)
+	}
+	queue := func(status string) []QueuedClip {
+		t.Helper()
+		v, _, err := s.ModerationQueue(ctx, QueueFilter{Kind: QueueClips, Status: status})
+		must(err)
+		return v.([]QueuedClip)
+	}
+	if q := queue(""); len(q) != counts.Clips || q[len(q)-1].ID != rm.RowID || q[len(q)-1].Title != "要移除的标题" || q[len(q)-1].PublicID != rm.ID {
+		t.Errorf("shadow queue %+v (count %d)", q, counts.Clips)
+	}
+	if _, _, err := s.ModerationQueue(ctx, QueueFilter{Kind: QueueClips, Status: "folded"}); err == nil {
+		t.Error("bad clips filter accepted")
+	}
+	res, err = s.Moderate(ctx, ModerationAction{TargetType: "clip", ID: ok1.RowID, Action: community.ActionApprove, Actor: "mod"})
+	must(err)
+	if res.TitleBefore != ClipTitleShadow || res.TitleAfter != ClipTitleVisible || res.After != "visible" {
+		t.Errorf("approve %+v", res)
+	}
+	if got, _ := s.ClipByPublicID(ctx, ok1.ID, bob); got.Title != "审核通过的标题" {
+		t.Errorf("approved title not public: %+v", got)
+	}
+	res, err = s.Moderate(ctx, ModerationAction{TargetType: "clip", ID: rm.RowID, Action: community.ActionRemoveTitle, Reason: "ad", Actor: "mod"})
+	must(err)
+	if res.TitleAfter != ClipTitleRemoved || res.Before != "visible" || res.After != "visible" || res.EventID == 0 {
+		t.Errorf("remove_title %+v", res)
+	}
+	if got, err := s.ClipByPublicID(ctx, rm.ID, alice); err != nil || got.Title != "" || got.TitleStatus != ClipTitleRemoved {
+		t.Errorf("author after remove_title: %+v, %v", got, err)
+	}
+	if got, err := s.ClipByPublicID(ctx, rm.ID, bob); err != nil || got.Title != "" {
+		t.Errorf("others after remove_title: %+v, %v", got, err)
+	}
+	var evBefore, evAfter map[string]any
+	must(s.QueryRow(ctx, `SELECT before_value,after_value FROM review_events WHERE id=$1`, res.EventID).Scan(&evBefore, &evAfter))
+	if evBefore["title"] != "要移除的标题" || evBefore["title_status"] != "shadow" || evAfter["title_status"] != "removed" {
+		t.Errorf("review event %v -> %v", evBefore, evAfter)
+	}
+	if q := queue("removed"); len(q) != 1 || q[0].ID != rm.RowID {
+		t.Errorf("removed filter %+v", q)
+	}
+	if q := queue(""); len(q) != counts.Clips-2 {
+		t.Errorf("shadow queue after review: %+v", q)
+	}
+
 	// Account export lists the author's clips only.
 	var buf bytes.Buffer
 	must(s.WriteDataExport(ctx, alice, &buf))
@@ -128,8 +208,8 @@ func TestClipsIntegration(t *testing.T) {
 	must(json.Unmarshal(buf.Bytes(), &export))
 	var clips []map[string]any
 	must(json.Unmarshal(export["clips"], &clips))
-	if len(clips) != 4 { // src (deleted by a moderator), runtime, unknown, draft
-		t.Errorf("exported clips = %d, want 4: %s", len(clips), export["clips"])
+	if len(clips) != 6 { // src (deleted by a moderator), runtime, unknown, draft, ok1, rm
+		t.Errorf("exported clips = %d, want 6: %s", len(clips), export["clips"])
 	}
 
 	// 我的片段: newest first, one per page; the moderator-deleted clip and
@@ -143,7 +223,7 @@ func TestClipsIntegration(t *testing.T) {
 			if !x.Mine || x.ReleaseID == 0 || x.ReleaseTitle == "" {
 				t.Errorf("my clip %+v", x)
 			}
-			seen = append(seen, x.ReleaseSlug)
+			seen = append(seen, x.ReleaseSlug+"/"+x.TitleStatus)
 		}
 		if next == "" {
 			break
@@ -155,8 +235,8 @@ func TestClipsIntegration(t *testing.T) {
 			t.Fatal("pagination does not end")
 		}
 	}
-	if len(seen) != 2 || seen[0] != "unknown" || seen[1] != "runtime" {
-		t.Errorf("alice's clips = %v, want [unknown runtime]", seen)
+	if want := "runtime/removed runtime/visible unknown/visible runtime/visible"; strings.Join(seen, " ") != want {
+		t.Errorf("alice's clips = %v, want %s", seen, want)
 	}
 	if items, _, err := s.MyClips(ctx, bob, nil, 0); err != nil || len(items) != 1 || items[0].ID != sh.ID {
 		t.Errorf("bob's clips = %+v, %v", items, err)

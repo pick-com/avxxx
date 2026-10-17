@@ -406,6 +406,40 @@ func TestCommunityWritesRequireUser(t *testing.T) {
 	}
 }
 
+// TestClipModerationRoutes: the 待审片段 queue and the clip actions,
+// including remove_title (clips only, no mute days).
+func TestClipModerationRoutes(t *testing.T) {
+	m := &stubModeration{}
+	h := newCommunityServer(&stubCommunity{}, m, nil)
+	admin := adminAs("alice")
+	for _, tc := range []struct {
+		method, path, body string
+		want               int
+	}{
+		{"GET", "/api/admin/moderation/queue?kind=clips", "", 200},
+		{"GET", "/api/admin/moderation/queue?kind=clips&status=removed", "", 200},
+		{"POST", "/api/admin/moderation/clips/5/action", `{"action":"remove_title","reason":"ad"}`, 200},
+		{"POST", "/api/admin/moderation/clips/5/action", `{"action":"approve"}`, 200},
+		{"POST", "/api/admin/moderation/clips/5/action", `{"action":"delete"}`, 200},
+		{"POST", "/api/admin/moderation/clips/5/action", `{"action":"remove_title","mute_days":3}`, 400},
+		{"POST", "/api/admin/moderation/comments/5/action", `{"action":"remove_title"}`, 400},
+		{"POST", "/api/admin/moderation/ratings/5/action", `{"action":"remove_title"}`, 400},
+	} {
+		if rec := doH(h, tc.method, tc.path, tc.body, admin); rec.Code != tc.want {
+			t.Errorf("%s %s %s: %d, want %d (%s)", tc.method, tc.path, tc.body, rec.Code, tc.want, rec.Body)
+		}
+	}
+	if len(m.actions) != 3 {
+		t.Fatalf("actions %+v", m.actions)
+	}
+	if a := m.actions[0]; a.TargetType != "clip" || a.Action != "remove_title" || a.ID != 5 || a.Actor != "alice" || a.Reason != "ad" {
+		t.Errorf("action %+v", a)
+	}
+	if rec := doH(h, "GET", "/api/admin/moderation/queue", "", admin); !strings.Contains(rec.Body.String(), `"clips":{`) {
+		t.Errorf("overview lacks the clips queue: %s", rec.Body)
+	}
+}
+
 func TestModerationRoutes(t *testing.T) {
 	m := &stubModeration{}
 	h := newCommunityServer(&stubCommunity{}, m, nil)

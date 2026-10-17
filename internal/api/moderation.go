@@ -89,7 +89,7 @@ func (srv *Server) withModeration(w http.ResponseWriter, r *http.Request) (strin
 	return actor, true
 }
 
-// moderationQueue: GET /api/admin/moderation/queue?kind=reports|danmaku|reviews|rating_floods&status=&limit=&cursor=.
+// moderationQueue: GET /api/admin/moderation/queue?kind=reports|danmaku|reviews|rating_floods|comments|clips&status=&limit=&cursor=.
 // Without kind: the counts of every queue plus the first page of each.
 func (srv *Server) moderationQueue(w http.ResponseWriter, r *http.Request) {
 	if _, ok := srv.withModeration(w, r); !ok {
@@ -110,7 +110,7 @@ func (srv *Server) moderationQueue(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		out := map[string]any{"counts": counts}
-		for _, k := range []string{store.QueueReports, store.QueueDanmaku, store.QueueReviews, store.QueueRatingFloods, store.QueueComments} {
+		for _, k := range store.QueueKinds {
 			items, next, err := srv.moderation.ModerationQueue(ctx, store.QueueFilter{Kind: k, Limit: limit})
 			if err != nil {
 				reply(w, nil, err)
@@ -122,7 +122,7 @@ func (srv *Server) moderationQueue(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if !store.ValidQueueKind(kind) {
-		reply(w, nil, badRequest("kind must be reports, danmaku, reviews, rating_floods or comments", nil))
+		reply(w, nil, badRequest("kind must be reports, danmaku, reviews, rating_floods, comments or clips", nil))
 		return
 	}
 	items, next, err := srv.moderation.ModerationQueue(ctx, store.QueueFilter{
@@ -131,8 +131,9 @@ func (srv *Server) moderationQueue(w http.ResponseWriter, r *http.Request) {
 	reply(w, page(items, next), err)
 }
 
-// moderate: POST /api/admin/moderation/{danmaku|reviews|comments|ratings}/{id}/action
-// {"action": "fold|delete|delete_mute|approve", "mute_days"?, "reason"?}.
+// moderate: POST /api/admin/moderation/{danmaku|reviews|comments|clips|ratings}/{id}/action
+// {"action": "fold|delete|delete_mute|approve", "mute_days"?, "reason"?};
+// clips also take "remove_title" (clear the title, keep the clip).
 func (srv *Server) moderate(targetType string) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		actor, ok := srv.withModeration(w, r)
@@ -173,6 +174,12 @@ func validAction(targetType, action string, muteDays int) error {
 	if targetType == "rating" {
 		if action != community.ActionDelete && action != community.ActionApprove {
 			return badRequest("action must be delete or approve", nil)
+		}
+		return nil
+	}
+	if targetType == "clip" && action == community.ActionRemoveTitle {
+		if muteDays != 0 {
+			return badRequest("mute_days only applies to delete_mute", nil)
 		}
 		return nil
 	}

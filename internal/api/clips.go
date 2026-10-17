@@ -48,8 +48,9 @@ func (srv *Server) withClips(h http.HandlerFunc) http.HandlerFunc {
 }
 
 // createClip: POST /api/me/clips {"release": slug, "start_ms", "end_ms", "title"?}.
-// A title with a moderation keyword is dropped (the clip stays shareable
-// without it; "title_removed": true says so).
+// A title with a moderation keyword is shadowed: the clip is shared as
+// usual, but only its author sees the title until a moderator approves or
+// removes it (待审片段); "title_pending": true says so.
 func (srv *Server) createClip(w http.ResponseWriter, r *http.Request, uid int64) {
 	var in store.ClipInput
 	if err := readJSON(r, &in, false); err != nil {
@@ -69,7 +70,7 @@ func (srv *Server) createClip(w http.ResponseWriter, r *http.Request, uid int64)
 		reply(w, nil, err)
 		return
 	}
-	removed := false
+	titleStatus := store.ClipTitleVisible
 	if srv.community != nil {
 		if _, err := srv.allowPost(r.Context(), "clip", uid); err != nil {
 			reply(w, nil, err)
@@ -82,17 +83,17 @@ func (srv *Server) createClip(w http.ResponseWriter, r *http.Request, uid int64)
 				return
 			}
 			if status != community.StatusVisible {
-				title, removed = "", true
+				titleStatus = store.ClipTitleShadow
 			}
 		}
 	}
 	in.Title = title
-	c, err := srv.clips.CreateClip(r.Context(), uid, in, community.StatusVisible)
+	c, err := srv.clips.CreateClip(r.Context(), uid, in, titleStatus)
 	if err != nil {
 		reply(w, nil, err)
 		return
 	}
-	replyStatus(w, http.StatusCreated, map[string]any{"clip": c, "title_removed": removed})
+	replyStatus(w, http.StatusCreated, map[string]any{"clip": c, "title_pending": c.TitleStatus == store.ClipTitleShadow})
 }
 
 // myClips: GET /api/me/clips?cursor=&limit=, the caller's clips newest
