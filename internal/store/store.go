@@ -649,8 +649,12 @@ func (s *Store) SaveCatalogRecord(ctx context.Context, sourceID int64, parserVer
 		}
 		maker, _ := rec.Fields["maker"].(string)
 		director, _ := rec.Fields["director"].(string)
+		// The insert only seeds a new row. Every save then sets the canonical
+		// columns (director_name, label_name, release_date, ...) from the
+		// winning source in applyFieldPolicy below; an empty director seeds
+		// NULL, not ''.
 		err = tx.QueryRow(ctx, `INSERT INTO releases(slug,canonical_title,release_date,maker_name,director_name)
-			VALUES($1,$2,$3,$4,$5) ON CONFLICT(slug) DO UPDATE SET `+releaseIngestUpdate+`,updated_at=now() RETURNING id`, slug, title, date, maker, director).Scan(&id)
+			VALUES($1,$2,$3,$4,NULLIF($5,'')) ON CONFLICT(slug) DO UPDATE SET `+releaseIngestUpdate+`,updated_at=now() RETURNING id`, slug, title, date, maker, director).Scan(&id)
 		if err != nil {
 			return 0, err
 		}
