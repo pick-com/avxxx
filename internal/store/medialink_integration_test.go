@@ -310,7 +310,7 @@ func TestMediaLinkIntegration(t *testing.T) {
 
 	t.Setenv("MEDIA_LINK_ON_DEMAND", "false")
 	offline := api.New(s, mh)
-	if status, _ = linkHTTP(t, offline, "GET", fmt.Sprintf("/api/releases/ml-%s-9/playback?source=%s", sfx, prov), ""); status != 404 || od.count() != 0 {
+	if status, out = linkHTTP(t, offline, "GET", fmt.Sprintf("/api/releases/ml-%s-9/playback?source=%s", sfx, prov), ""); status != 200 || out["available"] != false || od.count() != 0 {
 		t.Fatalf("offline only: %d, %d searches", status, od.count())
 	}
 	if a, _ := s.MediaLinkAttempt(ctx, r9, prov); a != nil {
@@ -320,23 +320,27 @@ func TestMediaLinkIntegration(t *testing.T) {
 	t.Setenv("MEDIA_LINK_ON_DEMAND", "true")
 	online := api.New(s, mh)
 	// The provider is still backing off after the 429: no on-demand search.
-	if status, _ = linkHTTP(t, online, "GET", fmt.Sprintf("/api/releases/ml-%s-9/playback?source=%s", sfx, prov), ""); status != 404 || od.count() != 0 {
+	if status, out = linkHTTP(t, online, "GET", fmt.Sprintf("/api/releases/ml-%s-9/playback?source=%s", sfx, prov), ""); status != 200 || out["available"] != false || od.count() != 0 {
 		t.Fatalf("on-demand during provider backoff: %d, %d searches", status, od.count())
 	}
 	if _, err := s.Exec(ctx, `DELETE FROM nightly_runs WHERE job=$1`, medialink.JobKind+"."+prov); err != nil {
 		t.Fatal(err)
 	}
 	status, out = linkHTTP(t, online, "GET", fmt.Sprintf("/api/releases/ml-%s-9/playback?source=%s", sfx, prov), "")
-	if status != 200 || out["source_key"] != "video/9/"+code(9) {
+	if status != 200 || out["available"] != true || out["source_key"] != "video/9/"+code(9) {
 		t.Fatalf("on-demand link %d %v", status, out)
 	}
 	if a, _ := s.MediaLinkAttempt(ctx, r9, prov); a == nil || a.Status != "found" {
 		t.Fatalf("on-demand attempt %+v", a)
 	}
 	for range 2 {
-		if status, _ = linkHTTP(t, online, "GET", fmt.Sprintf("/api/releases/ml-%s-10/playback?source=%s", sfx, prov), ""); status != 404 {
+		if status, out = linkHTTP(t, online, "GET", fmt.Sprintf("/api/releases/ml-%s-10/playback?source=%s", sfx, prov), ""); status != 200 || out["available"] != false {
 			t.Fatalf("miss: %d", status)
 		}
+	}
+	// No mapping is 200 available:false; only an unknown release is 404.
+	if status, _ = linkHTTP(t, online, "GET", fmt.Sprintf("/api/releases/ml-%s-nope/playback?source=%s", sfx, prov), ""); status != 404 {
+		t.Fatalf("unknown release: %d, want 404", status)
 	}
 	if a, _ := s.MediaLinkAttempt(ctx, r10, prov); a == nil || a.Status != "not_found" || od.count() != 2 {
 		t.Fatalf("miss attempt %+v after %d searches (want 2: one link, one miss)", a, od.count())

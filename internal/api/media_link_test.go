@@ -4,6 +4,7 @@ import (
 	"avxxx/internal/media"
 	"avxxx/internal/medialink"
 	"context"
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -27,7 +28,10 @@ func (f *fakePlayback) ReleasePlayback(_ context.Context, slug, _ string) (map[s
 	}
 	return map[string]any{"source": "javtiful", "source_key": f.link}, nil
 }
-func (f *fakePlayback) ReleaseCodesForPlayback(context.Context, string) (int64, []string, error) {
+func (f *fakePlayback) ReleaseCodesForPlayback(_ context.Context, slug string) (int64, []string, error) {
+	if slug != "rel" {
+		return 0, nil, pgx.ErrNoRows
+	}
 	return 7, f.codes, nil
 }
 func (f *fakePlayback) MediaLinkAttempt(context.Context, int64, string) (*medialink.Attempt, error) {
@@ -66,9 +70,36 @@ func playbackServer(fp *fakePlayback, prov *fakeProvider, onDemand bool, now tim
 }
 
 func getPlayback(h http.Handler) int {
+	code, _ := getPlaybackBody(h, "rel")
+	return code
+}
+
+// getPlaybackBody returns the status and the decoded "available" flag
+// (nil when the body has none, e.g. an error).
+func getPlaybackBody(h http.Handler, slug string) (int, any) {
 	rec := httptest.NewRecorder()
-	h.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/releases/rel/playback", nil))
-	return rec.Code
+	h.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/releases/"+slug+"/playback", nil))
+	var body map[string]any
+	_ = json.Unmarshal(rec.Body.Bytes(), &body)
+	return rec.Code, body["available"]
+}
+
+// No mapping is a 200 with available:false (no console 404 on no-source
+// pages); only an unknown release is 404.
+func TestPlaybackNoMappingIsNotAnError(t *testing.T) {
+	now := time.Date(2026, 10, 16, 12, 0, 0, 0, time.UTC)
+	fp := &fakePlayback{codes: []string{"abc-001"}}
+	h := playbackServer(fp, &fakeProvider{}, false, now)
+	if code, avail := getPlaybackBody(h, "rel"); code != http.StatusOK || avail != false {
+		t.Fatalf("no mapping: status %d available %v, want 200 false", code, avail)
+	}
+	if code, _ := getPlaybackBody(h, "missing"); code != http.StatusNotFound {
+		t.Fatalf("unknown release: status %d, want 404", code)
+	}
+	fp.link = "video/1/abc-001"
+	if code, avail := getPlaybackBody(h, "rel"); code != http.StatusOK || avail != true {
+		t.Fatalf("mapped: status %d available %v, want 200 true", code, avail)
+	}
 }
 
 func TestPlaybackOnDemandLinks(t *testing.T) {
@@ -95,8 +126,8 @@ func TestPlaybackOnDemandHonorsAttempts(t *testing.T) {
 	h := playbackServer(fp, prov, true, now)
 
 	// Miss: recorded as not_found for 7 days; later views don't search.
-	if code := getPlayback(h); code != http.StatusNotFound {
-		t.Fatalf("status %d, want 404", code)
+	if code, avail := getPlaybackBody(h, "rel"); code != http.StatusOK || avail != false {
+		t.Fatalf("status %d available %v, want 200 false", code, avail)
 	}
 	if prov.calls != 1 || fp.attempt.Status != medialink.StatusNotFound || fp.attempt.NextTryAt.Sub(now) != medialink.NotFoundRetry {
 		t.Fatalf("calls %d attempt %+v", prov.calls, fp.attempt)
@@ -136,8 +167,8 @@ func TestPlaybackOnDemandDisabled(t *testing.T) {
 	fp := &fakePlayback{codes: []string{"juq-743"}}
 	prov := &fakeProvider{items: []media.SearchResult{{ID: "video/59813/juq-743"}}}
 	h := playbackServer(fp, prov, false, now)
-	if code := getPlayback(h); code != http.StatusNotFound {
-		t.Fatalf("status %d, want 404 (offline only)", code)
+	if code, avail := getPlaybackBody(h, "rel"); code != http.StatusOK || avail != false {
+		t.Fatalf("status %d available %v, want 200 false (offline only)", code, avail)
 	}
 	if prov.calls != 0 || fp.recorded != 0 {
 		t.Fatal("MEDIA_LINK_ON_DEMAND=false must not search or record")
