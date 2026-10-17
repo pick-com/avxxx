@@ -205,12 +205,16 @@ func (s *Store) SearchWith(ctx context.Context, q string, limit int, o SearchOpt
 // the same recall as matchCatalog (product codes included), each capped at
 // SearchCountCap so a broad query stays cheap.
 func (s *Store) searchCounts(ctx context.Context, q string) (map[string]int, error) {
+	return s.searchCountsCap(ctx, q, SearchCountCap)
+}
+
+func (s *Store) searchCountsCap(ctx context.Context, q string, limit int) (map[string]int, error) {
 	trgm := s.SearchTrgm(ctx)
-	perf, _ := performerCandidates(q, trgm)
-	rel, _ := releaseCandidates(q, trgm)
-	args := []any{containsPattern(q), q, SearchCountCap}
+	perf, _ := performerCandidates(q, trgm, "$3")
+	rel, _ := releaseCandidates(q, trgm, "$3")
+	args := []any{containsPattern(q), q, limit}
 	if keys := search.CodeKeys(q); keys != nil {
-		rel += ` UNION ALL SELECT r.id,0 FROM release_identifiers ri JOIN releases r ON r.id=ri.release_id
+		rel += ` UNION ALL SELECT r.id,0,r.canonical_title,r.title_ja,r.release_date FROM release_identifiers ri JOIN releases r ON r.id=ri.release_id
 		  WHERE search_code_keys(ri.normalized_value) && $4::text[] AND r.status='published' AND r.merged_into_id IS NULL`
 		args = append(args, keys)
 	}
@@ -320,10 +324,22 @@ func matchLabel(labels []string, how int) string {
 	return "fuzzy"
 }
 
+// fuzzyGuard is the condition under which the trigram (fuzzy) branches of
+// a candidate union run: fewer than cap rows matched the plain ILIKE branch
+// (exactSQL, the union's first, best-ranked branch). With cap or more,
+// every row the fuzzy branches could add ranks below at least cap better
+// rows, so neither the top cap results nor a count capped at cap can
+// change; skipping them saves the costliest scan for broad queries.
+func fuzzyGuard(exactSQL, capArg string) string {
+	return `(SELECT count(*) FROM (` + exactSQL + ` LIMIT ` + capArg + `) g) < ` + capArg
+}
+
 // performerCandidates is the (id, how) candidate union for q ($1 contains
-// pattern, $2 q) and the similarity expression ranking it.
-func performerCandidates(q string, trgm bool) (string, string) {
+// pattern, $2 q) and the similarity expression ranking it. capArg is the
+// parameter holding the result limit (see fuzzyGuard).
+func performerCandidates(q string, trgm bool, capArg string) (string, string) {
 	active := "p.status='active' AND p.merged_into_id IS NULL"
+	exact := `SELECT p.id FROM performers p WHERE ` + active + ` AND (p.canonical_name ILIKE $1 OR p.canonical_name_ja ILIKE $1)`
 	parts := []string{
 		`SELECT p.id,0 how FROM performers p WHERE ` + active + ` AND (p.canonical_name ILIKE $1 OR p.canonical_name_ja ILIKE $1)`,
 		`SELECT p.id,1 FROM performer_aliases a JOIN performers p ON p.id=a.performer_id WHERE ` + active + ` AND a.normalized_name ILIKE $1`,
@@ -332,16 +348,17 @@ func performerCandidates(q string, trgm bool) (string, string) {
 	}
 	sim := "0::real"
 	if fuzzyOK(trgm, q) {
+		guard := fuzzyGuard(exact, capArg)
 		parts = append(parts,
-			`SELECT p.id,3 FROM performers p WHERE `+active+` AND ($2 <% p.canonical_name OR $2 <% p.canonical_name_ja)`,
-			`SELECT p.id,3 FROM performer_aliases a JOIN performers p ON p.id=a.performer_id WHERE `+active+` AND $2 <% a.normalized_name`)
+			`SELECT p.id,3 FROM performers p WHERE `+active+` AND ($2 <% p.canonical_name OR $2 <% p.canonical_name_ja) AND `+guard,
+			`SELECT p.id,3 FROM performer_aliases a JOIN performers p ON p.id=a.performer_id WHERE `+active+` AND $2 <% a.normalized_name AND `+guard)
 		sim = "GREATEST(word_similarity($2,p.canonical_name),word_similarity($2,COALESCE(p.canonical_name_ja,'')))"
 	}
 	return strings.Join(parts, " UNION ALL "), sim
 }
 
 func (s *Store) matchPerformers(ctx context.Context, q string, limit int, trgm bool) ([]map[string]any, error) {
-	cand, sim := performerCandidates(q, trgm)
+	cand, sim := performerCandidates(q, trgm, "$4")
 	sql := `WITH cand AS (` + cand + `), best AS (SELECT id,min(how) how FROM cand GROUP BY id)
 	SELECT p.id,p.slug,p.canonical_name,p.canonical_name_ja,` + PublicBirthDate("p") + `,b.how
 	FROM best b JOIN performers p ON p.id=b.id
@@ -369,32 +386,45 @@ func (s *Store) matchPerformers(ctx context.Context, q string, limit int, trgm b
 	return out, rows.Err()
 }
 
-// releaseCandidates is performerCandidates for published releases.
-func releaseCandidates(q string, trgm bool) (string, string) {
+// releaseCandidates is performerCandidates for published releases. Each row
+// also carries the ranking columns (t title, tj title_ja, d release_date),
+// so matchReleases ranks without joining every candidate back to releases.
+func releaseCandidates(q string, trgm bool, capArg string) (string, string) {
 	pub := "r.status='published' AND r.merged_into_id IS NULL"
+	exact := `SELECT r.id FROM releases r WHERE ` + pub + ` AND (r.canonical_title ILIKE $1 OR r.title_ja ILIKE $1)`
+	cols := "r.canonical_title t,r.title_ja tj,r.release_date d"
 	parts := []string{
-		`SELECT r.id,0 how FROM releases r WHERE ` + pub + ` AND (r.canonical_title ILIKE $1 OR r.title_ja ILIKE $1)`,
-		`SELECT r.id,1 FROM translations t JOIN releases r ON r.id=` + translatedID + ` WHERE t.entity_type='release' AND t.field='title'
+		`SELECT r.id,0 how,` + cols + ` FROM releases r WHERE ` + pub + ` AND (r.canonical_title ILIKE $1 OR r.title_ja ILIKE $1)`,
+		`SELECT r.id,1,` + cols + ` FROM translations t JOIN releases r ON r.id=` + translatedID + ` WHERE t.entity_type='release' AND t.field='title'
 		  AND t.reviewed_value IS NOT NULL AND t.reviewed_value ILIKE $1 AND ` + pub,
 	}
 	sim := "0::real"
 	if fuzzyOK(trgm, q) {
+		guard := fuzzyGuard(exact, capArg)
 		parts = append(parts,
-			`SELECT r.id,2 FROM releases r WHERE `+pub+` AND ($2 <% r.canonical_title OR $2 <% r.title_ja)`,
-			`SELECT r.id,2 FROM translations t JOIN releases r ON r.id=`+translatedID+` WHERE t.entity_type='release' AND t.field='title'
-			  AND t.reviewed_value IS NOT NULL AND $2 <% t.reviewed_value AND `+pub)
-		sim = "GREATEST(word_similarity($2,r.canonical_title),word_similarity($2,COALESCE(r.title_ja,'')))"
+			`SELECT r.id,2,`+cols+` FROM releases r WHERE `+pub+` AND ($2 <% r.canonical_title OR $2 <% r.title_ja) AND `+guard,
+			`SELECT r.id,2,`+cols+` FROM translations t JOIN releases r ON r.id=`+translatedID+` WHERE t.entity_type='release' AND t.field='title'
+			  AND t.reviewed_value IS NOT NULL AND $2 <% t.reviewed_value AND `+pub+` AND `+guard)
+		sim = "GREATEST(word_similarity($2,b.t),word_similarity($2,COALESCE(b.tj,'')))"
 	}
 	return strings.Join(parts, " UNION ALL "), sim
 }
 
+// releaseRankSQL orders ranked release candidates b, best first.
+func releaseRankSQL(sim string) string {
+	return `b.how,(lower(b.t)=$2 OR lower(COALESCE(b.tj,''))=$2) DESC,
+	  (b.t ILIKE $3 OR b.tj ILIKE $3) DESC,` + sim + ` DESC,b.d DESC NULLS LAST,b.id DESC`
+}
+
 func (s *Store) matchReleases(ctx context.Context, q string, limit int, trgm bool) ([]map[string]any, error) {
-	cand, sim := releaseCandidates(q, trgm)
-	sql := `WITH cand AS (` + cand + `), best AS (SELECT id,min(how) how FROM cand GROUP BY id)
+	cand, sim := releaseCandidates(q, trgm, "$4")
+	// Rank on the candidates' own columns; only the page joins releases.
+	sql := `WITH cand AS (` + cand + `),
+	best AS (SELECT id,min(how) how,any_value(t) t,any_value(tj) tj,any_value(d) d FROM cand GROUP BY id),
+	b AS (SELECT * FROM best b ORDER BY ` + releaseRankSQL(sim) + ` LIMIT $4)
 	SELECT r.id,r.slug,r.canonical_title,r.release_date,r.maker_name,r.runtime_minutes::int,b.how
-	FROM best b JOIN releases r ON r.id=b.id
-	ORDER BY b.how,(lower(r.canonical_title)=$2 OR lower(COALESCE(r.title_ja,''))=$2) DESC,
-	  (r.canonical_title ILIKE $3 OR r.title_ja ILIKE $3) DESC,` + sim + ` DESC,r.release_date DESC NULLS LAST,r.id DESC LIMIT $4`
+	FROM b JOIN releases r ON r.id=b.id
+	ORDER BY ` + releaseRankSQL(sim)
 	rows, err := s.Query(ctx, sql, containsPattern(q), q, prefixPattern(q), limit)
 	if err != nil {
 		return nil, err
