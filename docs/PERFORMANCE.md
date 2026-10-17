@@ -161,8 +161,131 @@ because migrations run in one batch at API start.
   rows are built.
 
 The output row counts are unchanged: 322,434 co-watch, 14,748,193 content
-and 2,437,157 performer rows. What remains is writing about 17.5M rows,
-roughly 160 s; see "Remaining risks".
+and 2,437,157 performer rows. The write of those rows, roughly 160 s, is
+now a diff; see "`recs_similarity` write" below.
+
+### `recs_similarity` write
+
+`release_similar` used to be replaced every night: `DELETE` all rows, then
+`COPY` the new ones, in one transaction. At full scale that is about 15M
+deleted plus 15M inserted rows, roughly 160 s of the 230 s, and 15M dead
+rows for autovacuum. Five runs grew the database from 4.4 to 19 GB.
+
+**What changed.**
+
+- **Diff write.** `store.SyncReleaseSimilar` streams the current rows in
+  release order inside the write transaction. `recs.SimilarDiff` plans
+  each release against its new rows. The planned inserts, updates and
+  deletes are copied into a temp table and applied with one `DELETE` and
+  one `INSERT … ON CONFLICT DO UPDATE`. Rows that need no change are not
+  written, so they keep their `computed_at`; nothing reads that column.
+- **Locking.** Locking is the same as before: one transaction with row
+  locks only. Readers see the old set or the new set, never a mix, and
+  are never blocked.
+- **Equivalence.** The table after a diff write is equivalent to a full
+  rewrite of the same rows:
+  - It holds the same pairs.
+  - Every score is within `recs.ReleaseSimilarEpsilon` (1e-3) of the new
+    score.
+  - Each release keeps its neighbour order. If one new score is strictly
+    above another, its stored score is strictly above too, so
+    `ORDER BY score DESC LIMIT n` returns the same rows in the same order,
+    ties aside.
+- **How a row is chosen.** A stored score is kept when it meets both rules
+  above. Otherwise the row gets its new score. If the new score would sit
+  above the previous neighbour's kept score, the row gets the next real
+  below that kept score instead, which is still within 1e-3. At float
+  rounding edges, where neither works, the release is written exactly
+  (`exact_releases` in the report). With an epsilon of 0 the result is
+  bit-identical to a full rewrite.
+- **Autovacuum.** Migration 059 sets `release_similar`'s autovacuum and
+  analyze scale factors to 2% (threshold 10k rows). The default 20% would
+  wait about a week of nights before vacuuming.
+- **Report.** The job report has a new `release_write` field with inserted,
+  updated, deleted, `exact_releases` and `write_ms`.
+
+**Why the epsilon.** Each night's new releases and plays move idf and the
+co-watch norms, so nearly every score changes slightly.
+
+- **Drift.** For one simulated night at 100k releases, the drift between
+  stored and new scores was:
+  - 1e-5 to 1e-4 for 2.9M of the 5.1M rows;
+  - 1e-4 to 1e-3 for 1.9M rows, mostly `maker` and `series`, whose df
+    moves with each new release;
+  - above 1e-3 for 13k rows.
+- **Rows written by epsilon.** Writing only rows that moved more than
+  epsilon, ignoring order, would write:
+
+  | Epsilon | Rows written |
+  |---|---|
+  | 0 | 5.13M |
+  | 1e-5 | 4.81M |
+  | 1e-4 | 1.95M |
+  | 3e-4 | 345k |
+  | 1e-3 | 33k |
+
+  Order repairs add about 100k rows at 1e-3.
+- **What 1e-3 means.** It is a tenth of a match percent on a cosine in
+  [0, 1].
+- **Rejected design.** A first SQL-only version rewrote a whole release
+  exactly whenever tolerated drift would reorder it. That hit 40% of
+  releases every night: 3.2–3.7M rows updated, a 23–26 s write and 1.39 GB
+  after three nights. The per-row repair above replaced it.
+
+**Measured.** The run used `scripts/perf/setup.sh` with 17k performers,
+100k releases and 67k users, giving 5.1M `release_similar` rows.
+
+- **Starting point.** The similarity job ran once with the full rewrite,
+  followed by `VACUUM`. The database was then cloned, once for "before"
+  (full rewrite, default autovacuum) and once for "after" (diff write,
+  migration 059).
+- **Each night.** One night added 100 new releases (0.1%, clones of random
+  ones with their maker, series, tags and cast) and about 2k plays from 1%
+  of users, using the same seed for both clones. The job then ran, and the
+  measurement waited for autovacuum to finish with the table.
+- **Columns.** Rows written is `n_tup_ins + n_tup_upd + n_tup_del` from
+  `pg_stat_user_tables`. Size is `pg_total_relation_size` after
+  autovacuum, starting from 942 MB.
+
+| Night | Write before | Write after | Rows written before | Rows written after (ins / upd / del) | Size before | Size after |
+|---|---|---|---|---|---|---|
+| 1 | 29.3 s | 5.3 s | 10,213,094 | 102,705 (13,753 / 80,803 / 8,149) | 1,571 MB | 950 MB |
+| 2 | 28.0 s | 5.1 s | 10,224,099 | 135,979 (13,118 / 115,144 / 7,717) | 1,575 MB | 959 MB |
+| 3 | 28.9 s | 5.0 s | 10,235,147 | 133,209 (12,749 / 113,358 / 7,102) | 1,578 MB | 962 MB |
+
+- **Job time.** The whole job went from 50–52 s to 27–29 s. The "after"
+  write time includes reading the 5.1M current rows.
+- **Table size.** The full rewrite doubles the table on its first night,
+  because the new copy cannot reuse space that its own transaction still
+  sees. After that it stays at about 1.6 GB only if autovacuum finishes
+  between nights. The diff grew the table by 2% over three nights.
+- **Database size.** The whole database, which also includes the churn and
+  the unchanged `performer_similar` rewrite, ended at 3.69 GB before and
+  3.30 GB after.
+
+**Equivalence checks.**
+
+- **`TestReleaseSimilarDiffIntegration`.** It runs synthetic nights
+  through both paths on the same rows, at epsilon 0 and 1e-3. The nights
+  include drift below and above epsilon, new and vanished pairs, a pair
+  that swaps by less than epsilon, and an exact tie. It checks:
+  - at epsilon 0, a bit-identical table;
+  - at 1e-3, the same pairs, scores within epsilon, the same order and
+    the same recall query results;
+  - counts that match the snapshots, `computed_at` only on written rows,
+    and nothing written on a rerun.
+- **`TestReleaseSimilarJobDiffIntegration`.** It runs the real job twice
+  over a catalog that changes in between, then compares the result with
+  `RewriteReleaseSimilar` of the same job output.
+- **`internal/recs/similar_diff_test.go`.** It runs 200 random releases
+  through 8 nights each at four epsilons, and also covers the order repair
+  and the exact fallback.
+- **At 100k scale.** On the fourth night, the new rows were staged next to
+  the diff write and compared in SQL:
+  - the same 5,125,927 pairs, with none missing and none extra;
+  - a largest drift of 0.00099999;
+  - 0 order violations;
+  - 0 rows whose per-release rank differs.
 
 **`watch_stats`.** `WatchStatsUsers` scans the whole window whatever its
 `LIMIT`, and the runner called it once per 200-user batch: 590 scans for
@@ -203,14 +326,13 @@ it ran out, and every parallel query failed with SQLSTATE 53100.
 
 ### Remaining risks
 
-- **`recs_similarity` writes about 17.5M rows a night.**
-  - It deletes and copies `release_similar`, about 4.4 GB with indexes,
-    plus WAL, in one transaction. Each run leaves 15M dead rows for
-    autovacuum. On this database, five runs grew it from 4.4 to 19 GB.
-  - Total runtime is about 230 s, of which about 70 s is compute; the
-    rest is the write.
-  - Changing that means fewer stored neighbours, a table swap or diff
-    writes. Each changes behaviour or locking, so none is done here.
+- **`recs_similarity` still rewrites `performer_similar` in full.** That is
+  2.4M rows a night at full scale. `release_similar` now writes only what
+  changed; see "`recs_similarity` write". `performer_similar` could take
+  the same diff, but its `evidence` jsonb would need its own tolerance.
+- **The diff write still reads every `release_similar` row each night.**
+  That is about 15M rows at full scale. The read is sequential and keeps
+  only one release in memory, but its time grows with the table.
 - **The performer list's missing-stats branch is O(performers).** The hash
   anti-join over `performers` and `performer_stats` takes about 15–20 ms
   warm at 50k performers, and 50–70 ms p50 at 8 concurrent requests.

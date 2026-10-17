@@ -542,9 +542,9 @@ func (f *fakeStore) ReleaseDocs(context.Context) ([]ReleaseDoc, error)  { return
 func (f *fakeStore) WatchInteractions(context.Context, time.Time, time.Time) ([]Interaction, error) {
 	return f.inter, nil
 }
-func (f *fakeStore) ReplaceReleaseSimilar(_ context.Context, rows []ReleaseSimilarRow, _ time.Time) error {
+func (f *fakeStore) ReplaceReleaseSimilar(_ context.Context, rows []ReleaseSimilarRow, _ time.Time) (ReleaseSimilarWrite, error) {
 	f.release = rows
-	return nil
+	return ReleaseSimilarWrite{Inserted: int64(len(rows))}, nil
 }
 func (f *fakeStore) ReplacePerformerSimilar(_ context.Context, rows []PerformerMatch, _ time.Time) error {
 	f.perf = rows
