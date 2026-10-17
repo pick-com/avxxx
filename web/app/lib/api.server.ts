@@ -6,7 +6,7 @@
 //                   compose: http://api:8080)
 // API_TIMEOUT_MS    per-request timeout (default 4000)
 // PUBLIC_BASE_URL   public origin for canonical / hreflang / sitemap URLs
-//                   (e.g. https://reel.example); defaults to the request's origin
+//                   (e.g. https://javpick.com); defaults to the request's origin
 
 import {ApiError, localizeBody, type LangCode} from './api';
 import {cleanStrings, type Messages} from './i18n';

@@ -145,7 +145,7 @@ type langTemplates struct {
 
 // Renderer renders embedded templates with absolute links under BaseURL.
 type Renderer struct {
-	BaseURL string                   // e.g. https://reel.example; "" yields site-relative links
+	BaseURL string                   // e.g. https://javpick.com; "" yields site-relative links
 	tmpl    map[string]langTemplates // "<kind>.<lang>"
 }
 
