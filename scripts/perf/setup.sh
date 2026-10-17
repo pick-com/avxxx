@@ -42,9 +42,10 @@ if docker inspect "$name" >/dev/null 2>&1; then
 	echo "container $name already exists; docker rm -f -v $name first" >&2
 	exit 1
 fi
-# Default postgres settings (as in docker-compose.yml) except a larger WAL,
-# so a big seed does not checkpoint constantly; it does not change plans.
-docker run -d --rm --name "$name" -e POSTGRES_USER=perf -e POSTGRES_PASSWORD=perf -e POSTGRES_DB=perf \
+# Default postgres settings (as in docker-compose.yml, including its
+# shm_size) except a larger WAL, so a big seed does not checkpoint
+# constantly; it does not change plans.
+docker run -d --rm --name "$name" --shm-size=256m -e POSTGRES_USER=perf -e POSTGRES_PASSWORD=perf -e POSTGRES_DB=perf \
 	-p 127.0.0.1::5432 postgres:17 -c max_wal_size=1GB -c maintenance_work_mem=256MB >/dev/null
 port="$(docker port "$name" 5432/tcp | head -n1 | sed 's/.*://')"
 url="postgres://perf:perf@127.0.0.1:$port/perf?sslmode=disable"
