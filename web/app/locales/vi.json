@@ -549,6 +549,7 @@
   "authPrompt.titleSync": "Đăng nhập để đồng bộ lịch sử xem",
   "authPrompt.titleOther": "Đăng nhập để tiếp tục",
   "authPrompt.sub": "Video vẫn tiếp tục phát; sau khi đăng nhập, thao tác vừa rồi sẽ được tiếp tục.",
+  "authPrompt.subNoVideo": "Sau khi đăng nhập, thao tác vừa rồi sẽ được tiếp tục.",
   "authPrompt.skip": "Để sau",
   "authPrompt.doneFavorite": "Đã đăng nhập và đã lưu",
   "authPrompt.donePickList": "Đã đăng nhập. Hãy chọn bộ sưu tập để lưu",

@@ -549,6 +549,7 @@
   "authPrompt.titleSync": "로그인하고 시청 기록을 동기화하세요",
   "authPrompt.titleOther": "로그인하고 계속하세요",
   "authPrompt.sub": "영상은 계속 재생되며, 로그인하면 방금 하던 작업을 이어서 진행합니다.",
+  "authPrompt.subNoVideo": "로그인하면 방금 하던 작업을 이어서 진행합니다.",
   "authPrompt.skip": "나중에",
   "authPrompt.doneFavorite": "로그인하고 즐겨찾기에 추가했어요",
   "authPrompt.donePickList": "로그인했어요. 저장할 컬렉션을 고르세요",

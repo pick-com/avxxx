@@ -262,6 +262,9 @@ function AuthSheet({action, container, onCreated, onClose}: {
   const location = useLocation();
   const [mode, setMode] = useState<AuthMode>('login');
   const title = t(TITLES[action]);
+  // "The video keeps playing" only when one is: not on a performer page, a
+  // release without a source, or a paused video.
+  const [videoPlaying] = useState(() => typeof document !== 'undefined' && Array.from(document.querySelectorAll('video')).some(v => !v.paused && !v.ended));
   const here = location.pathname + location.search;
   const openedAt = useRef(location.pathname);
   const closeRef = useRef(onClose);
@@ -282,7 +285,7 @@ function AuthSheet({action, container, onCreated, onClose}: {
       header={
         <div className="auth-sheet-head">
           <h2 className="sheet-title">{title}</h2>
-          <p className="auth-sub">{t('authPrompt.sub')}</p>
+          <p className="auth-sub">{t(videoPlaying ? 'authPrompt.sub' : 'authPrompt.subNoVideo')}</p>
         </div>
       }
     >

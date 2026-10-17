@@ -549,6 +549,7 @@
   "authPrompt.titleSync": "ログインして視聴履歴を同期",
   "authPrompt.titleOther": "ログインして続ける",
   "authPrompt.sub": "動画は再生されたままです。ログイン後、さきほどの操作を続けます。",
+  "authPrompt.subNoVideo": "ログイン後、さきほどの操作を続けます。",
   "authPrompt.skip": "あとで",
   "authPrompt.doneFavorite": "ログインして、お気に入りに追加しました",
   "authPrompt.donePickList": "ログインしました。追加するコレクションを選んでください",
