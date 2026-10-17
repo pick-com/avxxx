@@ -105,6 +105,7 @@ func TestErrorStatus(t *testing.T) {
 		{"other pg error", &pgconn.PgError{Code: "23503", Message: "secret detail"}, 500, "request failed"},
 		{"source disabled fallback", errors.New("source disabled"), 409, "conflict"},
 		{"unknown", errors.New("dial tcp 10.0.0.1: secret"), 500, "request failed"},
+		{"client went away", fmt.Errorf("query releases: %w", context.Canceled), 499, "client closed request"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

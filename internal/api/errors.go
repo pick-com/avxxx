@@ -2,6 +2,7 @@ package api
 
 import (
 	"avxxx/internal/store"
+	"context"
 	"errors"
 	"net/http"
 	"strings"
@@ -53,6 +54,11 @@ func unauthorized(cause error) error {
 	return &httpError{status: http.StatusUnauthorized, msg: statusMessage(http.StatusUnauthorized), err: cause}
 }
 
+// statusClientClosed is nginx's 499: the client went away (navigation, an
+// aborted fetch) and the handler's context was canceled. Not a server
+// failure, so it is not logged at error level or counted as a 5xx.
+const statusClientClosed = 499
+
 // errorStatus maps e to an HTTP status and the message sent to the client.
 // Unknown errors become 500 with a generic message so internal text never leaks.
 func errorStatus(e error) (int, string) {
@@ -63,6 +69,8 @@ func errorStatus(e error) (int, string) {
 	var gr *store.GateRefusal
 	var le *store.AdminLockedError
 	switch {
+	case errors.Is(e, context.Canceled):
+		return statusClientClosed, "client closed request"
 	case errors.As(e, &le):
 		return http.StatusTooManyRequests, le.Error()
 	case errors.Is(e, store.ErrAccountBanned):
