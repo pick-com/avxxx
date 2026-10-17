@@ -216,6 +216,15 @@ export const zhCN = {
   'player.abSetB': '设为 B 点（{time}）',
   'player.abClear': '清除',
   'player.abCleared': '已清除 A-B 循环',
+  'player.sleep': '定时停止',
+  'player.sleepHint': '到时间后音量渐弱并暂停播放',
+  'player.sleepMinutes': '{n} 分钟',
+  'player.sleepEpisode': '播完本集',
+  'player.sleepLeft': '剩余 {time}',
+  'player.sleepSet': '将在 {n} 分钟后停止播放',
+  'player.sleepEpisodeSet': '本集播完后停止，不自动播放下一个',
+  'player.sleepOff': '定时停止已关闭',
+  'player.sleepFired': '定时停止：已暂停播放',
 
   // autoplay (PRD 5.4)
   'autoplay.label': '自动播放下一个',

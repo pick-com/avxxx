@@ -1,19 +1,27 @@
+import {useId} from 'react';
 import {formatClock} from '../lib/format';
 import {useT} from '../lib/i18n';
 import {abActive, type AbLoop} from '../lib/playerLoop';
+import {SLEEP_CHOICES, type SleepChoice} from '../lib/sleepTimer';
 import {SwitchRow} from './Switch';
 
 /**
  * 播放 tab of the player settings sheet (desktop gear and mobile sheet):
- * 循环播放 and the A-B loop. The Player owns the state and applies it
- * through the <video> API; this only renders and reports.
+ * 循环播放, the A-B loop and 定时停止. The Player owns the state and
+ * applies it through the <video> API; this only renders and reports.
  */
-export function PlayerPlaybackPanel({loop, ab}: {
+export function PlayerPlaybackPanel({loop, ab, sleep}: {
   loop: {on: boolean; onChange: (on: boolean) => void};
   /** A / B from the current time; `time` labels the buttons. */
   ab: {value: AbLoop; time: number; setA: () => void; setB: () => void; clear: () => void};
+  /** 定时停止; `left`: whole seconds of a running timed choice. */
+  sleep: {value: SleepChoice; left: number | null; onChange: (choice: SleepChoice) => void};
 }) {
   const t = useT();
+  const sleepLabel = (c: SleepChoice) => (c === 'off' ? t('player.off') : c === 'episode' ? t('player.sleepEpisode') : t('player.sleepMinutes', {n: c}));
+  const sleepStatus =
+    sleep.left !== null ? t('player.sleepLeft', {time: formatClock(sleep.left)}) : sleep.value === 'episode' ? t('player.sleepEpisodeSet') : t('player.sleepHint');
+  const sleepId = useId();
   const {a, b} = ab.value;
   const status = abActive(ab.value)
     ? t('player.abActive', {a: formatClock(a!), b: formatClock(b!)})
@@ -42,6 +50,28 @@ export function PlayerPlaybackPanel({loop, ab}: {
               {t('player.abClear')}
             </button>
           )}
+        </div>
+      </div>
+      <div className="set-row set-row-stack">
+        <div className="set-text">
+          <span className="set-label" id={sleepId}>
+            {t('player.sleep')}
+          </span>
+          <span className="set-desc">{sleepStatus}</span>
+        </div>
+        <div className="pp-actions" role="radiogroup" aria-labelledby={sleepId}>
+          {SLEEP_CHOICES.map(c => (
+            <button
+              key={String(c)}
+              type="button"
+              role="radio"
+              aria-checked={c === sleep.value}
+              className={c === sleep.value ? 'chip chip-on' : 'chip'}
+              onClick={() => sleep.onChange(c)}
+            >
+              {sleepLabel(c)}
+            </button>
+          ))}
         </div>
       </div>
     </div>
