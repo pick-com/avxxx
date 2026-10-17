@@ -117,9 +117,9 @@ function AdminAccounts() {
 
   const invite = async (event: FormEvent) => {
     event.preventDefault();
-    const r = await act.attempt('invite', () => inviteAdmin(draft), v => `已邀请 ${v.admin.username}`);
+    const r = await act.attempt('invite', () => inviteAdmin(draft), v => (isApprovalPending(v) ? pendingText : `已邀请 ${v.admin.username}`));
     if (r) {
-      setLink(r.enroll_url);
+      if (!isApprovalPending(r)) setLink(r.enroll_url);
       setDraft({username: '', email: '', display_name: '', roles: []});
       list.reload();
     }
@@ -145,8 +145,8 @@ function AdminAccounts() {
     if (await act.attempt(`en-${u.id}`, () => enableAdmin(u.id, reasons[u.id] ?? ''), v => (isApprovalPending(v) ? pendingText : `${u.username} 已启用`))) list.reload();
   };
   const reinvite = async (u: AdminUser) => {
-    const r = await act.attempt(`inv-${u.id}`, () => reissueInvite(u.id), '已生成新的启用链接');
-    if (r) setLink(r.enroll_url);
+    const r = await act.attempt(`inv-${u.id}`, () => reissueInvite(u.id), v => (isApprovalPending(v) ? pendingText : '已生成新的启用链接'));
+    if (r && !isApprovalPending(r)) setLink(r.enroll_url);
   };
 
   if (list.failure && isMissingEndpoint(list.failure)) return <NotDeployed what="后台账号接口（admin/admin-users）" />;
