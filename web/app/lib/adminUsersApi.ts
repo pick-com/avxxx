@@ -95,9 +95,11 @@ export type AdminUser = {
 export const getAdminUsers = (signal?: AbortSignal) =>
   api<{items: AdminUser[] | null}>('admin/admin-users', {signal}).then(d => d.items ?? []);
 
+/** Inviting a super_admin needs a second admin (202 {approval_required}); other roles are invited at once. */
 export const inviteAdmin = (input: {username: string; email: string; display_name: string; roles: string[]}) =>
-  api<{admin: AdminUser; enroll_url: string}>('admin/admin-users', {method: 'POST', body: input});
-export const reissueInvite = (id: number) => api<{enroll_url: string}>(`admin/admin-users/${id}/invite`, {method: 'POST'});
+  api<{admin: AdminUser; enroll_url: string} | ApprovalPending>('admin/admin-users', {method: 'POST', body: input});
+/** A new enrollment link for an invited super_admin needs a second admin too. */
+export const reissueInvite = (id: number) => api<{enroll_url: string} | ApprovalPending>(`admin/admin-users/${id}/invite`, {method: 'POST'});
 export const disableAdmin = (id: number, reason: string) => api<AdminUser>(`admin/admin-users/${id}/disable`, {method: 'POST', body: {reason}});
 
 /** A dual-approval route answers 202 with the stored request instead of running. */

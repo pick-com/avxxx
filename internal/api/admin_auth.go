@@ -368,6 +368,26 @@ func (srv *Server) requestApproval(w http.ResponseWriter, r *http.Request, p adm
 		reply(w, nil, badRequest("request body too large", err))
 		return
 	}
+	srv.storeApproval(w, r, p, body)
+}
+
+// needsSecondAdmin reports whether a request that is not marked Dual must
+// still wait for a second admin (a signed-in admin's request, not the
+// replay of an approved one): handlers call it for the cases a route-level
+// flag cannot express, such as minting an enrollment link for a super_admin
+// account. Break-glass and service tokens are never held.
+func needsSecondAdmin(r *http.Request, p adminPrincipal) bool {
+	_, replay := replayPrincipal(r.Context())
+	return p.Auth == "session" && !replay
+}
+
+// storeApproval stores the request with its already-read body for a second
+// admin and answers 202.
+func (srv *Server) storeApproval(w http.ResponseWriter, r *http.Request, p adminPrincipal, body []byte) {
+	if srv.adminAuth == nil {
+		reply(w, nil, errUnavailable)
+		return
+	}
 	a, err := srv.adminAuth.CreateAdminApproval(r.Context(), store.AdminApproval{
 		Route: r.Pattern, Method: r.Method, Path: r.URL.Path, Query: r.URL.RawQuery, Body: body,
 		Summary: approvalSummary(r.Pattern, body), RequestedBy: p.ID, RequestedByName: p.Username,
@@ -390,6 +410,8 @@ func approvalSummary(pattern string, body []byte) string {
 		"POST /api/admin/admin-users/{id}/enable":         "重新启用后台账号",
 		"POST /api/admin/admin-users/{id}/reset-2fa":      "重置两步验证",
 		"POST /api/admin/moderation/rating-floods/remove": "批量删除刷分评分",
+		"POST /api/admin/admin-users":                     "邀请超级管理员",
+		"POST /api/admin/admin-users/{id}/invite":         "为超级管理员重新生成启用链接",
 	}
 	s := labels[pattern]
 	if s == "" {

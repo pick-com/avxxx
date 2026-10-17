@@ -4,7 +4,8 @@ package api
 //
 //	GET  /api/admin/admin-users                    accounts with roles, 2FA and lock state
 //	POST /api/admin/admin-users                    invite {"username","email","display_name","roles"} → enrollment link
-//	POST /api/admin/admin-users/{id}/invite        new enrollment link (invited accounts)
+//	                                               (dual approval when roles include super_admin)
+//	POST /api/admin/admin-users/{id}/invite        new enrollment link (invited accounts; dual approval for a super_admin)
 //	POST /api/admin/admin-users/{id}/disable       {"reason"} immediate; revokes sessions
 //	PUT  /api/admin/admin-users/{id}/roles         {"roles":[...]}       dual approval
 //	POST /api/admin/admin-users/{id}/enable        {"reason"}            dual approval
@@ -22,11 +23,19 @@ package api
 // fragment, which browsers never send to a server.
 
 import (
+	"avxxx/internal/adminauth"
 	"avxxx/internal/store"
+	"bytes"
+	"context"
+	"encoding/json"
+	"errors"
+	"io"
 	"net/http"
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/jackc/pgx/v5"
 )
 
 func (srv *Server) adminUserRoutes() []route {
@@ -61,11 +70,30 @@ func (srv *Server) withAccts(h http.HandlerFunc) http.HandlerFunc {
 
 func enrollLink(token string) string { return "/admin/enroll#" + token }
 
+// adminIsSuper reports whether admin account id holds super_admin
+// (pgx.ErrNoRows, 404, for an unknown id).
+func (srv *Server) adminIsSuper(ctx context.Context, id int64) (bool, error) {
+	users, err := srv.adminAccts.AdminUsers(ctx)
+	if err != nil {
+		return false, err
+	}
+	for _, u := range users {
+		if u.ID == id {
+			return adminauth.IsSuper(u.Roles), nil
+		}
+	}
+	return false, pgx.ErrNoRows
+}
+
 func (srv *Server) listAdminUsers(w http.ResponseWriter, r *http.Request) {
 	v, err := srv.adminAccts.AdminUsers(r.Context())
 	reply(w, map[string]any{"items": v}, err)
 }
 
+// inviteAdmin creates an invited account and answers its enrollment link.
+// Inviting a super_admin needs a second admin, like a role change: otherwise
+// one super admin could mint a second super_admin account and approve their
+// own dual-approval requests with it.
 func (srv *Server) inviteAdmin(w http.ResponseWriter, r *http.Request) {
 	p, _ := principalFrom(r.Context())
 	var in struct {
@@ -74,8 +102,19 @@ func (srv *Server) inviteAdmin(w http.ResponseWriter, r *http.Request) {
 		DisplayName string   `json:"display_name"`
 		Roles       []string `json:"roles"`
 	}
-	if err := decodeAdminJSON(w, r, &in); err != nil {
-		reply(w, nil, err)
+	body, err := io.ReadAll(http.MaxBytesReader(w, r.Body, maxApprovalBody))
+	if err != nil {
+		reply(w, nil, badRequest("request body too large", err))
+		return
+	}
+	dec := json.NewDecoder(bytes.NewReader(body))
+	dec.DisallowUnknownFields()
+	if err := dec.Decode(&in); err != nil && !errors.Is(err, io.EOF) {
+		reply(w, nil, badRequest("invalid JSON body", err))
+		return
+	}
+	if adminauth.IsSuper(in.Roles) && needsSecondAdmin(r, p) {
+		srv.storeApproval(w, r, p, body)
 		return
 	}
 	u, token, err := srv.adminAccts.InviteAdmin(r.Context(), store.AdminUserInput{Username: in.Username, Email: in.Email, DisplayName: in.DisplayName, Roles: in.Roles}, p.Actor())
@@ -87,12 +126,28 @@ func (srv *Server) inviteAdmin(w http.ResponseWriter, r *http.Request) {
 	reply(w, map[string]any{"admin": u, "enroll_url": enrollLink(token)}, nil)
 }
 
+// reissueInvite replaces an invited account's enrollment link. For a
+// super_admin account (a fresh invite, or one whose two-step verification
+// was reset with a second admin's approval) it needs a second admin too:
+// the new link takes the account over, so a single super admin must not be
+// able to mint it.
 func (srv *Server) reissueInvite(w http.ResponseWriter, r *http.Request) {
 	p, _ := principalFrom(r.Context())
 	id, err := pathID(r)
 	if err != nil {
 		reply(w, nil, err)
 		return
+	}
+	if needsSecondAdmin(r, p) {
+		super, err := srv.adminIsSuper(r.Context(), id)
+		if err != nil {
+			reply(w, nil, err)
+			return
+		}
+		if super {
+			srv.storeApproval(w, r, p, nil)
+			return
+		}
 	}
 	token, err := srv.adminAccts.ReissueAdminInvite(r.Context(), id, p.Actor())
 	if err != nil {
