@@ -480,8 +480,11 @@ func buildPerformerQuery(f PerformerFilter) (string, []any, int, error) {
 		// COALESCE(stats, live subquery): the planner costs a subquery in
 		// the sort key once per performer even when it never runs, which
 		// at production volume pushes the query over jit_above_cost.
+		// The second branch starts from performer_stats_pending, a
+		// superset of the performers without stats (migration 061), not
+		// from an anti-join of every performer against performer_stats.
 		inner = `SELECT * FROM ((` + page(s.key, "ps.performer_id IS NOT NULL", kp, ip) + " LIMIT " + lim + `)
-	UNION ALL (` + page(s.missingKey, "ps.performer_id IS NULL", kp, ip) + " LIMIT " + lim + `)) u
+	UNION ALL (` + page(s.missingKey, "ps.performer_id IS NULL AND p.id IN (SELECT performer_id FROM performer_stats_pending)", kp, ip) + " LIMIT " + lim + `)) u
 	ORDER BY ` + sortSpec{key: "u.sk", keyDesc: s.keyDesc, idDesc: s.idDesc}.orderBy("u.id") + " LIMIT " + lim
 	}
 	sql := `SELECT pg.id,pg.slug,pg.canonical_name,pg.name_ja,pg.birth_date,pg.height_cm,pg.bust_cm,pg.waist_cm,pg.hip_cm,pg.status,

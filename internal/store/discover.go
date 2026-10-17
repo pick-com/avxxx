@@ -79,6 +79,14 @@ var statsEpoch = time.Date(2000, 1, 1, 0, 0, 0, 0, time.UTC)
 // for every active performer in one transaction (after the heat boards of
 // the same run, which it reads) and drops the rows of performers that no
 // longer qualify. It returns the number of rows written.
+//
+// It then clears performer_stats_pending (migration 061) of the performers
+// that now have a row: that DELETE runs after the others and sees their
+// writes, so a performer listed while this ran has no row and stays
+// pending. It also drops the performers no longer listed (hidden or merged
+// before their first row), holding a share lock on them so that a
+// concurrent reactivation either is seen (and the row kept) or waits and
+// re-marks the performer through the trigger.
 func (s *Store) RefreshPerformerStats(ctx context.Context, at time.Time) (int64, error) {
 	var n int64
 	err := pgx.BeginFunc(ctx, s, func(tx pgx.Tx) error {
@@ -87,7 +95,15 @@ func (s *Store) RefreshPerformerStats(ctx context.Context, at time.Time) (int64,
 			return err
 		}
 		n = tag.RowsAffected()
-		_, err = tx.Exec(ctx, `DELETE FROM performer_stats WHERE computed_at<>$1`, at)
+		if _, err = tx.Exec(ctx, `DELETE FROM performer_stats WHERE computed_at<>$1`, at); err != nil {
+			return err
+		}
+		if _, err = tx.Exec(ctx, `DELETE FROM performer_stats_pending q USING performer_stats ps WHERE ps.performer_id=q.performer_id`); err != nil {
+			return err
+		}
+		_, err = tx.Exec(ctx, `DELETE FROM performer_stats_pending WHERE performer_id IN (
+			SELECT p.id FROM performer_stats_pending q JOIN performers p ON p.id=q.performer_id
+			WHERE NOT (p.status='active' AND p.merged_into_id IS NULL) FOR SHARE OF p)`)
 		return err
 	})
 	return n, err

@@ -44,8 +44,8 @@ for the same CPUs as Postgres. Compare before against after, row by row.
 | `catalog/search?…&counts=1` | 1359 / 1534 / 1750 | 556 / 615 / 701 | same |
 | `sitemap/counts` | 2373 / 3841 / 9353, 191 errors | 0.1 / 0.3 / 0.5, 0 errors | cache, GROUP BY |
 | `sitemap/tags` | 10 / 166 / 906, 197 errors | 0.3 / 0.9 / 1.1, 0 errors | first-page cache |
-| `performers?sort=works` | 77 / 86 / 96 | 67 / 98 / 136 | see remaining risks |
-| `performers?sort=newest_work` | 48 / 59 / 63 | 49 / 55 / 61 | see remaining risks |
+| `performers?sort=works` | 77 / 86 / 96 | 67 / 98 / 136 | `performer_stats_pending`, see item 1 |
+| `performers?sort=newest_work` | 48 / 59 / 63 | 49 / 55 / 61 | same |
 | `performers/{p}` | 6.6 / 14 / 42 | 4.4 / 13 / 32 | `releases_public_id_date` |
 | `sitemap/releases` (5000 rows) | 152 / 221 / 231 | 147 / 199 / 218 | 51 ms alone; a bulk page |
 
@@ -447,9 +447,10 @@ it ran out, and every parallel query failed with SQLSTATE 53100.
 - **The diff write still reads every `release_similar` row each night.**
   That is about 15M rows at full scale. The read is sequential and keeps
   only one release in memory, but its time grows with the table.
-- **The performer list's missing-stats branch is O(performers).** The hash
-  anti-join over `performers` and `performer_stats` takes about 15–20 ms
-  warm at 50k performers, and 50–70 ms p50 at 8 concurrent requests.
+- **The performer list's displayed counts are live.** `sort=works` counts
+  the works of its 21 page rows live, and those are the most prolific
+  performers. That is about 1.5 ms of a query, 9 ms p50 at 8 concurrent
+  requests and 50k performers.
 - **Broad catalog searches are CPU-bound.** About 100 ms of database CPU
   for a word in about 10% of titles. Ranking needs `word_similarity` on
   every match.
@@ -492,16 +493,47 @@ an earlier perf pass).
     costs it once per performer. At production volume that pushes the
     estimate over `jit_above_cost` (100k, and postgres:17 has JIT on by
     default). In a 4k-performer test, JIT alone added about 6 ms.
-- **Remaining O(N) part.** The missing-stats branch does a hash anti-join of
-  active performers against `performer_stats`. It took about 1 ms at 4k
-  performers. At 50k it measured 15–20 ms warm (see "Full-scale pass").
+- **Finding the performers without stats.** The missing-stats branch used
+  to hash anti-join every active performer against `performer_stats` on
+  every request. That took about 1 ms at 4k performers and 12–15 ms warm
+  at 50k. It now starts from `performer_stats_pending` (migration 061):
+  - **What it holds.** A superset of the listed performers without a
+    stats row, usually a handful.
+  - **The trigger.** `performers_stats_pending` marks a performer when it
+    is inserted active and unmerged, or updated to that from anything
+    else (reactivated or unmerged). Those are the only ways to become
+    listed. Updates of a performer that is already listed mark nothing.
+  - **Clearing.** `RefreshPerformerStats` removes, in its own transaction
+    and after its writes, the performers that now have a stats row.
+    Stats rows are only removed by that same job (for performers not
+    listed when it ran) or by cascade, so nobody listed without a row is
+    ever unmarked. A performer listed while the job runs has no row and
+    stays marked.
+  - **Unlisted leftovers.** The job also drops marked performers that are
+    no longer listed, such as a new performer merged away before its
+    first stats row. It holds a share lock on them, so a concurrent
+    reactivation is either seen (and kept) or waits and marks the
+    performer again.
+  - **Stale marks are harmless.** The branch still requires
+    `ps.performer_id IS NULL` and the listing filters, so the order is
+    exactly the same as before.
+  - **Backfill.** The migration marks every listed performer without a
+    stats row, which is all of them before the first stats run.
 
 **Tests.** `TestPerformerWorkSortsIntegration` covers:
 
 - the paged order across cursors equals ordering by live counts, with fresh
-  stats and with performers missing from `performer_stats`;
-- under `EXPLAIN ANALYZE`, the per-performer work count runs at most
-  `limit+1` times.
+  stats and with performers missing from `performer_stats`: new,
+  reactivated (`hidden` to `active`) and unmerged ones, and a pending
+  performer hidden again;
+- `performer_stats_pending` always lists every listed performer without a
+  stats row, is empty after a stats run (including performers hidden or
+  merged before their first run), and gains nothing when an already listed
+  performer is updated;
+- under `EXPLAIN ANALYZE`, with 5,000 more performers and one pending,
+  the per-performer work count runs at most `limit+2` times (the page
+  rows plus the pending performer's live sort key), and the missing-stats
+  branch reads only the pending performer from `performers`.
 
 **Measured.** Throwaway postgres:17 with 4,000 performers, 8,000 releases,
 9,941 credits and 4,000 stats rows. Each case compares origin/main against
@@ -521,6 +553,29 @@ database, and each API binary in turn. With an empty `performer_stats`
 (before the first hourly run), every performer goes through the live
 branch. The cost is then about the same as before. That is the expected
 worst case, and it disappears after the next `recs_trending` run.
+
+**Measured with `performer_stats_pending`.** The database came from
+`scripts/perf/setup.sh` with 50k performers, 100k releases and 67k users,
+after a `RefreshPerformerStats` run. Then 20 performers were added with
+0–6 works each, as an hour of new performers would be. "Before" is the
+API at the parent commit, "after" is this change, on the same database.
+The loadgen runs used `-n 200 -c 8`, three times each, after a warm-up.
+
+| Measure | Before | After |
+|---|---|---|
+| `EXPLAIN ANALYZE`, `sort=works` | 13.5–14.8 ms | 1.5–1.8 ms |
+| `EXPLAIN ANALYZE`, `sort=newest_work` | 12.0–12.3 ms | 0.2 ms |
+| HTTP p50 / p95, `sort=works` | 49–51 / 56–69 ms | 8.6–8.7 / 13–16 ms |
+| HTTP p50 / p95, `sort=newest_work` | 44–45 / 50–77 ms | 3.4–4.3 / 4.9–11 ms |
+| HTTP p50 / p95, `sort=name` (unchanged) | 1.9–2.5 / 2.8–5.3 ms | 1.9–2.0 / 2.7–2.9 ms |
+
+- **What is left of `sort=works`.** The live displayed counts of its 21
+  page rows. They are the most prolific performers, about 6k buffer hits
+  per page.
+- **The new branch.** It is a nested loop from the 20 pending rows to
+  `performers_pkey`, then an anti-join probe of `performer_stats_pkey`.
+- **Cost on writes.** The trigger costs one primary-key insert for each
+  performer that becomes listed.
 
 ### 2. `community.MemoryLimiter`
 
