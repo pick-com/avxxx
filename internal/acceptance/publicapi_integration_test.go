@@ -32,6 +32,9 @@ const (
 	shadowClipCanary      = "SHADOW-CLIP-CANARY"
 	deletedClipCanary     = "DELETED-CLIP-CANARY"
 	draftClipCanary       = "DRAFT-RELEASE-CLIP-CANARY"
+	// 收藏夹 and legal document canaries.
+	privatePlaylistCanary = "PRIVATE-PLAYLIST-CANARY"
+	draftLegalCanary      = "DRAFT-LEGAL-DOCUMENT-CANARY"
 )
 
 var (
@@ -176,6 +179,16 @@ func TestPublicAPINeverLeaksIntegration(t *testing.T) {
 		e.exec(`INSERT INTO clips(public_id,release_id,user_id,start_ms,end_ms,title,status,title_status)
 			SELECT $1,id,$3,1000,16000,$4,$5,$6 FROM releases WHERE slug=$2`, c.id, c.slug, commenter, c.title, c.status, c.titleStatus)
 	}
+	// 收藏夹 (migration 036): a private playlist (its name and token must
+	// never show, even to someone who has the token) and a link-only one that
+	// also holds a non-public release (only published items are listed, and
+	// the owner-only share token is not echoed). A draft legal document must
+	// not be served by the public legal routes.
+	privateTok := e.str(`INSERT INTO playlists(user_id,name,visibility) VALUES($1,$2,'private') RETURNING share_token`, commenter, privatePlaylistCanary)
+	linkTok := e.str(`INSERT INTO playlists(user_id,name,visibility) VALUES($1,'Shared link playlist','link') RETURNING share_token`, commenter)
+	e.exec(`INSERT INTO playlist_items(playlist_id,release_id) SELECT p.id,r.id FROM playlists p, releases r
+		WHERE p.share_token=$1 AND r.slug IN ('juq-743','abc-002')`, linkTok)
+	e.exec(`INSERT INTO legal_documents(kind,lang,version,title,body) VALUES('terms','zh-CN',99,$1,$1)`, draftLegalCanary)
 	viewer, err := e.s.Register(ctx, "viewer@viewer-mail.invalid", "password123", "")
 	must(err)
 	viewerToken := viewer["token"].(string)
@@ -193,6 +206,8 @@ func TestPublicAPINeverLeaksIntegration(t *testing.T) {
 		counterName: "a counter-notifier name", counterEmail: "a counter-notifier email",
 		fbMessage: "a feedback message", fbEmail: "a feedback contact email", "consent-device-hash-canary": "a consent device hash",
 		"td-canary-001": "slug of a taken-down release", "Taken Down Canary Title": "title of a taken-down release",
+		privatePlaylistCanary: "a private playlist's name", privateTok: "a private playlist's share token",
+		`"share_token"`: "a playlist's owner-only share token", draftLegalCanary: "a draft legal document",
 	}
 	for k, v := range notPublic {
 		leaks[k] = v
@@ -228,6 +243,10 @@ func TestPublicAPINeverLeaksIntegration(t *testing.T) {
 		switch {
 		case strings.HasPrefix(path, "/api/clips/"):
 			values = clipIDs
+		case strings.HasPrefix(path, "/api/playlists/"):
+			values = []string{privateTok, linkTok, "none"}
+		case strings.HasPrefix(path, "/api/legal/{kind}"):
+			values = []string{"terms", "privacy", "cookies"}
 		case !strings.Contains(path, "{slug}"):
 		case strings.HasPrefix(path, "/api/performers/"):
 			values = performerSlugs
@@ -241,6 +260,7 @@ func TestPublicAPINeverLeaksIntegration(t *testing.T) {
 			if strings.HasPrefix(path, "/api/clips/") {
 				p = strings.ReplaceAll(p, "{id}", v)
 			}
+			p = strings.ReplaceAll(strings.ReplaceAll(p, "{token}", v), "{kind}", v)
 			p = wildcard.ReplaceAllString(restWildcard.ReplaceAllString(p, "a/b"), "1")
 			// Clip routes are walked signed out and signed in as a user who
 			// is not the clips' author.
