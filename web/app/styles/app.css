@@ -1288,6 +1288,8 @@ a.chip {
   display: flex;
   flex-direction: column;
   gap: 18px;
+  /* Timestamps scroll this column into view: clear the sticky top bar. */
+  scroll-margin-top: calc(var(--topbar-h) + 16px);
 }
 
 .video-aside {
