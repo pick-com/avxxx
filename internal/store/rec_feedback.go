@@ -146,6 +146,41 @@ func (s *Store) UndoRecFeedback(ctx context.Context, owner RecFeedbackOwner, kin
 	return t.RowsAffected() > 0, err
 }
 
+// ClaimRecFeedback moves a visitor device's feedback to the signed-in user
+// (POST /api/recs/feedback/claim, after a sign-in on that browser). Active
+// device rows become the user's; on the unique (owner, kind, target) a row
+// the user already has active is kept, and one the user undid before the
+// device gave it is re-activated (the newer choice wins). Undone device
+// rows are not carried over. Every device row is then removed, so the
+// device and the account never both hold it. Returns how many rows the
+// user gained or re-activated.
+func (s *Store) ClaimRecFeedback(ctx context.Context, userID int64, deviceID string) (int64, error) {
+	if userID <= 0 || deviceID == "" {
+		return 0, ErrBadFeedback
+	}
+	user := RecFeedbackOwner{UserID: userID}
+	device := RecFeedbackOwner{DeviceID: deviceID}
+	tx, err := s.Begin(ctx)
+	if err != nil {
+		return 0, err
+	}
+	defer tx.Rollback(ctx)
+	moved, err := tx.Exec(ctx, `INSERT INTO rec_feedback (owner_key, user_id, kind, target_id, target_tag, created_at)
+		SELECT $2, $3, kind, target_id, target_tag, created_at FROM rec_feedback
+		WHERE owner_key=$1 AND undone_at IS NULL
+		ON CONFLICT (owner_key, kind, (COALESCE(target_id, 0)), (COALESCE(target_tag, '')))
+		DO UPDATE SET undone_at=NULL, created_at=EXCLUDED.created_at
+		WHERE rec_feedback.undone_at IS NOT NULL AND rec_feedback.undone_at < EXCLUDED.created_at`,
+		device.Key(), user.Key(), userID)
+	if err != nil {
+		return 0, err
+	}
+	if _, err = tx.Exec(ctx, `DELETE FROM rec_feedback WHERE owner_key=$1`, device.Key()); err != nil {
+		return 0, err
+	}
+	return moved.RowsAffected(), tx.Commit(ctx)
+}
+
 // ListRecFeedback is the owner's active feedback, newest first (Settings ›
 // 推荐反馈). Rows whose release or performer is gone are left out.
 func (s *Store) ListRecFeedback(ctx context.Context, owner RecFeedbackOwner) ([]RecFeedback, error) {

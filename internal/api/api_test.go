@@ -150,6 +150,7 @@ var expectedRoutes = []string{
 	"POST /api/recs/feedback",
 	"DELETE /api/recs/feedback",
 	"GET /api/me/rec-feedback",
+	"POST /api/recs/feedback/claim",
 	"GET /api/search/hot",
 	"GET /api/search/suggest",
 	"GET /api/admin/search/zero-results",

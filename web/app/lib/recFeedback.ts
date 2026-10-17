@@ -3,6 +3,7 @@
 //   POST   /api/recs/feedback {kind, target}     「不感兴趣」 / 「不推荐此演员」 / 「不推荐此类型」
 //   DELETE /api/recs/feedback?kind=&target=      撤销
 //   GET    /api/me/rec-feedback                  Settings › 隐私 › 推荐反馈
+//   POST   /api/recs/feedback/claim              on sign-in: this browser's → the account
 //
 // Signed-in viewers are identified by their token; visitors by the same
 // X-Device-ID as ratings and 赞 / 踩. A visitor's GET /api/recs only sends
@@ -55,6 +56,23 @@ export async function addRecFeedback(kind: RecFeedbackKind, target: string): Pro
 
 export const undoRecFeedback = (kind: RecFeedbackKind, target: string) =>
   api<{undone: boolean}>(`recs/feedback?kind=${encodeURIComponent(kind)}&target=${encodeURIComponent(target)}`, {method: 'DELETE', headers: feedbackHeaders()});
+
+/**
+ * After a sign-in: moves this browser's visitor feedback (its X-Device-ID's)
+ * to the account, once; only when this browser gave any. A failure keeps it
+ * for the next sign-in. Returns how many rows the account gained.
+ */
+export async function claimDeviceRecFeedback(): Promise<number> {
+  if (!tokens.user() || !deviceHasFeedback()) return 0;
+  const {claimed} = await api<{claimed: number}>('recs/feedback/claim', {method: 'POST', headers: {'X-Device-ID': ratingDeviceId()}});
+  deviceUsed = false;
+  try {
+    window.localStorage.removeItem(USED_KEY);
+  } catch {
+    // ignore
+  }
+  return claimed;
+}
 
 export const listRecFeedback = (signal?: AbortSignal) =>
   api<{items: RecFeedback[] | null}>('me/rec-feedback', {signal, headers: feedbackHeaders()}).then(r => r.items ?? []);

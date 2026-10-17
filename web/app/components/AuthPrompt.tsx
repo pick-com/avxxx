@@ -5,6 +5,7 @@ import {Sheet} from './Sheet';
 import {mergeWatchProgress} from '../lib/api';
 import {useAuth} from '../lib/auth';
 import {selectGuestMerge, uploadGuestHistory} from '../lib/guestMerge';
+import {claimDeviceRecFeedback} from '../lib/recFeedback';
 import {clearGuestHistory, deleteGuestEntry, guestStore} from '../lib/guestProgress';
 import {needsFullscreenExit, useOverlayHost} from '../lib/fullscreenHost';
 import {useT} from '../lib/i18n';
@@ -119,7 +120,8 @@ export function usePendingAction(
 /**
  * On sign-in, uploads this browser's guest 播放记录 to the account (newest
  * 100, one request at a time; the server keeps newer account progress) and
- * removes what was uploaded. Once per sign-in.
+ * removes what was uploaded, and moves its visitor 「不感兴趣」 feedback to
+ * the account (POST /api/recs/feedback/claim). Once per sign-in.
  */
 function useGuestMerge() {
   const {status} = useAuth();
@@ -127,9 +129,10 @@ function useGuestMerge() {
   useEffect(() => {
     if (status === 'anon') started.current = false;
     if (status !== 'user' || started.current) return;
+    started.current = true;
+    void claimDeviceRecFeedback().catch(() => {});
     const entries = selectGuestMerge(guestStore());
     if (entries.length === 0) return;
-    started.current = true;
     void uploadGuestHistory(entries, mergeWatchProgress).then(({done, complete}) => {
       if (complete) clearGuestHistory();
       else done.forEach(deleteGuestEntry);

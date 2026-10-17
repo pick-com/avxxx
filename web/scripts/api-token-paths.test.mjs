@@ -22,6 +22,7 @@ test('signed-in routes get the token', () => {
     'recs?slot=home',
     'recs/feedback',
     'recs/feedback?kind=not_interested_release&target=abc',
+    'recs/feedback/claim',
     'me/rec-feedback',
     'upcoming?followed=1',
     'releases/abc-123/reaction',
@@ -39,7 +40,7 @@ test('signed-in routes get the token', () => {
 });
 
 test('public catalog routes do not', () => {
-  for (const path of ['releases/abc-123', 'releases?limit=10', 'performers/x', 'search?q=a', 'announcements?lang=en', 'playlists/tok', 'commentsx', 'comments/abc', 'recs/feedbackx', 'clips', 'clips/short']) {
+  for (const path of ['releases/abc-123', 'releases?limit=10', 'performers/x', 'search?q=a', 'announcements?lang=en', 'playlists/tok', 'commentsx', 'comments/abc', 'recs/feedbackx', 'recs/feedback/claimx', 'clips', 'clips/short']) {
     assert.equal(sendsUserToken(path), false, path);
   }
 });

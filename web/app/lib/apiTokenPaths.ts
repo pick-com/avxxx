@@ -6,8 +6,9 @@
 const PLAY_CONFIG_PATH = /^releases\/[^/?]+\/play-config(\?|$)/;
 // Recommendations (internal/api/recs.go): public, but a user token adds the
 // viewer's history, follows and watched filter. 推荐反馈 (recs/feedback,
-// internal/api/rec_feedback.go) is the token's, else the X-Device-ID's.
-const RECS_PATH = /^recs(\/feedback)?(\?|$)/;
+// internal/api/rec_feedback.go) is the token's, else the X-Device-ID's;
+// recs/feedback/claim moves the device's to the token's account.
+const RECS_PATH = /^recs(\/feedback(\/claim)?)?(\?|$)/;
 // Upcoming (internal/api/catalog.go): public, but ?followed=1 needs the user
 // and a token adds each item's `reserved` state.
 const UPCOMING_PATH = /^upcoming(\?|$)/;
