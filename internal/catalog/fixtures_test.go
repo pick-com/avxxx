@@ -34,7 +34,8 @@ func TestFixtureReportFields(t *testing.T) {
 		t.Fatal(err)
 	}
 	rel := res.Report.Entities[Release]
-	if rel.Parsed != 1 || rel.Complete != 1 || rel.RequiredPct(Release) != 100 || rel.NormalizedPct() != 100 {
+	// juq-743 and the empty-Director regression page (snos-397).
+	if rel.Parsed != 2 || rel.Complete != 2 || rel.RequiredPct(Release) != 100 || rel.NormalizedPct() != 100 {
 		t.Fatalf("release report %+v", rel)
 	}
 	perf := res.Report.Entities[Performer]

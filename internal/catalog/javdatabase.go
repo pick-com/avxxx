@@ -159,22 +159,60 @@ func number(v string) any {
 // a label element followed by sibling anchors (<b>Studio:</b> <a>X</a>), or an
 // element whose own text starts with the label and holds the anchors
 // (<p>Studio: <a>X</a></p>). Returns nil when the label is absent.
+//
+// An empty row (<p><b>Director: </b></p>, as on the live SNOS-397 page) has no
+// value: the row itself reads exactly "Director:", and its siblings are the
+// next rows, so they are never read; nor are siblings past the next label.
+// (Reading them stored the director as "Genre(s): 4K …", then as "4K".)
 func labelAnchors(d *goquery.Document, label string) *goquery.Selection {
 	var out *goquery.Selection
 	d.Find("body *").EachWithBreak(func(_ int, s *goquery.Selection) bool {
 		text := strings.TrimSpace(s.Text())
 		switch {
+		case text == label && s.Children().FilterFunction(func(_ int, c *goquery.Selection) bool {
+			return strings.TrimSpace(c.Text()) == label
+		}).Length() > 0:
+			// The row holding only the label element: an empty value.
+			out = s.Slice(0, 0)
 		case text == label:
-			sib := s.NextAll()
-			out = sib.Filter("a").AddSelection(sib.Find("a"))
+			out = anchorsUntilLabel(s.NextAll(), label)
 		case strings.HasPrefix(text, label) && s.ChildrenFiltered("a").Length() > 0:
-			out = s.ChildrenFiltered("a")
+			out = anchorsUntilLabel(s.Children(), label).Filter("a")
 		default:
 			return true
 		}
 		return false
 	})
 	return out
+}
+
+// anchorsUntilLabel returns the anchors among nodes (and inside them) up to
+// the first element that starts another label, skipping the label element
+// own itself.
+func anchorsUntilLabel(nodes *goquery.Selection, own string) *goquery.Selection {
+	kept := nodes.Slice(0, 0)
+	nodes.EachWithBreak(func(_ int, n *goquery.Selection) bool {
+		t := strings.TrimSpace(n.Text())
+		if t == own {
+			return true
+		}
+		if startsWithLabel(t) {
+			return false
+		}
+		kept = kept.AddSelection(n)
+		return true
+	})
+	return kept.Filter("a").AddSelection(kept.Find("a"))
+}
+
+// startsWithLabel reports whether text begins with a javdatabase "Label:".
+func startsWithLabel(text string) bool {
+	for _, l := range javdatabaseLabels {
+		if strings.HasPrefix(text, l) {
+			return true
+		}
+	}
+	return false
 }
 
 func linkedLabel(d *goquery.Document, label string) string {
