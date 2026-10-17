@@ -21,6 +21,7 @@ import (
 	"encoding/json"
 	"errors"
 	"strconv"
+	"sync"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -174,15 +175,33 @@ func (s *Store) SitemapTags(ctx context.Context, cursor string, limit int) ([]Si
 	return out, "", rows.Err()
 }
 
-// SitemapCounts counts what the sitemap lists should contain.
+// sitemapCountsTTL matches the public Cache-Control of the sitemap lists
+// (internal/api/sitemap.go) and the web's sitemap cache.
+const sitemapCountsTTL = 5 * time.Minute
+
+var sitemapCountsCaches sync.Map // *Store -> *staleCache[SitemapCounts]
+
+// SitemapCounts counts what the sitemap lists should contain. The counts
+// read every published release, credit and tag (~0.9 s at 300k releases)
+// and the route is public, so they are cached for sitemapCountsTTL, one
+// reload at a time (staleCache).
 func (s *Store) SitemapCounts(ctx context.Context) (SitemapCounts, error) {
+	c, _ := sitemapCountsCaches.LoadOrStore(s, &staleCache[SitemapCounts]{})
+	return c.(*staleCache[SitemapCounts]).get(sitemapCountsTTL, time.Now, func() (SitemapCounts, error) {
+		return s.sitemapCountsNow(ctx)
+	})
+}
+
+// sitemapCountsNow computes SitemapCounts. Distinct tags are grouped
+// rather than count(DISTINCT ...), which sorted all 1.75M tag rows.
+func (s *Store) sitemapCountsNow(ctx context.Context) (SitemapCounts, error) {
 	var c SitemapCounts
 	err := s.QueryRow(ctx, `SELECT
 		(SELECT count(*) FROM releases r WHERE `+playableReleaseSQL+`),
 		(SELECT count(*) FROM releases r WHERE r.status='published' AND r.merged_into_id IS NULL),
 		(SELECT count(*) FROM performers p WHERE `+sitemapPerformerSQL+`),
-		(SELECT count(DISTINCT t.normalized_tag) FROM release_tags t JOIN releases r ON r.id=t.release_id
-			WHERE r.status='published' AND r.merged_into_id IS NULL AND t.normalized_tag<>''),
+		(SELECT count(*) FROM (SELECT t.normalized_tag FROM release_tags t JOIN releases r ON r.id=t.release_id
+			WHERE r.status='published' AND r.merged_into_id IS NULL AND t.normalized_tag<>'' GROUP BY 1) tags),
 		(SELECT count(*) FROM playlists p WHERE `+sitemapPlaylistSQL+`)`).
 		Scan(&c.Releases, &c.PublishedReleases, &c.Performers, &c.Tags, &c.Playlists)
 	return c, err
