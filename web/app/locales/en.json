@@ -549,6 +549,7 @@
   "authPrompt.titleSync": "Sign in to sync your watch history",
   "authPrompt.titleOther": "Sign in to continue",
   "authPrompt.sub": "The video keeps playing; we'll pick up where you left off after you sign in.",
+  "authPrompt.subNoVideo": "We'll pick up where you left off after you sign in.",
   "authPrompt.skip": "Not now",
   "authPrompt.doneFavorite": "Signed in and saved",
   "authPrompt.donePickList": "Signed in. Pick a collection to save to",

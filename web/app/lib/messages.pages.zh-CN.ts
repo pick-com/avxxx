@@ -386,6 +386,7 @@ export const pagesZhCN = {
   'authPrompt.titleSync': '登录后同步观看记录',
   'authPrompt.titleOther': '登录后继续',
   'authPrompt.sub': '视频会继续播放，登录后接着刚才的操作。',
+  'authPrompt.subNoVideo': '登录后接着刚才的操作。',
   'authPrompt.skip': '先逛逛',
   'authPrompt.doneFavorite': '已登录，并已收藏',
   'authPrompt.donePickList': '已登录，选一个收藏夹吧',
