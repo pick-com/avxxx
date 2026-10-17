@@ -27,6 +27,7 @@ export default [
     route(L('following'), 'routes/following.tsx'),
     route(L('me'), 'routes/me.tsx'),
     route(L('me/stats'), 'routes/me-stats.tsx'),
+    route(L('me/clips'), 'routes/me-clips.tsx'),
     route(L('history'), 'routes/history.tsx'),
     route(L('favorites'), 'routes/favorites.tsx'),
     route(L('playlists/:token'), 'routes/playlist.tsx'),

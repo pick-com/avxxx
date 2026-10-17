@@ -16,7 +16,7 @@ export function loader({request}: LoaderFunctionArgs) {
   const lines = ['User-agent: *', 'Allow: /', 'Disallow: /admin$', 'Disallow: /admin/', 'Disallow: /api/'];
   for (const prefix of prefixes) {
     for (const p of PRIVATE) lines.push(`Disallow: ${prefix}/${p}$`);
-    lines.push(`Disallow: ${prefix}/settings/`, `Disallow: ${prefix}/search?`);
+    lines.push(`Disallow: ${prefix}/settings/`, `Disallow: ${prefix}/me/`, `Disallow: ${prefix}/search?`);
   }
   lines.push('', `Sitemap: ${siteOrigin(request)}/sitemap.xml`, '');
   return new Response(lines.join('\n'), {headers: {'Content-Type': 'text/plain; charset=utf-8', 'Cache-Control': 'public, max-age=3600'}});

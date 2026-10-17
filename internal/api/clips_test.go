@@ -16,6 +16,8 @@ import (
 type stubClips struct {
 	created []store.ClipInput
 	calls   []string
+	cursor  *store.Cursor
+	limit   int
 }
 
 const stubClipID = "abcdefghij"
@@ -48,6 +50,13 @@ func (s *stubClips) DeleteClip(_ context.Context, _ int64, id string) error {
 	return nil
 }
 
+func (s *stubClips) MyClips(_ context.Context, uid int64, c *store.Cursor, limit int) ([]store.MyClip, string, error) {
+	s.calls = append(s.calls, "Mine")
+	s.cursor, s.limit = c, limit
+	return []store.MyClip{{Clip: store.Clip{ID: stubClipID, ReleaseSlug: "abc-1", ReleaseTitle: "ABC", StartMs: 1000, EndMs: 16000, Status: "visible", Mine: true, RowID: 9}, ReleaseID: 77}},
+		store.EncodeCursor(store.Cursor{Sort: store.ClipSort, Key: "2026-10-16T00:00:00Z", ID: 9}), nil
+}
+
 func newClipServer(c *stubClips) http.Handler {
 	srv := &Server{accounts: &stubAccounts{}, clips: c}
 	mux := http.NewServeMux()
@@ -60,7 +69,7 @@ func newClipServer(c *stubClips) http.Handler {
 func TestClipRoutesRequireUser(t *testing.T) {
 	c := &stubClips{}
 	h := newClipServer(c)
-	for _, rt := range []struct{ method, path string }{{"POST", "/api/me/clips"}, {"DELETE", "/api/me/clips/" + stubClipID}, {"POST", "/api/clips/" + stubClipID + "/report"}} {
+	for _, rt := range []struct{ method, path string }{{"GET", "/api/me/clips"}, {"POST", "/api/me/clips"}, {"DELETE", "/api/me/clips/" + stubClipID}, {"POST", "/api/clips/" + stubClipID + "/report"}} {
 		for _, tok := range []string{"", "bad"} {
 			if rec := do(h, rt.method, rt.path, tok, `{"release":"abc-1","start_ms":0,"end_ms":15000}`); rec.Code != http.StatusUnauthorized {
 				t.Errorf("%s %s token=%q: status %d, want 401", rt.method, rt.path, tok, rec.Code)
@@ -123,5 +132,41 @@ func TestCreateClipTrimsTitle(t *testing.T) {
 	}
 	if strings.Contains(rec.Body.String(), `"RowID"`) || strings.Contains(rec.Body.String(), `"row_id"`) {
 		t.Error("internal id leaked")
+	}
+}
+
+func TestMyClipsHandler(t *testing.T) {
+	c := &stubClips{}
+	h := newClipServer(c)
+	rec := do(h, "GET", "/api/me/clips?limit=5", "good", "")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status %d: %s", rec.Code, rec.Body.String())
+	}
+	var out struct {
+		Items      []map[string]any `json:"items"`
+		NextCursor string           `json:"next_cursor"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &out); err != nil {
+		t.Fatal(err)
+	}
+	if len(out.Items) != 1 || out.Items[0]["id"] != stubClipID || out.Items[0]["release_title"] != "ABC" || out.NextCursor == "" || c.limit != 5 || c.cursor != nil {
+		t.Errorf("page = %s (limit %d, cursor %v)", rec.Body.String(), c.limit, c.cursor)
+	}
+	if _, ok := out.Items[0]["release_cover"]; !ok {
+		t.Error("release_cover missing")
+	}
+	for _, leak := range []string{`"RowID"`, `"ReleaseID"`, `"release_id"`, "77"} {
+		if strings.Contains(rec.Body.String(), leak) {
+			t.Errorf("internal id leaked: %s", leak)
+		}
+	}
+	// The next page passes the decoded cursor through.
+	if rec := do(h, "GET", "/api/me/clips?cursor="+out.NextCursor, "good", ""); rec.Code != http.StatusOK || c.cursor == nil || c.cursor.ID != 9 {
+		t.Errorf("next page: %d cursor %+v", rec.Code, c.cursor)
+	}
+	for _, q := range []string{"?cursor=not*a*cursor", "?cursor=" + store.EncodeCursor(store.Cursor{Sort: "newest", Key: "x", ID: 1}), "?limit=-1"} {
+		if rec := do(h, "GET", "/api/me/clips"+q, "good", ""); rec.Code != http.StatusBadRequest {
+			t.Errorf("GET /api/me/clips%s = %d, want 400", q, rec.Code)
+		}
 	}
 }

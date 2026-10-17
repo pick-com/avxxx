@@ -5,12 +5,14 @@ package api
 // with the community posting limits (kind "clip"; muted users are 403) and
 // validates the range against the release duration when it is known.
 // GET /api/clips/{id} is public and answers only for published releases;
-// DELETE /api/me/clips/{id} removes the caller's own clip. Clips join the
-// shared report inbox (POST /api/clips/{id}/report) and the moderator
-// actions (POST /api/admin/moderation/clips/{id}/action, moderation.go).
+// DELETE /api/me/clips/{id} removes the caller's own clip and GET
+// /api/me/clips lists them (我的片段, /me/clips). Clips join the shared
+// report inbox (POST /api/clips/{id}/report) and the moderator actions
+// (POST /api/admin/moderation/clips/{id}/action, moderation.go).
 
 import (
 	"avxxx/internal/community"
+	"avxxx/internal/images"
 	"avxxx/internal/store"
 	"context"
 	"net/http"
@@ -21,10 +23,12 @@ type clipStore interface {
 	CreateClip(ctx context.Context, userID int64, in store.ClipInput, status string) (store.Clip, error)
 	ClipByPublicID(ctx context.Context, publicID string, viewerID int64) (store.Clip, error)
 	DeleteClip(ctx context.Context, userID int64, publicID string) error
+	MyClips(ctx context.Context, userID int64, c *store.Cursor, limit int) ([]store.MyClip, string, error)
 }
 
 func (srv *Server) clipRoutes() []route {
 	return []route{
+		{"GET /api/me/clips", srv.withClips(srv.user(srv.myClips))},
 		{"POST /api/me/clips", srv.withClips(srv.user(srv.createClip))},
 		{"DELETE /api/me/clips/{id}", srv.withClips(srv.user(srv.deleteClip))},
 		{"GET /api/clips/{id}", srv.withClips(srv.getClip)},
@@ -89,6 +93,36 @@ func (srv *Server) createClip(w http.ResponseWriter, r *http.Request, uid int64)
 		return
 	}
 	replyStatus(w, http.StatusCreated, map[string]any{"clip": c, "title_removed": removed})
+}
+
+// myClips: GET /api/me/clips?cursor=&limit=, the caller's clips newest
+// first, each with its release's cover.
+func (srv *Server) myClips(w http.ResponseWriter, r *http.Request, uid int64) {
+	q := r.URL.Query()
+	limit, err := limitParam(q)
+	if err != nil {
+		reply(w, nil, err)
+		return
+	}
+	c, err := cursorParam(q, store.ClipSort)
+	if err != nil {
+		reply(w, nil, err)
+		return
+	}
+	items, next, err := srv.clips.MyClips(r.Context(), uid, c, limit)
+	if err != nil {
+		reply(w, nil, err)
+		return
+	}
+	ids := make([]int64, len(items))
+	for i, x := range items {
+		ids[i] = x.ReleaseID
+	}
+	covers := srv.publicImages(r.Context(), images.EntityRelease, ids)
+	for i := range items {
+		items[i].ReleaseCover = covers[items[i].ReleaseID]
+	}
+	reply(w, page(items, next), nil)
 }
 
 // getClip: GET /api/clips/{id} (public id). 404 for unknown, deleted or
