@@ -24,7 +24,7 @@ import {clearPending, savePending, setPendingMethod, takePending, type PendingPa
 // back after the Google redirect. It runs once and says so in a toast
 // (「已登录，并已收藏」); drafts go back into their input, never posted.
 
-export type AuthAction = 'favorite' | 'later' | 'follow' | 'reserve' | 'danmaku' | 'comment' | 'review' | 'like' | 'report' | 'other';
+export type AuthAction = 'favorite' | 'later' | 'follow' | 'reserve' | 'danmaku' | 'comment' | 'review' | 'like' | 'report' | 'sync' | 'other';
 
 const TITLES: Record<AuthAction, MessageKey> = {
   favorite: 'authPrompt.titleFavorite',
@@ -36,6 +36,7 @@ const TITLES: Record<AuthAction, MessageKey> = {
   review: 'authPrompt.titleReview',
   like: 'authPrompt.titleLike',
   report: 'authPrompt.titleReport',
+  sync: 'authPrompt.titleSync',
   other: 'authPrompt.titleOther',
 };
 

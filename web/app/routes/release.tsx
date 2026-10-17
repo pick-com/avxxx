@@ -5,6 +5,7 @@ import {absoluteImageUrl, Avatar, CatalogImage, ReleaseRow, SectionHeader} from 
 import {PerformerHoverCard, PerformerSheet} from '../components/PerformerPeek';
 import {Player} from '../components/Player';
 import {HostedPlayer} from '../components/PlayerHost';
+import {SyncReminder} from '../components/SyncReminder';
 import {SeriesEpisodesPanel, type PlayerEpisodes} from '../components/Episodes';
 import type {EndItem} from '../components/PlayerStates';
 import {Community} from '../components/Ratings';
@@ -374,6 +375,7 @@ export default function ReleasePage() {
           }
         />
         )}
+        {release?.status !== 'upcoming' && <SyncReminder slug={slug} />}
 
         {!release ? (
           detail.slow && <BlockSkeleton lines={3} />
