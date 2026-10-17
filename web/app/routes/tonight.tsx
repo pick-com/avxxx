@@ -1,5 +1,6 @@
 import {useCallback, useEffect, useMemo, useRef, useState} from 'react';
 import {useLocation, useNavigate} from '../lib/nav';
+import {usePendingAction, useRequireAuth} from '../components/AuthPrompt';
 import {Thumb} from '../components/Cards';
 import {Icon} from '../components/Icon';
 import {BlockSkeleton, EmptyState, ErrorBanner} from '../components/States';
@@ -74,7 +75,8 @@ export default function TonightPage() {
   const navigate = useNavigate();
   const location = useLocation();
   const {status} = useAuth();
-  const {setLater, later, refreshLater} = useSocial();
+  const {available, setLater, later, refreshLater} = useSocial();
+  const requireAuth = useRequireAuth();
   const mobile = useMediaQuery('(max-width: 767px)');
   const [filters, setFilters] = useState<Filters>({duration: 'any', mood: 'any', who: 'self'});
   // Ids swapped away or marked watched in this session (sent as exclude).
@@ -143,28 +145,31 @@ export default function TonightPage() {
     navigate(`/releases/${encodeURIComponent(pick.slug)}`, {state: {slot: 'tonight', reason: pick.reason.code, autoplay: true}});
   };
 
-  const needLogin = () => {
-    if (status === 'user') return false;
-    navigate(`/login?next=${encodeURIComponent('/tonight')}`);
-    return true;
-  };
+  // A guest's 稍后看 / 看过了 opens the sign-in sheet; the pick it was for is
+  // kept (target 'tonight', payload slug) and finished once signed in, even
+  // though the signed-in refetch brings a different pick.
+  const resumeFor = (item: RecItem) => ({target: 'tonight', payload: {slug: item.slug, id: item.id, runtime: item.runtime_minutes ?? 0}});
 
   const saveLater = async () => {
-    if (!pick || needLogin()) return;
+    if (!pick || !requireAuth('later', resumeFor(pick))) return;
     setBusy(true);
     const error = await setLater(pick.slug, true);
     setBusy(false);
     flash(error || t('tonight.laterSaved'));
   };
 
+  /** A finished row: progress = duration (an unknown runtime still records the watch). */
+  const recordWatched = async (slug: string, runtimeMinutes: number) => {
+    const seconds = runtimeMinutes * 60;
+    const saved = await saveWatchProgress(slug, seconds || 1, seconds || 1);
+    if (saved?.later_removed) refreshLater();
+  };
+
   const markWatched = async () => {
-    if (!pick || needLogin()) return;
+    if (!pick || !requireAuth('watched', resumeFor(pick))) return;
     setBusy(true);
     try {
-      const seconds = (pick.runtime_minutes ?? 0) * 60;
-      // A finished row: progress = duration (an unknown runtime still records the watch).
-      const saved = await saveWatchProgress(pick.slug, seconds || 1, seconds || 1);
-      if (saved?.later_removed) refreshLater();
+      await recordWatched(pick.slug, pick.runtime_minutes ?? 0);
       flash(t('tonight.watchedSaved'));
       advance(pick, false);
     } catch (cause) {
@@ -173,6 +178,38 @@ export default function TonightPage() {
       setBusy(false);
     }
   };
+
+  usePendingAction(
+    'later',
+    'tonight',
+    async payload => {
+      const slug = String(payload.slug ?? '');
+      if (!slug || available.later === 'no') return null;
+      if (!later.has(slug)) {
+        const error = await setLater(slug, true);
+        if (error) {
+          flash(error);
+          return null;
+        }
+      }
+      return t('authPrompt.doneLater');
+    },
+    available.later !== 'unknown',
+  );
+
+  usePendingAction('watched', 'tonight', async payload => {
+    const slug = String(payload.slug ?? '');
+    if (!slug) return null;
+    try {
+      await recordWatched(slug, Number(payload.runtime) || 0);
+    } catch (cause) {
+      flash(cause instanceof Error ? cause.message : t('tonight.failed'));
+      return null;
+    }
+    const id = Number(payload.id);
+    if (id) setExclude(prev => (prev.includes(id) ? prev : [...prev, id]));
+    return t('authPrompt.doneWatched');
+  });
 
   const restore = (item: RecItem) => {
     setSkipped(prev => {
