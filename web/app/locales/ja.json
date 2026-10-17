@@ -1039,6 +1039,7 @@
   "pc.keys.mute": "ミュートの切り替え",
   "pc.keys.volume": "音量を上げる / 下げる",
   "pc.keys.toggleCaptions": "字幕のオン/オフ",
+  "pc.menuButton": "{label}：{value}",
   "pc.keys.search": "検索ボックスに移動",
   "pc.keys.help": "キーボード ショートカットを表示",
   "mini.label": "ミニプレーヤー",

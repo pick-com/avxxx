@@ -1039,6 +1039,7 @@
   "pc.keys.mute": "음소거 전환",
   "pc.keys.volume": "볼륨 높이기/낮추기",
   "pc.keys.toggleCaptions": "자막 켜기/끄기",
+  "pc.menuButton": "{label}: {value}",
   "pc.keys.search": "검색창으로 이동",
   "pc.keys.help": "단축키 보기",
   "mini.label": "미니 플레이어",

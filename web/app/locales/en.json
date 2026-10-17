@@ -1039,6 +1039,7 @@
   "pc.keys.mute": "Toggle mute",
   "pc.keys.volume": "Volume up / down",
   "pc.keys.toggleCaptions": "Toggle captions on/off",
+  "pc.menuButton": "{label}: {value}",
   "pc.keys.search": "Go to search box",
   "pc.keys.help": "Show keyboard shortcuts",
   "mini.label": "Mini player",
