@@ -192,6 +192,8 @@ javpick.com {
 
 **Docker 下连到宿主机上的代理**：scraper 服务已配置 `extra_hosts: host.docker.internal:host-gateway`，因此 `.env` 写 `CATALOG_PROXY_VPN=socks5h://user:pass@host.docker.internal:1080` 即可。代理需监听容器可达的地址（不能只监听 127.0.0.1，或改用宿主机网桥地址）。VPN 的连接和账号由运维在宿主机上管理，项目不保存 VPN 账号。
 
+**OpenVPN 边车（compose profile `vpn`）**：与 books 的 gluetun 配置一致（`cnc224/shared` 的 `egress` 包驱动的同一种边车）。`vpn` 服务提供 HTTP 代理 `vpn:8888`，不需要 `.ovpn` 文件。`.env`（生产写 vault `pick_vpn_name` / `pick_vpn_password`）设置 `PICK_VPN_NAME`、`PICK_VPN_PASSWORD`（服务商的专用 OpenVPN 凭据，Proton 在 Account → OpenVPN/IKEv2 username，不是登录密码）和 `CATALOG_PROXY_VPN=http://vpn:8888`，可选 `VPN_COUNTRIES`（默认 Japan）、`VPN_FREE_ONLY`（付费计划设 `off`）。然后 `docker compose --profile vpn up -d vpn`，`docker compose logs vpn` 确认隧道建立（`AUTH_FAILED` 多半是免费账号抽到 Plus 节点），再做下面的 dry-run。不接入出口轮换：被挑战或封锁的来源照常停放，不会换出口重试。
+
 #### XSList / JAVLibrary 启用步骤（VPN 连接后）
 
 两个来源由迁移以停用、`aggregator`、`license_status=review_required`、`terms_reviewed_at` 为空、`egress_policy=vpn` 播种，抓取策略为每 10 秒 1 次请求、增量每日 100 次、baseline 每日 50 次 / 每次 2 页。2026-10-16 从我们的出口访问时两站（含 robots.txt）都返回 Cloudflare 托管挑战（HTTP 403，`cf-mitigated: challenge`），也没有找到条款页；选择器只按合成 fixture 编写（`internal/catalog/testdata/{xslist,javlibrary}/README.md`）。
