@@ -223,7 +223,18 @@ function TasksView({glossary}: {glossary: GlossaryEntry[]}) {
     ? ''
     : mt.data.configured
       ? `OpenRouter · ${mt.data.models[0] ?? ''} · 今日 ${mt.data.used_today}/${mt.data.daily_cap} 次请求 · 排队 ${mt.data.pending}`
-      : '未配置 OPENROUTER_API_KEY，机器翻译不可用';
+      : '';
+  // Why 机器翻译 is disabled, as visible text next to the button: a title on
+  // a disabled button reaches neither keyboard nor touch users.
+  const mtDisabledReason = mt.error
+    ? '无法读取机器翻译配置'
+    : !mt.data
+      ? ''
+      : !mt.data.configured
+        ? '未配置 OPENROUTER_API_KEY，机器翻译不可用'
+        : picked.size === 0
+          ? '先勾选缺失或机翻待审的字段'
+          : '';
   const replace = (t: TranslationTask) => {
     setItems(prev => prev.map(x => (taskKey(x) === taskKey(t) ? t : x)));
     stats.reload();
@@ -280,12 +291,17 @@ function TasksView({glossary}: {glossary: GlossaryEntry[]}) {
         <button
           type="button"
           className="btn btn-secondary btn-sm"
-          title={mtTitle}
           disabled={!mt.data?.configured || picked.size === 0 || act.pending === 'mt'}
+          aria-describedby={mtDisabledReason ? 'mt-disabled-reason' : undefined}
           onClick={runMT}
         >
           机器翻译{picked.size ? ` (${picked.size})` : ''}
         </button>
+        {mtDisabledReason && (
+          <span id="mt-disabled-reason" className="adm-field-hint" role="note" style={{alignSelf: 'center'}}>
+            {mtDisabledReason}
+          </span>
+        )}
         <button
           type="button"
           className="btn btn-secondary btn-sm"
@@ -297,7 +313,6 @@ function TasksView({glossary}: {glossary: GlossaryEntry[]}) {
       </div>
       <AdminNotice error={error} />
       {mtTitle && <p className="adm-field-hint">机器翻译：{mtTitle}。勾选缺失或机翻待审的字段后点「机器翻译」；结果为「机翻」草稿，不会直接上线。</p>}
-
       <div className="adm-i18n">
         <section className="adm-card">
           <div className="adm-table-wrap">
