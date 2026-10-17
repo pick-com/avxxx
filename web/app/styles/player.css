@@ -874,3 +874,84 @@ button.ep-item:hover {
 .ep-list-compact {
   padding: 0;
 }
+
+/* ---- Keyboard shortcuts dialog (components/ShortcutsDialog.tsx, `?`) ---- */
+.shortcuts-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: grid;
+  place-items: center;
+  padding: 16px;
+  background: rgba(0, 0, 0, 0.6);
+}
+.shortcuts-dialog {
+  display: flex;
+  flex-direction: column;
+  width: min(100%, 720px);
+  max-height: min(85vh, 760px);
+  border-radius: 12px;
+  background: var(--surface);
+  color: var(--text);
+  box-shadow: var(--shadow);
+  outline: none;
+}
+.shortcuts-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 16px 8px 24px;
+}
+.shortcuts-head h2 {
+  margin: 0;
+  font-size: 20px;
+  font-weight: 600;
+}
+.shortcuts-body {
+  overflow-y: auto;
+  padding: 0 24px 24px;
+}
+.shortcuts-body h3 {
+  margin: 20px 0 4px;
+  font-size: 16px;
+  font-weight: 600;
+}
+.shortcuts-body dl {
+  margin: 0;
+}
+.shortcuts-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--line);
+  font-size: 14px;
+}
+.shortcuts-row dt {
+  color: var(--text2);
+}
+.shortcuts-row dd {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 6px;
+  margin: 0;
+  flex-shrink: 0;
+}
+.shortcuts-combo {
+  display: inline-flex;
+  gap: 4px;
+}
+.shortcuts-combo kbd {
+  min-width: 24px;
+  padding: 2px 8px;
+  border: 1px solid var(--line2);
+  border-bottom-width: 2px;
+  border-radius: 6px;
+  background: var(--surface2);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  line-height: 20px;
+  text-align: center;
+}
