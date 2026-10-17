@@ -32,6 +32,7 @@ import {PlayerMenu} from './PlayerMenu';
 import {PlayerSettingsSheet, type Choice, type SettingsTab} from './PlayerSettingsSheet';
 import {BufferingSpinner, CenterPlay, EndScreen, ResumeToast, useBuffering, type EndItem} from './PlayerStates';
 import {PlayerTouchLayer} from './PlayerTouchLayer';
+import {ShortcutsDialog} from './ShortcutsDialog';
 
 const SAVE_INTERVAL_MS = 15_000;
 const FLASH_MS = 700;
@@ -254,6 +255,7 @@ export function Player({slug, releaseId, title, resumeAt, startAt, onBack, theat
   levelRef.current = level;
   const [flash, setFlash] = useState<{text: string; long: boolean; key: number} | null>(null);
   const flashTimer = useRef<number | undefined>(undefined);
+  const [keysOpen, setKeysOpen] = useState(false);
   const [pulse, setPulse] = useState<{kind: 'play' | 'pause'; key: number} | null>(null);
   const [resumeToast, setResumeToast] = useState<number | null>(null);
   // The next loadedmetadata restores the resume point (not a source switch): say so.
@@ -347,6 +349,8 @@ export function Player({slug, releaseId, title, resumeAt, startAt, onBack, theat
       .filter(c => Number.isFinite(c.start) && c.start >= 0 && c.title)
       .sort((a, b) => a.start - b.start);
   }, [config.data, stream]);
+  const chaptersRef = useRef(chapters);
+  chaptersRef.current = chapters;
 
   // Controls auto-hide (3 s without activity while playing). `hold`: pointer
   // over the bar or dragging the slider; `focused`: keyboard focus inside.
@@ -980,7 +984,9 @@ export function Player({slug, releaseId, title, resumeAt, startAt, onBack, theat
   useEffect(() => {
     if (phase !== 'ready' || mini) return;
     const onKey = (event: KeyboardEvent) => {
-      if (event.defaultPrevented || event.ctrlKey || event.metaKey || event.altKey) return;
+      if (event.defaultPrevented || event.ctrlKey || event.metaKey) return;
+      // Alt is reserved for Option+← / → (YouTube: previous / next chapter).
+      if (event.altKey && event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') return;
       const shell = shellRef.current;
       const video = videoRef.current;
       if (!shell || !video) return;
@@ -1002,6 +1008,23 @@ export function Player({slug, releaseId, title, resumeAt, startAt, onBack, theat
         if (!go) return;
         event.preventDefault();
         go();
+        return;
+      }
+      if (event.altKey) {
+        // Previous chapter goes back to the current chapter's start unless within 3 s of it.
+        const list = chaptersRef.current;
+        if (!list.length) return;
+        const now = video.currentTime;
+        const target = key === 'ArrowRight'
+          ? list.find(c => c.start > now + 0.5)
+          : [...list].reverse().find(c => c.start < now - 3);
+        const index = target ? list.indexOf(target) : key === 'ArrowLeft' ? 0 : -1;
+        if (index < 0) return;
+        event.preventDefault();
+        video.dataset.seekMethod = 'keyboard';
+        video.currentTime = list[index].start;
+        showFlash(t('pc.chapter', {n: index + 1, title: list[index].title}));
+        poke();
         return;
       }
       switch (key) {
@@ -1085,7 +1108,7 @@ export function Player({slug, releaseId, title, resumeAt, startAt, onBack, theat
           toggleTheater();
           break;
         case '?':
-          showFlash(t('pc.keysHint'), true);
+          setKeysOpen(true);
           break;
         default:
           return;
@@ -1438,6 +1461,8 @@ export function Player({slug, releaseId, title, resumeAt, startAt, onBack, theat
               </span>
             )}
           </div>
+
+          <ShortcutsDialog open={keysOpen && !mini} onClose={() => setKeysOpen(false)} container={fullscreen ? shellRef.current : null} />
 
           {notice && !mini && (
             <div className="player-notice" role="status">
