@@ -145,9 +145,33 @@ func (s *Store) SitemapPlaylists(ctx context.Context, cursor string, limit int) 
 		WHERE p.id>$1 AND `+sitemapPlaylistSQL+` ORDER BY p.id LIMIT $2`, cursor, limit)
 }
 
+// sitemapTagsPage is a cached first page of SitemapTags.
+type sitemapTagsPage struct {
+	items []SitemapEntry
+	next  string
+}
+
+var sitemapTagsCaches sync.Map // *Store -> *staleCache[sitemapTagsPage]
+
 // SitemapTags lists the tags of published releases in tag order; UpdatedAt
-// is the newest change among their releases.
+// is the newest change among their releases. Each page joins every tag row
+// to its release (~400 ms at 1.77M rows) and the route is public, so the
+// first page at the default size (what the web sitemap asks for; with
+// fewer tags than that, the whole list) is cached for sitemapCountsTTL,
+// one reload at a time. Callers must not modify the returned slice.
 func (s *Store) SitemapTags(ctx context.Context, cursor string, limit int) ([]SitemapEntry, string, error) {
+	if cursor == "" && sitemapLimit(limit) == defaultSitemapLimit {
+		c, _ := sitemapTagsCaches.LoadOrStore(s, &staleCache[sitemapTagsPage]{})
+		p, err := c.(*staleCache[sitemapTagsPage]).get(sitemapCountsTTL, time.Now, func() (sitemapTagsPage, error) {
+			items, next, err := s.sitemapTagsNow(ctx, "", defaultSitemapLimit)
+			return sitemapTagsPage{items, next}, err
+		})
+		return p.items, p.next, err
+	}
+	return s.sitemapTagsNow(ctx, cursor, limit)
+}
+
+func (s *Store) sitemapTagsNow(ctx context.Context, cursor string, limit int) ([]SitemapEntry, string, error) {
 	after, err := decodeSitemapCursor(cursor)
 	if err != nil {
 		return nil, "", err
