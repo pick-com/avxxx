@@ -61,8 +61,6 @@
           # Catalog egress proxy (vault: may carry credentials); empty = direct.
           CATALOG_PROXY_URL={{ catalog_proxy_url | default('') }}
           CATALOG_PROXY_VPN={{ catalog_proxy_vpn | default('') }}
-          PICK_VPN_NAME={{ pick_vpn_name | default('') }}
-          PICK_VPN_PASSWORD={{ pick_vpn_password | default('') }}
           LOG_HASH_KEY={{ log_hash_key | default('') }}
           # Alertmanager receivers (monitoring profile); empty = not configured.
           ALERT_WEBHOOK_URL={{ alert_webhook_url | default('') }}

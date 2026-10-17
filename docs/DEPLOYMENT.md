@@ -192,7 +192,7 @@ javpick.com {
 
 **Docker 下连到宿主机上的代理**：scraper 服务已配置 `extra_hosts: host.docker.internal:host-gateway`，因此 `.env` 写 `CATALOG_PROXY_VPN=socks5h://user:pass@host.docker.internal:1080` 即可。代理需监听容器可达的地址（不能只监听 127.0.0.1，或改用宿主机网桥地址）。VPN 的连接和账号由运维在宿主机上管理，项目不保存 VPN 账号。
 
-**OpenVPN 边车（compose profile `vpn`）**：与 books 的 gluetun 配置一致（`cnc224/shared` 的 `egress` 包驱动的同一种边车）。`vpn` 服务提供 HTTP 代理 `vpn:8888`，不需要 `.ovpn` 文件。`.env`（生产写 vault `pick_vpn_name` / `pick_vpn_password`）设置 `PICK_VPN_NAME`、`PICK_VPN_PASSWORD`（服务商的专用 OpenVPN 凭据，Proton 在 Account → OpenVPN/IKEv2 username，不是登录密码）和 `CATALOG_PROXY_VPN=http://vpn:8888`，可选 `VPN_COUNTRIES`（默认 Japan）、`VPN_FREE_ONLY`（付费计划设 `off`）。然后 `docker compose --profile vpn up -d vpn`，`docker compose logs vpn` 确认隧道建立（`AUTH_FAILED` 多半是免费账号抽到 Plus 节点），再做下面的 dry-run。不接入出口轮换：被挑战或封锁的来源照常停放，不会换出口重试。
+**共享出口栈（`deploy/egress/`）**：gluetun 隧道 + `cmd/egress` 服务（基于 `github.com/cnc224/shared/egress`，与 books 同一设计）。`cmd/egress` 是嵌套模块，主模块和 CI 不依赖私有仓库。每台主机只能有一个出口栈（项目名和网络都叫 `egress`）：主机上已有 books 的出口栈时不要再部署，直接加入已有的 `egress` 网络。部署步骤见 `deploy/egress/README.md`；凭据 `PICK_VPN_NAME` / `PICK_VPN_PASSWORD`（服务商专用 OpenVPN 凭据）只放在 `/opt/egress/.env`。scraper 通过 `deploy/egress/scraper.override.yml` 加入网络，`.env` 设 `CATALOG_PROXY_VPN=http://vpn:8888`。scraper 不调用 `/rotate`：被挑战或封锁的来源照常停放，不换出口重试。
 
 #### XSList / JAVLibrary 启用步骤（VPN 连接后）
 

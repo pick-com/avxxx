@@ -135,41 +135,6 @@ services:
     depends_on:
       db:
         condition: service_healthy
-  # OpenVPN egress for catalog crawls (docs/DEPLOYMENT.md 2.8), same gluetun
-  # setup as the books pod (cnc224/shared egress). Opt in with `--profile vpn`
-  # and CATALOG_PROXY_VPN=http://vpn:8888. The scraper reaches it as an HTTP
-  # proxy, not via a shared network namespace, so Postgres stays reachable.
-  # PICK_VPN_NAME / PICK_VPN_PASSWORD are the provider's dedicated OpenVPN
-  # credentials (Proton: dashboard > Account > OpenVPN/IKEv2 username), not
-  # the account login. Exit rotation is deliberately not wired: a blocked or
-  # challenged source stays parked, never retried from a fresh exit.
-  vpn:
-    image: qmcgaw/gluetun:v3.40.0
-    profiles: ["vpn"]
-    restart: unless-stopped
-    cap_add: [NET_ADMIN]
-    devices:
-      - /dev/net/tun:/dev/net/tun
-    environment:
-      VPN_SERVICE_PROVIDER: ${VPN_PROVIDER:-protonvpn}
-      VPN_TYPE: openvpn
-      OPENVPN_USER: ${PICK_VPN_NAME:-}
-      OPENVPN_PASSWORD: ${PICK_VPN_PASSWORD:-}
-      # Free Proton credentials are rejected by Plus-only nodes (shows up as
-      # AUTH_FAILED); set VPN_FREE_ONLY=off on a paid plan.
-      FREE_ONLY: ${VPN_FREE_ONLY:-on}
-      SERVER_COUNTRIES: ${VPN_COUNTRIES:-Japan}
-      HTTPPROXY: "on"
-      HTTPPROXY_LISTENING_ADDRESS: ":8888"
-    expose:
-      - "8888"
-    healthcheck:
-      test: ["CMD", "/gluetun-entrypoint", "healthcheck"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 60s
-
   scraper:
     image: avxxx-app:latest
     pull_policy: never

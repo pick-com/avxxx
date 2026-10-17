@@ -1,0 +1,110 @@
+# The egress stack: one VPN tunnel (gluetun) plus the cmd/egress service that
+# owns reconnects. Its own compose project, not part of the app stack.
+#
+# Deployed to /opt/egress as its own compose project, with its own lifecycle,
+# so it does not come and go with any one consumer's deploys. Consumers join
+# the `egress` network and reach `vpn:8888` (the proxy) and `egress:9000` (the
+# control API) — see README.md.
+name: egress
+
+services:
+  # OPENVPN_USER/OPENVPN_PASSWORD are Proton's *dedicated OpenVPN credentials*
+  # (dashboard → Account → OpenVPN/IKEv2 username), not the Proton login, and
+  # not a WireGuard key. Hand-set PICK_VPN_NAME / PICK_VPN_PASSWORD in /opt/egress/.env. Proton caps
+  # simultaneous sessions per plan — container churn can exhaust the allowance,
+  # and auth then fails until it releases.
+  vpn:
+    image: qmcgaw/gluetun
+    container_name: egress-vpn
+    restart: unless-stopped
+    cap_add:
+      - NET_ADMIN
+    devices:
+      - /dev/net/tun:/dev/net/tun
+    environment:
+      VPN_SERVICE_PROVIDER: ${VPN_PROVIDER:-protonvpn}
+      VPN_TYPE: ${VPN_TYPE:-openvpn}
+      OPENVPN_USER: ${PICK_VPN_NAME:-}
+      OPENVPN_PASSWORD: ${PICK_VPN_PASSWORD:-}
+      # FREE_ONLY is load-bearing on a free Proton plan, and its absence looks
+      # exactly like bad credentials: gluetun picks randomly among ALL of a
+      # country's servers, free credentials are rejected at auth by every
+      # Plus-only node, and the log says only AUTH_FAILED. Drop it to "off"
+      # only on a paid plan.
+      FREE_ONLY: ${VPN_FREE_ONLY:-on}
+      # A country pool, not a pinned hostname: Proton retires individual nodes
+      # and a stale hostname wedges the tunnel months later. Every country the
+      # free tier serves, read out of gluetun's own list rather than folklore:
+      #   docker exec egress-vpn grep -B4 'server_name.*FREE' \
+      #     /gluetun/servers/protonvpn.json | grep '"country"' | sort -u
+      SERVER_COUNTRIES: ${VPN_COUNTRIES:-Japan}
+      HTTPPROXY: "on"
+      HTTPPROXY_LISTENING_ADDRESS: ":8888"
+    expose:
+      - "8888" # HTTP proxy — consumers route outbound fetches through this
+      - "8000" # control API — only the egress service below calls it
+    volumes:
+      # gluetun v3.40+ answers 401 on every control route without explicit
+      # role grants, which silently breaks rotation.
+      - ./gluetun-auth.toml:/gluetun/auth/config.toml:ro
+    healthcheck:
+      test: ["CMD", "/gluetun-entrypoint", "healthcheck"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    deploy:
+      resources:
+        limits:
+          memory: 128M
+
+  # The one process allowed to reconnect the tunnel. A rotation is global, so
+  # letting each consumer drive gluetun directly means one of them yanks the
+  # address out from under the others mid-request.
+  egress:
+    image: ${EGRESS_IMAGE:-avxxx-egress:latest}
+    build:
+      context: ${EGRESS_SRC:-/opt/avxxx}
+      dockerfile: Dockerfile.egress
+      # BuildKit secret for the private github.com/cnc224/shared module; injected from the
+      # operator's environment at deploy time, never stored here (see Dockerfile.egress).
+      secrets: [gh_token]
+    container_name: egress-api
+    restart: unless-stopped
+    environment:
+      VPN_CONTROL_URL: http://vpn:8000
+      VPN_PROXY_URL: http://vpn:8888
+      # Default target when a consumer names none; empty = tunnel health only.
+      # avxxx's scraper never calls /rotate: a challenged source stays parked.
+      VPN_PROBE_URL: ${VPN_PROBE_URL:-}
+      VPN_ROTATE_ATTEMPTS: ${VPN_ROTATE_ATTEMPTS:-3}
+      # How often a *block* may trigger a reconnect. With one tunnel shared by
+      # several scrapers this is what stops one of them thrashing it for all.
+      VPN_MIN_ROTATE_INTERVAL: ${VPN_MIN_ROTATE_INTERVAL:-5m}
+      EGRESS_ADDR: ":9000"
+    expose:
+      - "9000"
+    depends_on:
+      vpn:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:9000/healthz"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    deploy:
+      resources:
+        limits:
+          memory: 64M
+
+# Created out of band (see README) and external to every project, so no
+# consumer's `compose down` can take the network out from under the others,
+# and no consumer has to start in a particular order.
+networks:
+  default:
+    name: egress
+    external: true
+
+secrets:
+  gh_token:
+    environment: GH_TOKEN
