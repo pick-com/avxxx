@@ -91,3 +91,52 @@ func TestCommentsTopUsesIndexIntegration(t *testing.T) {
 		t.Errorf("page of %d", len(page))
 	}
 }
+
+func TestReleaseRuntimeSortUsesIndexIntegration(t *testing.T) {
+	s := openTestStore(t)
+	ctx := context.Background()
+	sfx := fmt.Sprint(time.Now().UnixNano())
+	if _, err := s.Exec(ctx, `INSERT INTO releases(slug,canonical_title,status,runtime_minutes)
+		SELECT $1||g,'Runtime '||g,'published',CASE WHEN g%5=0 THEN NULL ELSE 30+g%90 END FROM generate_series(1,80) g`, "rt-"+sfx+"-"); err != nil {
+		t.Fatal(err)
+	}
+	for _, f := range []ReleaseFilter{{Sort: "runtime"}, {Sort: "runtime", Cursor: &Cursor{Sort: "runtime", Key: "60", ID: 1 << 40}}} {
+		sql, args, _, err := buildReleaseQuery(f)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if plan := planWithoutSort(t, s, sql, args...); !strings.Contains(plan, `"releases_public_runtime"`) || strings.Contains(plan, `"Sort"`) {
+			t.Errorf("runtime sort (cursor %v) should read releases_public_runtime without a Sort:\n%s", f.Cursor != nil, plan)
+		}
+	}
+	// Pages are longest first (unknown runtime counts as 0).
+	var all []int
+	var cur *Cursor
+	for {
+		page, next, err := s.ReleasePage(ctx, ReleaseFilter{Sort: "runtime", Limit: 7, Cursor: cur})
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, r := range page {
+			if strings.HasPrefix(r.Slug, "rt-"+sfx+"-") {
+				all = append(all, r.RuntimeMinutes)
+			}
+		}
+		if next == "" {
+			break
+		}
+		c, err := DecodeCursor(next)
+		if err != nil {
+			t.Fatal(err)
+		}
+		cur = &c
+	}
+	if len(all) != 80 {
+		t.Fatalf("walked %d of 80 releases", len(all))
+	}
+	for i := 1; i < len(all); i++ {
+		if all[i] > all[i-1] {
+			t.Fatalf("runtime order broken at %d: %v", i, all)
+		}
+	}
+}
