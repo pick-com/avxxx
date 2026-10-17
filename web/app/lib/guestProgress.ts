@@ -1,7 +1,9 @@
 // Watch history for signed-out viewers, kept in this browser only
 // (localStorage): reopening a release resumes where it stopped, and 播放记录
 // lists these entries. Signed-in viewers use the account's watch history
-// (/api/me/watch-history) instead. Functional storage, never sent anywhere.
+// (/api/me/watch-history) instead. Functional storage: it leaves the browser
+// only when the viewer signs in, merged into their own account history and
+// then removed here (lib/guestMerge.ts).
 
 const KEY = 'reel.guestProgress.v1';
 /** Most recent releases kept; older ones drop off. */
@@ -68,6 +70,11 @@ export function guestHistory(): {slug: string; title: string; progress_seconds: 
     .filter(([, e]) => e && Number.isFinite(e.p) && Number.isFinite(e.t))
     .sort((a, b) => b[1].t - a[1].t)
     .map(([slug, e]) => ({slug, title: e.title || slug, progress_seconds: e.p, duration_seconds: e.d || 0, watched_at: new Date(e.t).toISOString()}));
+}
+
+/** The raw entries (pruned), for the merge into the account on sign-in (lib/guestMerge.ts). */
+export function guestStore(): Store {
+  return typeof window === 'undefined' ? {} : read();
 }
 
 export function deleteGuestEntry(slug: string) {

@@ -636,6 +636,9 @@ export const saveWatchProgress = (slug: string, progressSeconds: number, duratio
     keepalive,
     body: {slug, progress_seconds: Math.floor(progressSeconds), duration_seconds: Math.floor(durationSeconds || 0)},
   });
+/** Guest history uploaded on sign-in: the server keeps newer account progress (saved false). */
+export const mergeWatchProgress = (e: {slug: string; progress_seconds: number; duration_seconds: number; watched_at: string}) =>
+  api<{saved: boolean; later_removed?: boolean}>('me/watch-history', {method: 'POST', body: e});
 export const getFavorites = (signal?: AbortSignal) => api<Items<FavoriteItem>>('me/favorites', {signal}).then(items);
 export const setFavorite = (slug: string, enabled: boolean) =>
   api<{saved: boolean}>('me/favorites', {method: 'POST', body: {slug, enabled}});

@@ -310,6 +310,26 @@ func (s *Store) SaveWatch(ctx context.Context, userID int64, slug string, progre
 	return err
 }
 
+// MergeWatch records progress made at `at`: a guest's browser history
+// uploaded on sign-in. Unlike SaveWatch it keeps an existing entry the
+// account saved at or after `at` (newer server progress wins) and reports
+// whether it wrote.
+func (s *Store) MergeWatch(ctx context.Context, userID int64, slug string, progress, duration int, at time.Time) (bool, error) {
+	var releaseID int64
+	if err := s.QueryRow(ctx, `SELECT id FROM releases WHERE slug=$1 AND status='published'`, slug).Scan(&releaseID); err != nil {
+		return false, err
+	}
+	tag, err := s.Exec(ctx, `INSERT INTO watch_history(user_id,release_id,progress_seconds,duration_seconds,watched_at)
+		VALUES($1,$2,$3,NULLIF($4,0),LEAST($5::timestamptz,now()))
+		ON CONFLICT(user_id,release_id) DO UPDATE SET progress_seconds=EXCLUDED.progress_seconds,
+		  duration_seconds=COALESCE(EXCLUDED.duration_seconds,watch_history.duration_seconds),watched_at=EXCLUDED.watched_at
+		WHERE watch_history.watched_at < EXCLUDED.watched_at`, userID, releaseID, progress, duration, at)
+	if err != nil {
+		return false, err
+	}
+	return tag.RowsAffected() > 0, nil
+}
+
 // historySearchScan bounds a 播放记录 search to the user's newest rows.
 const historySearchScan = 2000
 

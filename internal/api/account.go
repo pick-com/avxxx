@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"strings"
+	"time"
 )
 
 // accountStore is the subset of *store.Store used by the account and health
@@ -18,6 +19,7 @@ type accountStore interface {
 	UserIDByToken(ctx context.Context, token string) (int64, error)
 	WatchHistory(ctx context.Context, userID int64, q string) ([]map[string]any, error)
 	SaveWatch(ctx context.Context, userID int64, slug string, progress, duration int) error
+	MergeWatch(ctx context.Context, userID int64, slug string, progress, duration int, at time.Time) (bool, error)
 	Favorites(ctx context.Context, userID int64) ([]map[string]any, error)
 	SetFavorite(ctx context.Context, userID int64, slug string, enabled bool) error
 }
@@ -133,6 +135,10 @@ func (srv *Server) saveWatch(w http.ResponseWriter, r *http.Request) {
 		Slug     string `json:"slug"`
 		Progress int    `json:"progress_seconds"`
 		Duration int    `json:"duration_seconds"`
+		// WatchedAt: when the progress was made, for history kept in the
+		// browser before signing in (web lib/guestMerge.ts). Such an entry
+		// never replaces one the account saved later.
+		WatchedAt *time.Time `json:"watched_at"`
 	}
 	_ = json.NewDecoder(r.Body).Decode(&in)
 	// 看完自动移出 (NavLater): applies whether or not history is paused.
@@ -155,6 +161,15 @@ func (srv *Server) saveWatch(w http.ResponseWriter, r *http.Request) {
 			reply(w, map[string]bool{"saved": false, "paused": true, "later_removed": laterRemoved}, nil)
 			return
 		}
+	}
+	if in.WatchedAt != nil {
+		at := *in.WatchedAt
+		if now := time.Now(); at.After(now) {
+			at = now // a fast client clock cannot push it past later saves
+		}
+		saved, err := srv.accounts.MergeWatch(r.Context(), id, in.Slug, in.Progress, in.Duration, at)
+		reply(w, map[string]bool{"saved": saved, "later_removed": laterRemoved}, err)
+		return
 	}
 	e = srv.accounts.SaveWatch(r.Context(), id, in.Slug, in.Progress, in.Duration)
 	reply(w, map[string]bool{"saved": e == nil, "later_removed": laterRemoved}, e)

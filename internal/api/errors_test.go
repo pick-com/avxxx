@@ -10,6 +10,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
@@ -22,7 +23,9 @@ type stubAccounts struct {
 	loginErr    error
 	idErr       error // returned by UserIDByToken for the "good" token
 	calls       []string
-	historyQ    string // q passed to WatchHistory
+	historyQ    string      // q passed to WatchHistory
+	mergedAt    []time.Time // MergeWatch `at` arguments
+	mergeKept   bool        // MergeWatch: the account's entry is newer, nothing written
 }
 
 func (s *stubAccounts) Ping(context.Context) error {
@@ -66,7 +69,15 @@ func (s *stubAccounts) WatchHistory(_ context.Context, _ int64, q string) ([]map
 	s.historyQ = q
 	return []map[string]any{}, nil
 }
-func (s *stubAccounts) SaveWatch(context.Context, int64, string, int, int) error { return nil }
+func (s *stubAccounts) SaveWatch(context.Context, int64, string, int, int) error {
+	s.calls = append(s.calls, "SaveWatch")
+	return nil
+}
+func (s *stubAccounts) MergeWatch(_ context.Context, _ int64, _ string, _, _ int, at time.Time) (bool, error) {
+	s.calls = append(s.calls, "MergeWatch")
+	s.mergedAt = append(s.mergedAt, at)
+	return !s.mergeKept, nil
+}
 func (s *stubAccounts) Favorites(context.Context, int64) ([]map[string]any, error) {
 	return []map[string]any{}, nil
 }

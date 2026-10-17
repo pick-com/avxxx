@@ -161,6 +161,47 @@ func TestSocialIntegration(t *testing.T) {
 	if err := s.SaveWatch(ctx, uid, "pub-"+sfx, 10, 100); err != nil {
 		t.Fatal(err)
 	}
+
+	// Guest history merged on sign-in: older guest progress never replaces
+	// newer account progress; otherwise it is written with its own time.
+	progressOf := func(slug string) (int, time.Time) {
+		t.Helper()
+		var p int
+		var at time.Time
+		if err := s.QueryRow(ctx, `SELECT w.progress_seconds, w.watched_at FROM watch_history w JOIN releases r ON r.id=w.release_id WHERE w.user_id=$1 AND r.slug=$2`, uid, slug).Scan(&p, &at); err != nil {
+			t.Fatalf("progress %s: %v", slug, err)
+		}
+		return p, at
+	}
+	hourAgo := time.Now().Add(-time.Hour).Truncate(time.Second)
+	if wrote, err := s.MergeWatch(ctx, uid, "pub-"+sfx, 99, 100, hourAgo); err != nil || wrote {
+		t.Errorf("merge older over newer: wrote=%v err=%v", wrote, err)
+	}
+	if p, _ := progressOf("pub-" + sfx); p != 10 {
+		t.Errorf("newer account progress overwritten: %d", p)
+	}
+	if wrote, err := s.MergeWatch(ctx, uid, "pub2-"+sfx, 42, 100, hourAgo); err != nil || !wrote {
+		t.Errorf("merge new entry: wrote=%v err=%v", wrote, err)
+	}
+	if p, at := progressOf("pub2-" + sfx); p != 42 || !at.Equal(hourAgo) {
+		t.Errorf("merged entry = %d at %v, want 42 at %v", p, at, hourAgo)
+	}
+	if wrote, _ := s.MergeWatch(ctx, uid, "pub2-"+sfx, 50, 100, hourAgo.Add(30*time.Minute)); !wrote {
+		t.Error("newer guest progress not merged")
+	}
+	if wrote, _ := s.MergeWatch(ctx, uid, "pub2-"+sfx, 5, 100, hourAgo); wrote {
+		t.Error("older guest progress replaced a newer guest entry")
+	}
+	if p, _ := progressOf("pub2-" + sfx); p != 50 {
+		t.Errorf("pub2 progress = %d, want 50", p)
+	}
+	if wrote, err := s.MergeWatch(ctx, uid, "missing-"+sfx, 5, 100, hourAgo); !errors.Is(err, pgx.ErrNoRows) || wrote {
+		t.Errorf("unknown release merged: wrote=%v err=%v", wrote, err)
+	}
+	if err := s.DeleteWatch(ctx, uid, "pub2-"+sfx); err != nil {
+		t.Fatal(err)
+	}
+
 	if err := s.DeleteWatch(ctx, uid, "pub-"+sfx); err != nil {
 		t.Fatal(err)
 	}

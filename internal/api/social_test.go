@@ -8,6 +8,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 )
@@ -223,6 +224,46 @@ func TestSaveWatchRespectsHistoryPaused(t *testing.T) {
 		if out["saved"] == paused || out["paused"] != paused {
 			t.Errorf("paused=%v: body %v", paused, out)
 		}
+	}
+}
+
+// A guest's history uploaded on sign-in carries watched_at and goes through
+// MergeWatch (which keeps newer account progress); a future time is clamped.
+func TestSaveWatchMergesGuestHistory(t *testing.T) {
+	acc := &stubAccounts{}
+	srv := &Server{accounts: acc, social: &stubSocial{}}
+	mux := http.NewServeMux()
+	for _, rt := range srv.routes() {
+		mux.HandleFunc(rt.pattern, rt.handler)
+	}
+	past := time.Now().Add(-2 * time.Hour).UTC().Truncate(time.Second)
+	rec := do(mux, "POST", "/api/me/watch-history", "good", `{"slug":"abc-1","progress_seconds":30,"duration_seconds":100,"watched_at":"`+past.Format(time.RFC3339)+`"}`)
+	var out map[string]bool
+	_ = json.Unmarshal(rec.Body.Bytes(), &out)
+	if rec.Code != 200 || !out["saved"] || len(acc.mergedAt) != 1 || !acc.mergedAt[0].Equal(past) {
+		t.Fatalf("past: %d %v merged=%v", rec.Code, out, acc.mergedAt)
+	}
+
+	future := time.Now().Add(48 * time.Hour).UTC().Format(time.RFC3339)
+	before := time.Now()
+	do(mux, "POST", "/api/me/watch-history", "good", `{"slug":"abc-1","progress_seconds":30,"watched_at":"`+future+`"}`)
+	if got := acc.mergedAt[1]; got.Before(before) || got.After(time.Now()) {
+		t.Errorf("future watched_at not clamped to now: %v", got)
+	}
+
+	acc.mergeKept = true
+	rec = do(mux, "POST", "/api/me/watch-history", "good", `{"slug":"abc-1","progress_seconds":5,"watched_at":"`+past.Format(time.RFC3339)+`"}`)
+	out = nil
+	_ = json.Unmarshal(rec.Body.Bytes(), &out)
+	if rec.Code != 200 || out["saved"] {
+		t.Errorf("kept newer: %d %v", rec.Code, out)
+	}
+
+	// Without watched_at it is an ordinary save.
+	acc.calls = nil
+	do(mux, "POST", "/api/me/watch-history", "good", `{"slug":"abc-1","progress_seconds":5}`)
+	if strings.Join(acc.calls, ",") != "UserIDByToken,SaveWatch" {
+		t.Errorf("calls = %v", acc.calls)
 	}
 }
 
