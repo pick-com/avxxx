@@ -546,9 +546,9 @@ func (f *fakeStore) ReplaceReleaseSimilar(_ context.Context, rows []ReleaseSimil
 	f.release = rows
 	return ReleaseSimilarWrite{Inserted: int64(len(rows))}, nil
 }
-func (f *fakeStore) ReplacePerformerSimilar(_ context.Context, rows []PerformerMatch, _ time.Time) error {
+func (f *fakeStore) ReplacePerformerSimilar(_ context.Context, rows []PerformerMatch, _ time.Time) (ReleaseSimilarWrite, error) {
 	f.perf = rows
-	return nil
+	return ReleaseSimilarWrite{Inserted: int64(len(rows))}, nil
 }
 func (f *fakeStore) TrendingInputs(_ context.Context, a, b, c time.Time) ([]TrendInput, error) {
 	f.windows = append(f.windows, [3]time.Time{a, b, c})

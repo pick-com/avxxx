@@ -37,6 +37,14 @@ type SimilarDiff struct {
 	Upsert []ReleaseSimilarRow
 	Delete []ReleaseSimilarRow
 	Write  ReleaseSimilarWrite
+	// UpsertSrc[k] is the index of Upsert[k] in the next slice of the
+	// Release call that planned it (for callers with a payload to write).
+	UpsertSrc []int
+	// Changed, when set, reports whether a row present on both sides must
+	// be rewritten whatever its score: next[ni] against stored[si] of the
+	// current Release call (performer_similar's evidence). A changed row is
+	// counted as updated and keeps the score the plan chose.
+	Changed func(ni, si int) bool
 
 	idx  map[similarKey]int
 	used []bool
@@ -52,6 +60,7 @@ type diffRow struct {
 	similarKey
 	next, old, final float32
 	hasOld           bool
+	ni, si           int
 }
 
 // Release plans one release: next are its new rows (any order, all with
@@ -67,10 +76,10 @@ func (d *SimilarDiff) Release(releaseID int64, next []ReleaseSimilarRow, stored 
 	d.used = slices.Grow(d.used[:0], len(stored))[:len(stored)]
 	clear(d.used)
 	d.rows = d.rows[:0]
-	for _, r := range next {
-		x := diffRow{similarKey: similarKey{r.SimilarID, r.Reason}, next: float32(r.Score)}
+	for ni, r := range next {
+		x := diffRow{similarKey: similarKey{r.SimilarID, r.Reason}, next: float32(r.Score), ni: ni}
 		if i, ok := d.idx[x.similarKey]; ok {
-			x.old, x.hasOld, d.used[i] = stored[i].Score, true, true
+			x.old, x.hasOld, d.used[i], x.si = stored[i].Score, true, true, i
 		}
 		d.rows = append(d.rows, x)
 	}
@@ -129,11 +138,12 @@ func (d *SimilarDiff) Release(releaseID int64, next []ReleaseSimilarRow, stored 
 		switch {
 		case !r.hasOld:
 			d.Write.Inserted++
-		case r.old != r.final:
+		case r.old != r.final, d.Changed != nil && d.Changed(r.ni, r.si):
 			d.Write.Updated++
 		default:
 			continue
 		}
 		d.Upsert = append(d.Upsert, ReleaseSimilarRow{ReleaseID: releaseID, SimilarID: r.id, Score: float64(r.final), Reason: r.reason})
+		d.UpsertSrc = append(d.UpsertSrc, r.ni)
 	}
 }

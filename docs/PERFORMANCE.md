@@ -162,7 +162,8 @@ because migrations run in one batch at API start.
 
 The output row counts are unchanged: 322,434 co-watch, 14,748,193 content
 and 2,437,157 performer rows. The write of those rows, roughly 160 s, is
-now a diff; see "`recs_similarity` write" below.
+now a diff for both tables; see "`recs_similarity` write" and
+"`performer_similar` write" below.
 
 ### `recs_similarity` write
 
@@ -286,11 +287,128 @@ co-watch norms, so nearly every score changes slightly.
   - a largest drift of 0.00099999;
   - 0 order violations;
   - 0 rows whose per-release rank differs.
+- **`performer_similar`.** It now takes the same diff write; see
+  "`performer_similar` write" below.
 
 **`watch_stats`.** `WatchStatsUsers` scans the whole window whatever its
 `LIMIT`, and the runner called it once per 200-user batch: 590 scans for
 118k active users. It now reads candidates in pages of 20k and still
 writes 200 users per transaction. Users, rows and the report are the same.
+
+### `performer_similar` write
+
+`performer_similar` was still replaced every night: `DELETE` all rows,
+then `COPY` them again, about 2.4M rows at full scale. It now takes the
+same diff write as `release_similar`.
+
+**What changed.**
+
+- **Diff write.** `store.SyncPerformerSimilar` streams the current rows in
+  performer order inside the write transaction. `recs.PerformerSimilarDiff`
+  plans each performer by running `recs.SimilarDiff` on the scores, with
+  the reason left empty, so similar_id is the tie-break. It then checks
+  the evidence of each row the score rule would keep. Changes go through a
+  temp table: one `DELETE` and one `INSERT … ON CONFLICT DO UPDATE`.
+  Locking is the same as before.
+- **Scores and order.** These follow the `release_similar` rules, with
+  `recs.PerformerSimilarEpsilon` (1e-3):
+  - the same pairs;
+  - every score within 1e-3;
+  - the same per-performer order. The readers use `ORDER BY score DESC,
+    similar_id`, and `SimilarDiff` sorts on the same key, so even exact
+    ties come back in the same order. Exact ties are common here, since
+    many co-star-only pairs have the same score.
+- **Evidence rule (`recs.SameEvidence`).** A row whose score is kept still
+  gets rewritten unless all of these hold between its stored evidence and
+  the new one:
+  - `co_star`, the shared-work count, is equal;
+  - `shared_tags` and `shared_makers` hold the same names in the same
+    order. Absent and empty count as the same, since both are omitted
+    from the JSON;
+  - `metadata`, `co_star_score` and `co_watch` each differ by at most
+    1e-3. They are rounded to 3 decimals, so this allows one rounding
+    step;
+  - `PerformerReason` gives the same text, so no reason threshold
+    (`co_watch` 0.1 / 0.3, `metadata` 0.2) lies between them.
+- **What the rule keeps.** Everything shown to users is unchanged: the
+  reason text, the shared tag or maker it names, and the co-star count.
+  The admin weights preview (`ScoreEvidence`) is a weighted mean of the
+  three numbers, so its scores stay within 1e-3 too.
+- **Epsilon 0.** Every evidence field must be equal, so the table is
+  bit-identical to a full rewrite, scores and jsonb alike.
+- **Undecodable evidence.** Stored evidence that does not decode strictly
+  as `recs.Evidence` (bad JSON, unknown keys) is always rewritten.
+- **Autovacuum.** Migration 060 sets `performer_similar`'s autovacuum and
+  analyze scale factors to 2% (threshold 10k), as 059 does for
+  `release_similar`.
+- **Report.** The job report has a new `performer_write` field with the
+  same counts as `release_write`.
+
+**Measured.** The run used `scripts/perf/setup.sh` with 50k performers,
+100k releases and 67k users, giving 2.33M `performer_similar` rows.
+
+- **Starting point.** The similarity job ran once with the full rewrite,
+  followed by `VACUUM ANALYZE`. The database was then cloned, once for
+  "before" (full rewrite, default autovacuum) and once for "after" (diff
+  write, migration 060).
+- **Each night.** Each night ran as in "`recs_similarity` write": 100 new
+  releases cloned from random ones (with maker, series, tags and cast),
+  plus 3 plays each from 1% of users. Both clones used the same seed. The
+  release side used the diff write in both. The measurement waited for
+  autovacuum to finish with `performer_similar`.
+- **Columns.** Rows written is `n_tup_ins + n_tup_upd + n_tup_del`. Size is
+  `pg_total_relation_size`, starting from 661 MB.
+
+| Night | Write before | Write after | Rows written before | Rows written after (ins / upd / del) | Size before | Size after |
+|---|---|---|---|---|---|---|
+| 1 | 16.4 s | 4.8 s | 4,663,890 | 60,690 (24,089 / 12,954 / 23,647) | 1,388 MB | 671 MB |
+| 2 | 15.2 s | 4.9 s | 4,664,622 | 63,173 (24,275 / 14,913 / 23,985) | 1,389 MB | 682 MB |
+| 3 | 14.4 s | 5.3 s | 4,665,491 | 65,543 (25,311 / 15,500 / 24,732) | 1,391 MB | 685 MB |
+
+- **Job time.** The whole job went from 41–44 s to 32–33 s. The "after"
+  write time includes reading and decoding the 2.33M current rows.
+- **What gets written.** About half of the written rows are inserts and
+  deletes: pairs entering or leaving a performer's top 50. That churn is
+  real, and no tolerance removes it.
+- **Without the tolerance.** On a fourth night from the same state,
+  epsilon 0 updated 256,756 rows and epsilon 1e-3 updated 16,499. Inserts
+  and deletes were the same (26,947 / 26,367).
+- **Database size.** After three nights the database was 3,647 MB before
+  and 2,941 MB after.
+
+**Equivalence checks.**
+
+- **`TestPerformerSimilarDiffIntegration`.** It runs synthetic nights
+  through `SyncPerformerSimilar` and `RewritePerformerSimilar` on the same
+  rows, at epsilon 0 and 1e-3. The nights include:
+  - score drift below and above epsilon;
+  - evidence drift of one rounding step;
+  - a new leading shared tag and an extra co-star work;
+  - new and vanished pairs;
+  - a swap by less than epsilon, and exact ties.
+
+  It checks:
+  - at epsilon 0, bit-identical scores and identical jsonb;
+  - at 1e-3, the same pairs, scores within epsilon and evidence that
+    `SameEvidence` accepts;
+  - at both, the same `SimilarPerformers` results: ids in the same order,
+    with the same reason texts;
+  - counts that match the snapshots, `computed_at` only on written rows,
+    nothing written on a rerun, and an undecodable evidence row
+    rewritten.
+- **`TestPerformerSimilarJobDiffIntegration`.** It runs the real job twice
+  over a catalog with performers that changes in between, then compares
+  the table with `RewritePerformerSimilar` of the same job output.
+- **`internal/recs/performer_diff_test.go`.** It runs 200 random
+  performers through 8 nights each at three epsilons, with coarse scores
+  for many exact ties. It checks the read order, ties included, and the
+  evidence rule. A separate table test covers `SameEvidence`.
+- **At 50k scale.** After the fourth night, the table was compared with
+  the job output it was written from:
+  - the same 2,333,615 pairs, with none missing and none extra;
+  - a largest drift of 0.00099967;
+  - 0 rows with evidence outside the rule;
+  - 0 order violations in `ORDER BY score DESC, similar_id`.
 
 ### Memory
 
@@ -326,10 +444,6 @@ it ran out, and every parallel query failed with SQLSTATE 53100.
 
 ### Remaining risks
 
-- **`recs_similarity` still rewrites `performer_similar` in full.** That is
-  2.4M rows a night at full scale. `release_similar` now writes only what
-  changed; see "`recs_similarity` write". `performer_similar` could take
-  the same diff, but its `evidence` jsonb would need its own tolerance.
 - **The diff write still reads every `release_similar` row each night.**
   That is about 15M rows at full scale. The read is sequential and keeps
   only one release in memory, but its time grows with the table.
