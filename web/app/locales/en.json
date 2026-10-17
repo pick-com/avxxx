@@ -554,6 +554,8 @@
   "authPrompt.doneReserve": "Signed in and reminder set",
   "authPrompt.doneLike": "Signed in and liked",
   "authPrompt.doneDraft": "Signed in. Your text is back in the box; send it when ready",
+  "authPrompt.onboardText": "Account created. Take a minute to pick a few genres you like and get better picks.",
+  "authPrompt.onboardGo": "Set up",
   "reset.title": "Set a new password",
   "reset.sub": "At least 8 characters. Afterwards you'll need to log in again on every device.",
   "reset.newPassword": "New password",
