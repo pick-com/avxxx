@@ -1,5 +1,4 @@
 import {useEffect, useId, useState} from 'react';
-import {Link, useLocation} from '../lib/nav';
 import {isAbort} from '../lib/api';
 import {track} from '../lib/analytics';
 import {useAuth} from '../lib/auth';
@@ -22,6 +21,7 @@ import {useT} from '../lib/i18n';
 import type {MessageKey} from '../lib/messages.zh-CN';
 import {useAsync} from '../lib/useAsync';
 import {useMediaQuery} from '../lib/useMediaQuery';
+import {useRequireAuth} from './AuthPrompt';
 import {Icon} from './Icon';
 import {ReportPicker} from './ReportPicker';
 import {Sheet} from './Sheet';
@@ -197,14 +197,12 @@ function WatchBadge({review}: {review: Review}) {
 function ReviewItem({review, onChange, onRemove}: {review: Review; onChange: (r: Review) => void; onRemove: () => void}) {
   const t = useT();
   const {status} = useAuth();
-  const location = useLocation();
+  const requireAuth = useRequireAuth();
   const [open, setOpen] = useState(!review.spoiler);
   const [reporting, setReporting] = useState(false);
   const [reported, setReported] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
-  const loginHref = `/login?next=${encodeURIComponent(location.pathname + location.search)}`;
-
   const toggleLike = async () => {
     if (busy) return;
     const like = !review.liked_by_me;
@@ -272,10 +270,10 @@ function ReviewItem({review, onChange, onRemove}: {review: Review; onChange: (r:
             <span aria-hidden="true">{review.likes > 0 ? formatCount(review.likes) : t('review.helpful')}</span>
           </button>
         ) : (
-          <Link to={loginHref} className="review-like" aria-label={t('review.loginToLike', {n: review.likes})}>
+          <button type="button" className="review-like" aria-label={t('review.loginToLike', {n: review.likes})} onClick={() => requireAuth('like')}>
             <Icon name="thumb" size={18} />
             <span aria-hidden="true">{review.likes > 0 ? formatCount(review.likes) : t('review.helpful')}</span>
-          </Link>
+          </button>
         )}
         <span className="section-spacer" />
         {review.mine ? (
@@ -305,7 +303,9 @@ function ReviewItem({review, onChange, onRemove}: {review: Review; onChange: (r:
           <ReportPicker onSubmit={report} onCancel={() => setReporting(false)} />
         ) : (
           <p className="muted">
-            <Link to={loginHref}>{t('report.loginFirst')}</Link>
+            <button type="button" className="text-link" onClick={() => requireAuth('report')}>
+              {t('report.loginFirst')}
+            </button>
           </p>
         ))}
     </li>
@@ -388,7 +388,7 @@ function Composer({slug, releaseId, watched, onPosted}: {slug: string; releaseId
 function Reviews({slug, releaseId, watched}: {slug: string; releaseId: number; watched: boolean}) {
   const t = useT();
   const {status} = useAuth();
-  const location = useLocation();
+  const requireAuth = useRequireAuth();
   const [sort, setSort] = useState<ReviewSort>('helpful');
   const [items, setItems] = useState<Review[]>([]);
   const [cursor, setCursor] = useState<string | null>(null);
@@ -452,9 +452,9 @@ function Reviews({slug, releaseId, watched}: {slug: string; releaseId: number; w
         )
       ) : status === 'anon' ? (
         <p className="muted">
-          <Link to={`/login?next=${encodeURIComponent(location.pathname + location.search)}`} className="text-link">
+          <button type="button" className="text-link" onClick={() => requireAuth('review')}>
             {t('review.loginToWrite')}
-          </Link>
+          </button>
         </p>
       ) : null}
       {error && <ErrorBanner error={error} onRetry={() => setNonce(n => n + 1)} />}

@@ -1,5 +1,4 @@
 import {useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState, type Ref, type RefObject} from 'react';
-import {Link, useLocation} from '../lib/nav';
 import {isAbort} from '../lib/api';
 import {track} from '../lib/analytics';
 import {useAuth} from '../lib/auth';
@@ -29,6 +28,7 @@ import {
 import {formatClock} from '../lib/format';
 import {useT} from '../lib/i18n';
 import type {MessageKey} from '../lib/messages.zh-CN';
+import {useRequireAuth} from './AuthPrompt';
 import {Icon} from './Icon';
 import {ReportPicker} from './ReportPicker';
 import {Sheet} from './Sheet';
@@ -340,7 +340,7 @@ export function DanmakuBar({slug, releaseId, sourceId, video, feed, layer, onOpe
 }) {
   const t = useT();
   const {status} = useAuth();
-  const location = useLocation();
+  const requireAuth = useRequireAuth();
   const prefs = useDanmakuPrefs();
   const [text, setText] = useState('');
   const [busy, setBusy] = useState(false);
@@ -371,7 +371,6 @@ export function DanmakuBar({slug, releaseId, sourceId, video, feed, layer, onOpe
     }
   };
 
-  const loginHref = `/login?next=${encodeURIComponent(location.pathname + location.search)}`;
   return (
     <div className="dm-bar-wrap">
       <div className="dm-bar" role="group" aria-label={t('danmaku.label')}>
@@ -421,9 +420,9 @@ export function DanmakuBar({slug, releaseId, sourceId, video, feed, layer, onOpe
             </button>
           </form>
         ) : status === 'anon' ? (
-          <Link to={loginHref} className="dm-login">
+          <button type="button" className="dm-login" onClick={() => requireAuth('danmaku')}>
             {t('danmaku.loginToSend')}
-          </Link>
+          </button>
         ) : (
           <span className="dm-form" />
         )}
@@ -458,7 +457,7 @@ export function DanmakuListSheet({open, onClose, feed, video, container}: {
   const t = useT();
   const prefs = useDanmakuPrefs();
   const {status} = useAuth();
-  const location = useLocation();
+  const requireAuth = useRequireAuth();
   const [reporting, setReporting] = useState<number | null>(null);
   const [revealed, setRevealed] = useState<Set<number>>(new Set());
   const [done, setDone] = useState<Record<number, string>>({});
@@ -547,7 +546,17 @@ export function DanmakuListSheet({open, onClose, feed, video, container}: {
                     <ReportPicker onSubmit={reason => report(d, reason)} onCancel={() => setReporting(null)} />
                   ) : (
                     <p className="dm-done">
-                      <Link to={`/login?next=${encodeURIComponent(location.pathname + location.search)}`}>{t('report.loginFirst')}</Link>
+                      <button
+                        type="button"
+                        className="text-link"
+                        onClick={() => {
+                          // One dialog at a time: the sign-in sheet replaces this list.
+                          onClose();
+                          requireAuth('report');
+                        }}
+                      >
+                        {t('report.loginFirst')}
+                      </button>
                     </p>
                   ))}
               </li>

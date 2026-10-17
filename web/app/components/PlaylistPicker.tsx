@@ -2,9 +2,9 @@ import {useEffect, useId, useRef, useState, type FormEvent} from 'react';
 import {addToPlaylist, createPlaylist, getPlaylists, isMissingEndpoint, removeFromPlaylist, setFavorite, type Playlist} from '../lib/api';
 import {useAuth} from '../lib/auth';
 import {useT} from '../lib/i18n';
-import {useLocation, useNavigate} from '../lib/nav';
 import {playlistName, visibilityIcon, visibilityLabel} from '../lib/playlists';
 import {useMediaQuery} from '../lib/useMediaQuery';
+import {useRequireAuth} from './AuthPrompt';
 import {Icon} from './Icon';
 import {Sheet} from './Sheet';
 import {useDismiss} from './SocialButtons';
@@ -19,8 +19,7 @@ import '../styles/library.css';
 export function FavoritePicker({slug, title}: {slug: string; title: string}) {
   const t = useT();
   const {status} = useAuth();
-  const navigate = useNavigate();
-  const location = useLocation();
+  const requireAuth = useRequireAuth();
   const mobile = useMediaQuery('(max-width: 767px)');
   const [lists, setLists] = useState<Playlist[] | null>(null);
   const [legacy, setLegacy] = useState<boolean | null>(null); // saved state when playlists are not deployed
@@ -48,10 +47,7 @@ export function FavoritePicker({slug, title}: {slug: string; title: string}) {
   const saved = legacy ?? lists?.some(p => p.contains) ?? false;
 
   const onButton = async () => {
-    if (status !== 'user') {
-      navigate(`/login?next=${encodeURIComponent(location.pathname + location.search)}`);
-      return;
-    }
+    if (!requireAuth('favorite')) return;
     if (legacy !== null) {
       // Older backend: a plain toggle on the single list.
       const next = !legacy;

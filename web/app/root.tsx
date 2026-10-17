@@ -17,6 +17,7 @@ import {
   type ShouldRevalidateFunctionArgs,
 } from 'react-router';
 import {AgeRestricted, SiteAgeGate} from './components/AgeGate';
+import {AuthPromptProvider} from './components/AuthPrompt';
 import {CookieBanner} from './components/CookieBanner';
 import {isGateExempt, type GateState} from './lib/ageGate';
 import {gateOf} from './lib/ageGate.server';
@@ -204,9 +205,11 @@ export default function App() {
           <I18nProvider route={root}>
             <SocialProvider>
               <ConsentProvider>
-                <LangBoundary>
-                  <Outlet />
-                </LangBoundary>
+                <AuthPromptProvider>
+                  <LangBoundary>
+                    <Outlet />
+                  </LangBoundary>
+                </AuthPromptProvider>
                 {/* The back office is staff tooling: no public consent banner there. */}
                 {!isAdminPath(location.pathname) && <CookieBanner />}
               </ConsentProvider>
