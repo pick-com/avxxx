@@ -23,6 +23,13 @@ const RetentionDays = 90
 // BatchSize is the number of users rebuilt per transaction.
 const BatchSize = 200
 
+// CandidatePage is the number of candidate users read per WatchStatsUsers
+// call. The candidate query scans the whole window (every play_request and
+// watch_history update in it) whatever the page size, so reading it once
+// per BatchSize users made a run quadratic: 590 scans and 564 s for 118k
+// active users at production volume.
+const CandidatePage = 20000
+
 // Local days of any user differ from UTC days by at most these offsets
 // (UTC-12 … UTC+14).
 const (
@@ -195,34 +202,46 @@ func (r *Runner) Run(ctx context.Context) (rep Report, err error) {
 		if err = ctx.Err(); err != nil {
 			return rep, err
 		}
-		users, err := r.Store.WatchStatsUsers(ctx, from, to, days, after, BatchSize)
+		page, err := r.Store.WatchStatsUsers(ctx, from, to, days, after, CandidatePage)
 		if err != nil {
 			return rep, fmt.Errorf("users: %w", err)
 		}
-		if len(users) == 0 {
+		for rest := page; len(rest) > 0; {
+			if err = ctx.Err(); err != nil {
+				return rep, err
+			}
+			users := rest[:min(len(rest), BatchSize)]
+			rest = rest[len(users):]
+			if err = r.runBatch(ctx, users, from, to, days, &rep); err != nil {
+				return rep, err
+			}
+		}
+		if len(page) < CandidatePage {
 			return rep, nil
 		}
-		ids := make([]int64, len(users))
-		for i, u := range users {
-			ids[i] = u.ID
-		}
-		in, err := r.Store.WatchStatsInputs(ctx, ids, from, to)
-		if err != nil {
-			return rep, fmt.Errorf("inputs: %w", err)
-		}
-		rows := BuildBatch(users, in, days)
-		if err = r.Store.ReplaceWatchDays(ctx, ids, days, rows); err != nil {
-			return rep, fmt.Errorf("write: %w", err)
-		}
-		rep.Users += len(users)
-		rep.Batches++
-		rep.Rows += len(rows)
-		rep.Plays += len(in.Plays)
-		after = ids[len(ids)-1]
-		if len(users) < BatchSize {
-			return rep, nil
-		}
+		after = page[len(page)-1].ID
 	}
+}
+
+// runBatch rebuilds days for one batch of users in one transaction.
+func (r *Runner) runBatch(ctx context.Context, users []User, from, to time.Time, days []time.Time, rep *Report) error {
+	ids := make([]int64, len(users))
+	for i, u := range users {
+		ids[i] = u.ID
+	}
+	in, err := r.Store.WatchStatsInputs(ctx, ids, from, to)
+	if err != nil {
+		return fmt.Errorf("inputs: %w", err)
+	}
+	rows := BuildBatch(users, in, days)
+	if err = r.Store.ReplaceWatchDays(ctx, ids, days, rows); err != nil {
+		return fmt.Errorf("write: %w", err)
+	}
+	rep.Users += len(users)
+	rep.Batches++
+	rep.Rows += len(rows)
+	rep.Plays += len(in.Plays)
+	return nil
 }
 
 // BuildBatch builds the rows of every user in a batch, each in their own

@@ -4,6 +4,7 @@ import (
 	"avxxx/internal/audit"
 	"context"
 	"reflect"
+	"slices"
 	"testing"
 	"time"
 )
@@ -331,7 +332,65 @@ func TestRunnerBatchesAndIsIdempotent(t *testing.T) {
 	if len(f.runs) != 2 || f.runs[0].Job != JobKind || f.runs[0].Result != audit.ResultOK {
 		t.Errorf("runs %+v", f.runs)
 	}
-	if !reflect.DeepEqual(f.calls[:2], []int64{0, BatchSize}) {
+	// One candidate page per run (BatchSize+5 < CandidatePage).
+	if !reflect.DeepEqual(f.calls, []int64{0, 0}) {
 		t.Errorf("keyset calls %v", f.calls)
 	}
+}
+
+func TestRunnerPagesCandidates(t *testing.T) {
+	// More candidates than one page: keyset pages of CandidatePage, every
+	// user rebuilt exactly once, BatchSize users per transaction.
+	f := &countingStore{fakeStore: fakeStore{written: map[int64][]Day{}}}
+	n := 2*CandidatePage + 7
+	for i := int64(1); i <= int64(n); i++ {
+		f.users = append(f.users, User{ID: 3 * i})
+	}
+	rep, err := (&Runner{Store: f, Now: func() time.Time { return at("2026-10-16T03:00:00Z") }}).Run(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []int64{0, 3 * CandidatePage, 3 * 2 * CandidatePage}
+	if !reflect.DeepEqual(f.calls, want) {
+		t.Errorf("candidate calls %v, want %v", f.calls, want)
+	}
+	if rep.Users != n || len(f.batches) != (n+BatchSize-1)/BatchSize || rep.Batches != len(f.batches) {
+		t.Errorf("report %+v, %d batches", rep, len(f.batches))
+	}
+	seen := map[int64]bool{}
+	for _, b := range f.batches {
+		if len(b) > BatchSize {
+			t.Fatalf("batch of %d", len(b))
+		}
+		for _, id := range b {
+			if seen[id] {
+				t.Fatalf("user %d rebuilt twice", id)
+			}
+			seen[id] = true
+		}
+	}
+	if len(seen) != n {
+		t.Errorf("rebuilt %d users, want %d", len(seen), n)
+	}
+	// An exact multiple of the page needs one more (empty) page to stop.
+	f2 := &countingStore{fakeStore: fakeStore{written: map[int64][]Day{}}}
+	for i := int64(1); i <= CandidatePage; i++ {
+		f2.users = append(f2.users, User{ID: i})
+	}
+	if rep, err := (&Runner{Store: f2}).Run(context.Background()); err != nil || rep.Users != CandidatePage {
+		t.Fatalf("exact page: %+v %v", rep, err)
+	}
+	if !reflect.DeepEqual(f2.calls, []int64{0, CandidatePage}) {
+		t.Errorf("exact page calls %v", f2.calls)
+	}
+}
+
+type countingStore struct {
+	fakeStore
+	batches [][]int64
+}
+
+func (c *countingStore) ReplaceWatchDays(ctx context.Context, ids []int64, days []time.Time, rows []Day) error {
+	c.batches = append(c.batches, slices.Clone(ids))
+	return c.fakeStore.ReplaceWatchDays(ctx, ids, days, rows)
 }
