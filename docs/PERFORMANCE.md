@@ -1,12 +1,230 @@
 # Performance
 
-This file covers the performance pass of 2026-10-17: what it found, what
-changed, and how to rerun it. **The full-scale measurements (50k
-performers, 300k releases, 200k users) are still to do.** The Docker VM had
-about 4 GB of free disk, which is not enough for a production-volume
-database. The numbers below come from small throwaway databases of 15k to
-26k rows. Read them as before/after ratios and plan shapes. They are not
-production latencies. Rerun "Full load test" when Docker has room.
+This file covers the performance passes of 2026-10-17: what they found,
+what changed, and how to rerun them. "Full-scale pass" has the
+production-volume measurements: 50k performers, 300k releases and 200k
+users. The earlier sections ("Findings and fixes") come from small
+throwaway databases of 15k to 26k rows. Read those as before/after ratios
+and plan shapes.
+
+## Full-scale pass (production volume)
+
+**Setup.** `scripts/perf/setup.sh` with 50,000 performers, 300,000
+releases and 200,000 users (`max_wal_size=1GB`): 4.4 GB, about 25M rows.
+The heaviest tables are watch_history (4.1M rows), events (3.4M), release_tags (1.8M),
+danmaku (1.5M), ratings (1.0M) and comments (720k). Postgres 17 ran in Docker on the
+development Mac. `recs_trending` / `recs_similarity` ran once before any
+measurement, as production would have.
+
+- **Latency.** `loadgen -n 200 -c 8` over `endpoints.txt`, against an API
+  started with `MEDIA_LINK_ON_DEMAND=false`. "Before" is origin/main
+  (fe986f3) on the freshly seeded database. "After" is this branch, with
+  migration 058 applied.
+- **Jobs.** `go run ./cmd/audit -<job>`, timed with `/usr/bin/time -l` for
+  the peak RSS.
+- **SSR.** The built web server (`node server.mjs`) with
+  `API_INTERNAL_URL` set to the API, `loadgen -c 4` over
+  `ssr-endpoints.txt`, with a development age-gate cookie.
+
+Absolute numbers are from one laptop, with 8 concurrent clients competing
+for the same CPUs as Postgres. Compare before against after, row by row.
+
+### Latency, before / after (ms, 8 concurrent)
+
+| Endpoint | p50 / p95 / p99 before | p50 / p95 / p99 after | Fix |
+|---|---|---|---|
+| `recs?slot=home` (visitor) | 62 / 91 / 104 | 13 / 25 / 54 | ratings index, prior cache |
+| `recs?slot=home` (signed in) | 83 / 99 / 113 | 29 / 42 / 49 | same |
+| `trending?period=week` | 30 / 38 / 41 | 8.7 / 12 / 13 | ratings index |
+| `recs?slot=related` | 124 / 307 / 665 | 41 / 61 / 84 | same |
+| `releases/{r}/comments?sort=top` | 2.6 / 34 / 109 | 2.6 / 10 / 13 | `comments_top` |
+| `releases?tag=&sort=runtime` | 95 / 305 / 459 | 8.2 / 19 / 23 | `releases_public_runtime` |
+| `releases?q=` | 82 / 153 / 174 | 2.2 / 3.8 / 5.1 | `release_identifiers_value` |
+| `catalog/search?q=` (broad word) | 888 / 988 / 1080 | 455 / 490 / 510 | fuzzy guard |
+| `catalog/search?…&counts=1` | 1359 / 1534 / 1750 | 556 / 615 / 701 | same |
+| `sitemap/counts` | 2373 / 3841 / 9353, 191 errors | 0.1 / 0.3 / 0.5, 0 errors | cache, GROUP BY |
+| `sitemap/tags` | 10 / 166 / 906, 197 errors | 0.3 / 0.9 / 1.1, 0 errors | first-page cache |
+| `performers?sort=works` | 77 / 86 / 96 | 67 / 98 / 136 | see remaining risks |
+| `performers?sort=newest_work` | 48 / 59 / 63 | 49 / 55 / 61 | see remaining risks |
+| `performers/{p}` | 6.6 / 14 / 42 | 4.4 / 13 / 32 | `releases_public_id_date` |
+| `sitemap/releases` (5000 rows) | 152 / 221 / 231 | 147 / 199 / 218 | 51 ms alone; a bulk page |
+
+Every other endpoint stayed under 20 ms p95, before and after:
+
+- home slots and 高分短片 (cached);
+- release detail, cast, play-config and playback;
+- comments newest;
+- performer releases;
+- releases newest / by tag / with the HD + subtitle facet;
+- performers by name and heat;
+- upcoming and catalog facets;
+- product-code search;
+- history, history `?q=`, `/api/me/clips` and favorites (signed in).
+
+The errors were Postgres failing to allocate parallel-query shared memory:
+`could not resize shared memory segment … No space left on device`.
+See "Infrastructure" below.
+
+### Slow queries and fixes
+
+Each fix has its own commit and test. All of them keep behaviour, except
+three caches, each noted in its item.
+
+1. **Recs hydration (`RecInfos`): 98 → 9 ms.**
+   - Cause: summing every active vote of ~160 candidates. Busy releases
+     have thousands of votes, and 66 ms went to heap reads.
+   - Fix: `ratings_active_release (release_id) INCLUDE (weight, score)
+     WHERE status='active'` makes the aggregate index-only.
+2. **Rating prior: no more stacked scans.** `RatingPrior`, about 170 ms
+   over 1M ratings, is cached for 10 minutes, but every request that
+   arrived after expiry rescanned it until one of them stored the result.
+   `staleCache` lets one caller reload while the others keep the previous
+   value.
+3. **Top comments: 53 → 1.1 ms** on a release with 5.7k comments.
+   - Before: every top-level comment was sorted, with a hash join over all
+     users.
+   - Now: `comments_top` matches `commentTopOrder` exactly.
+4. **Runtime sort: 32 → 0.02 ms untagged, 75 → 0.5 ms with a common tag.**
+   `releases_public_runtime` matches `releaseSorts["runtime"]`.
+5. **`?q=` product codes: 19 → 0.9 ms.** Lookups by `normalized_value`
+   seq-scanned 600k identifiers, because every index led with
+   `identifier_type`. Fix: `release_identifiers_value`.
+6. **Live work counts: 166 → 9 ms per performer page.** Covers performer
+   pages, the works / heat sorts and profile stats. Each credit probed the
+   releases heap. `releases_public_id_date (id) INCLUDE (release_date)`,
+   partial on published and unmerged, makes the probe index-only.
+7. **Catalog search: about 2× faster.** A broad word matched about 27k
+   titles. The query then also ran the trigram branches and joined every
+   candidate back to releases to rank it.
+   - The fuzzy branches now run only while the ILIKE branch has fewer rows
+     than the page or the count cap (`fuzzyGuard`). Fuzzy rows always rank
+     after ILIKE rows.
+   - Release candidates carry their own ranking columns.
+   - Checks: byte-identical responses on 20 sample queries, plus
+     `TestSearchFuzzyGuardMatchesReferenceIntegration` against the old SQL.
+8. **Sitemap counts: 1.7 s → 0.9 s uncached, then cached.**
+   - The tag count is grouped instead of `count(DISTINCT)`, which sorted
+     1.75M rows.
+   - Cache: 5 minutes, one reload at a time. The counts can now be up to
+     5 minutes old, like the lists' `Cache-Control`.
+9. **Sitemap tags: first page cached.** The default page, which is what the
+   web asks for, is cached for 5 minutes.
+10. **`/api/tags` cached for 5 minutes, per limit.** It took about 100 ms,
+    counting every tag row, and SSR home asks on every render.
+11. **`cachedJSON` single build.** 高分短片 and home slots now build once
+    per miss instead of once per concurrent request. 高分短片 costs
+    250–400 ms per language per expiry.
+
+Migration `058_full_scale_indexes.sql` adds:
+
+| Index | Size at this volume |
+|---|---|
+| `comments_top` | 28 MB |
+| `ratings_active_release` | 30 MB |
+| `releases_public_id_date` | 9 MB |
+| `release_identifiers_value` | 15 MB |
+| `releases_public_runtime` | 9 MB |
+
+The migration uses plain `CREATE INDEX IF NOT EXISTS`, like the others,
+because migrations run in one batch at API start.
+
+### Jobs
+
+| Job | Before | After |
+|---|---|---|
+| `recs_similarity` | **602 s, 15.4 GB RSS** | 230 s, 4.9 GB RSS |
+| `recs_trending` | 58 s cold / 36 s warm | 35 s |
+| `watch_stats` (hourly) | **564 s** | 21–26 s |
+| `site_metrics` | 10 s (2 s warm) | 2 s |
+| `completeness` | 5 s | 5 s |
+| `search_stats` | 0.6 s | 0.3 s |
+| `media_fetch` / `media_purge` | < 1 s | < 1 s |
+| `release_curves` | 715 s first run (no watermark); 0.7 s incremental | unchanged |
+
+`media_fetch` / `media_purge` have nothing to do here: no
+`CATALOG_CONTACT`, no image sources, no assets.
+
+**`recs_similarity` fixes:**
+
+- **`CoWatch`** kept a map of every co-watched pair, about 50M entries. It
+  now walks one item at a time over dense arrays and keeps that item's
+  TopK: 41 → 2.7 s. The float operations run in the same order, so the
+  results are bit-identical.
+- **`ContentNeighbors`** kept a candidate-sized backing array behind every
+  entity's TopK slice, about 20 GB live. It now interns features, scores
+  into a dense array and copies exactly TopK: 177 → 20 s. Feature ids are
+  in name order, so the scores no longer depend on map order.
+- **Release side.** It streams its matches with kind only
+  (`EachContentNeighbors`, `KindOnly`).
+- **Performer side.** It keeps 3 shared features per kind, which the
+  evidence uses, and stores pairs by index. It now runs before the release
+  rows are built.
+
+The output row counts are unchanged: 322,434 co-watch, 14,748,193 content
+and 2,437,157 performer rows. What remains is writing about 17.5M rows,
+roughly 160 s; see "Remaining risks".
+
+**`watch_stats`.** `WatchStatsUsers` scans the whole window whatever its
+`LIMIT`, and the runner called it once per 200-user batch: 590 scans for
+118k active users. It now reads candidates in pages of 20k and still
+writes 200 users per transaction. Users, rows and the report are the same.
+
+### Memory
+
+- **API RSS.** It starts at 88 MiB and peaks at about 155 MiB during a full
+  `loadgen` round. In 4 back-to-back rounds on one process it settled
+  between 50 and 100 MiB with no growth, so no leak was found.
+- **Limiter.** `MemoryLimiter` flooded with 300k new IPv6 keys stayed at its
+  100k cap, with 23 MiB of heap.
+- **Web SSR server.** About 320 MiB RSS under load.
+
+### SSR (web server render, 4 concurrent)
+
+| Page | p50 / p95 before | p50 / p95 after |
+|---|---|---|
+| `/` (home) | 360 / 529 | 38 / 56 |
+| `/releases/{r}` | 9.3 / 14 | 9.2 / 13 |
+| `/performers/{p}` | 14 / 38 | 12 / 35 |
+| `/discover`, `/search?q=` | 11 / 15, 4.8 / 5.8 | 11 / 14, 4.8 / 6.5 |
+
+Home was slow because of `tags?limit=12`, an uncached ~100 ms count over
+all tag rows on every render. Item 10 above caches it.
+
+### Infrastructure
+
+**`/dev/shm`.** Postgres puts parallel-query shared memory in `/dev/shm`,
+which is 64 MB by default in Docker. At 8 concurrent catalog-wide queries
+it ran out, and every parallel query failed with SQLSTATE 53100.
+
+- **Fix.** The compose `db` service, which production deploys, and
+  `setup.sh` now set `shm_size: 256mb`.
+- **Deploying it.** The next `docker compose up -d db` recreates the db
+  container, which means a short database restart.
+
+### Remaining risks
+
+- **`recs_similarity` writes about 17.5M rows a night.**
+  - It deletes and copies `release_similar`, about 4.4 GB with indexes,
+    plus WAL, in one transaction. Each run leaves 15M dead rows for
+    autovacuum. On this database, five runs grew it from 4.4 to 19 GB.
+  - Total runtime is about 230 s, of which about 70 s is compute; the
+    rest is the write.
+  - Changing that means fewer stored neighbours, a table swap or diff
+    writes. Each changes behaviour or locking, so none is done here.
+- **The performer list's missing-stats branch is O(performers).** The hash
+  anti-join over `performers` and `performer_stats` takes about 15–20 ms
+  warm at 50k performers, and 50–70 ms p50 at 8 concurrent requests.
+- **Broad catalog searches are CPU-bound.** About 100 ms of database CPU
+  for a word in about 10% of titles. Ranking needs `word_similarity` on
+  every match.
+- **`release_curves` first run takes about 12 minutes** over 207k
+  releases, one release at a time. The steady state is incremental and
+  under 1 s.
+- **`recs_trending` takes about 35 s.** The heat query recomputes the
+  trending inputs, so each period scans events and watch_history twice. It
+  is within the 60 s budget, but it grows with history.
+- **Hot performer profiles count works live.** About 15–80 ms for a
+  performer with 1.5k works.
 
 ## Findings and fixes
 
@@ -40,8 +258,7 @@ an earlier perf pass).
     default). In a 4k-performer test, JIT alone added about 6 ms.
 - **Remaining O(N) part.** The missing-stats branch does a hash anti-join of
   active performers against `performer_stats`. It took about 1 ms at 4k
-  performers and grows linearly. Expect roughly 10–15 ms at 50k. Confirm
-  this in the full run.
+  performers. At 50k it measured 15–20 ms warm (see "Full-scale pass").
 
 **Tests.** `TestPerformerWorkSortsIntegration` covers:
 
@@ -188,7 +405,8 @@ The scripts live in `scripts/perf/`:
 | `setup.sh` | Starts a disposable `postgres:17` container (`avxxx-perf-db`, random localhost port). Applies the migrations by booting the API once. Seeds the database and prints its URL. Never touches `DATABASE_URL` or the compose `db`. |
 | `seed.sql` | Synthetic, skewed catalog and activity data. Its defaults are small: 1k performers, 5k releases, 1k users, about 150k rows, under 200 MB. Activity tables scale with `users`. |
 | `loadgen/` | Replays `endpoints.txt` and prints p50 / p95 / p99 per endpoint. With `-pid` it also samples the API's peak RSS. |
-| `endpoints.txt` | The endpoints that `loadgen` replays. |
+| `endpoints.txt` | The endpoints that `loadgen` replays. Run the API with `MEDIA_LINK_ON_DEMAND=false`. |
+| `ssr-endpoints.txt` | SSR pages for `loadgen -base <web server>`. Pass the age-gate cookie with `-header "Cookie: ag=…"`. |
 
 1. Check the free disk:
 
@@ -251,8 +469,10 @@ The scripts live in `scripts/perf/`:
 - `make test-integration` uses its own `--rm` container and removes it with
   `-v`.
 
-**Pending (needs disk):**
+**Signed-in endpoints.** `auth:` endpoints need `-token`. On the seeded
+database, insert a `user_sessions` row with `token_hash` set to the
+SHA-256 hex of a random token, for a seeded user. Pass that token.
 
-- the full-volume run of all endpoints;
-- the missing-stats anti-join cost at 50k performers;
-- peak RSS under a flood of new limiter keys at the 100k cap.
+**Slow-query log.** On the throwaway database only, run
+`ALTER SYSTEM SET log_min_duration_statement = 25; SELECT pg_reload_conf();`
+and read `docker logs avxxx-perf-db` after a run.
