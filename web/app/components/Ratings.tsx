@@ -19,6 +19,7 @@ import {
 import {formatCount, formatDate} from '../lib/format';
 import {useT} from '../lib/i18n';
 import type {MessageKey} from '../lib/messages.zh-CN';
+import {listReadyForAccount} from '../lib/pendingAction';
 import {useAsync} from '../lib/useAsync';
 import {useMediaQuery} from '../lib/useMediaQuery';
 import {usePendingAction, useRequireAuth} from './AuthPrompt';
@@ -194,7 +195,7 @@ function WatchBadge({review}: {review: Review}) {
   return <span className="review-badge is-none">{t('review.notWatched')}</span>;
 }
 
-function ReviewItem({review, onChange, onRemove}: {review: Review; onChange: (r: Review) => void; onRemove: () => void}) {
+function ReviewItem({review, ready, onChange, onRemove}: {review: Review; ready: boolean; onChange: (r: Review) => void; onRemove: () => void}) {
   const t = useT();
   const {status} = useAuth();
   const requireAuth = useRequireAuth();
@@ -206,20 +207,26 @@ function ReviewItem({review, onChange, onRemove}: {review: Review; onChange: (r:
   const latest = useRef(review);
   latest.current = review;
   // Back from the sign-in sheet: mark it helpful (once; not your own).
-  usePendingAction('like', `review:${review.id}`, async () => {
-    if (latest.current.mine) return null;
-    if (!latest.current.liked_by_me) {
-      try {
-        const r = await likeReview(review.id, true);
-        onChange({...latest.current, liked_by_me: r.liked, likes: r.likes});
-        track('review_like', {review_id: review.id});
-      } catch (cause) {
-        setError(postErrorMessage(cause));
-        return null;
+  // Waits for the list refetched for the account, which would otherwise undo it.
+  usePendingAction(
+    'like',
+    `review:${review.id}`,
+    async () => {
+      if (latest.current.mine) return null;
+      if (!latest.current.liked_by_me) {
+        try {
+          const r = await likeReview(review.id, true);
+          onChange({...latest.current, liked_by_me: r.liked, likes: r.likes});
+          track('review_like', {review_id: review.id});
+        } catch (cause) {
+          setError(postErrorMessage(cause));
+          return null;
+        }
       }
-    }
-    return t('authPrompt.doneLike');
-  });
+      return t('authPrompt.doneLike');
+    },
+    ready,
+  );
 
   const toggleLike = async () => {
     if (busy) return;
@@ -330,10 +337,19 @@ function ReviewItem({review, onChange, onRemove}: {review: Review; onChange: (r:
   );
 }
 
-function Composer({slug, releaseId, watched, onPosted}: {slug: string; releaseId: number; watched: boolean; onPosted: (r: Review) => void}) {
+function Composer({slug, releaseId, watched, draft, onPosted}: {
+  slug: string;
+  releaseId: number;
+  watched: boolean;
+  /** A guest's draft back from the sign-in sheet (Reviews remounts the composer with it). */
+  draft?: {body: string; spoiler: boolean};
+  onPosted: (r: Review) => void;
+}) {
   const t = useT();
-  const [body, setBody] = useState('');
-  const [spoiler, setSpoiler] = useState(false);
+  const {status} = useAuth();
+  const requireAuth = useRequireAuth();
+  const [body, setBody] = useState(draft?.body ?? '');
+  const [spoiler, setSpoiler] = useState(draft?.spoiler ?? false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const length = runeLength(body.trim());
@@ -342,6 +358,8 @@ function Composer({slug, releaseId, watched, onPosted}: {slug: string; releaseId
   const submit = async () => {
     const text = body.trim();
     if (!text || over || busy) return;
+    // Guests can write too: 发表 opens the sign-in sheet and the draft waits (Reviews puts it back).
+    if (!requireAuth('review', {target: reviewDraftTarget(slug), payload: {draft: text, spoiler}})) return;
     setBusy(true);
     setError('');
     try {
@@ -373,7 +391,8 @@ function Composer({slug, releaseId, watched, onPosted}: {slug: string; releaseId
         className="review-input"
         rows={3}
         value={body}
-        placeholder={t('review.placeholder', {n: REVIEW_MAX})}
+        autoFocus={!!draft}
+        placeholder={status === 'user' ? t('review.placeholder', {n: REVIEW_MAX}) : t('review.loginToWrite')}
         aria-invalid={over || !!error || undefined}
         aria-describedby="review-count"
         onChange={e => {
@@ -403,16 +422,21 @@ function Composer({slug, releaseId, watched, onPosted}: {slug: string; releaseId
   );
 }
 
+const reviewDraftTarget = (slug: string) => `review:${slug}`;
+
 function Reviews({slug, releaseId, watched}: {slug: string; releaseId: number; watched: boolean}) {
   const t = useT();
   const {status} = useAuth();
-  const requireAuth = useRequireAuth();
   const [sort, setSort] = useState<ReviewSort>('helpful');
   const [items, setItems] = useState<Review[]>([]);
   const [cursor, setCursor] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<Error | null>(null);
   const [nonce, setNonce] = useState(0);
+  // Which session the shown page was loaded for (signed in, it carries liked_by_me / mine).
+  const [loadedAs, setLoadedAs] = useState<string | null>(null);
+  const ready = listReadyForAccount(loadedAs, status, loading);
+  const [draft, setDraft] = useState<{body: string; spoiler: boolean; id: number} | null>(null);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -422,6 +446,7 @@ function Reviews({slug, releaseId, watched}: {slug: string; releaseId: number; w
       page => {
         setItems(page.items);
         setCursor(page.nextCursor);
+        setLoadedAs(status);
         setLoading(false);
       },
       cause => {
@@ -448,6 +473,20 @@ function Reviews({slug, releaseId, watched}: {slug: string; releaseId: number; w
   };
 
   const hasMine = items.some(r => r.mine);
+
+  // A guest's 短评 back from the sign-in sheet: into the composer, unsent,
+  // once the list shows whether the account already has one (one per person).
+  usePendingAction(
+    'review',
+    reviewDraftTarget(slug),
+    payload => {
+      if (hasMine) return t('review.alreadyPosted');
+      if (typeof payload.draft !== 'string') return null;
+      setDraft({body: payload.draft, spoiler: payload.spoiler === true, id: Date.now()});
+      return t('authPrompt.doneDraft');
+    },
+    ready,
+  );
   return (
     <section className="reviews" aria-labelledby="reviews-title">
       <div className="reviews-head">
@@ -462,18 +501,20 @@ function Reviews({slug, releaseId, watched}: {slug: string; releaseId: number; w
           ))}
         </div>
       </div>
-      {status === 'user' ? (
-        hasMine ? (
-          <p className="muted">{t('review.alreadyPosted')}</p>
-        ) : (
-          <Composer slug={slug} releaseId={releaseId} watched={watched} onPosted={r => setItems(list => [r, ...list.filter(x => x.id !== r.id)])} />
-        )
-      ) : status === 'anon' ? (
-        <p className="muted">
-          <button type="button" className="text-link" onClick={() => requireAuth('review')}>
-            {t('review.loginToWrite')}
-          </button>
-        </p>
+      {status === 'user' && hasMine ? (
+        <p className="muted">{t('review.alreadyPosted')}</p>
+      ) : status !== 'unknown' ? (
+        <Composer
+          key={draft?.id ?? 0}
+          slug={slug}
+          releaseId={releaseId}
+          watched={watched}
+          draft={draft ?? undefined}
+          onPosted={r => {
+            setDraft(null);
+            setItems(list => [r, ...list.filter(x => x.id !== r.id)]);
+          }}
+        />
       ) : null}
       {error && <ErrorBanner error={error} onRetry={() => setNonce(n => n + 1)} />}
       {!loading && !error && items.length === 0 && <p className="muted">{sort === 'finished' ? t('review.emptyFinished') : t('review.empty')}</p>}
@@ -483,6 +524,7 @@ function Reviews({slug, releaseId, watched}: {slug: string; releaseId: number; w
             <ReviewItem
               key={r.id}
               review={r}
+              ready={ready}
               onChange={next => setItems(list => list.map(x => (x.id === next.id ? next : x)))}
               onRemove={() => setItems(list => list.filter(x => x.id !== r.id))}
             />

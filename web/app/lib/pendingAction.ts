@@ -93,6 +93,16 @@ export function takePending(kind: string, target: string, now = Date.now(), stor
   return p;
 }
 
+/**
+ * A list refetched on sign-in (comments, 短评) is ready for a pending action
+ * once the page it shows was loaded for the signed-in account: finishing the
+ * action earlier races the refetch, whose older answer would overwrite the
+ * like or reply state just set.
+ */
+export function listReadyForAccount(loadedAs: string | null, status: string, loading: boolean): boolean {
+  return status === 'user' && loadedAs === 'user' && !loading;
+}
+
 export function clearPending(store: StorageLike | null = session()) {
   try {
     store?.removeItem(KEY);

@@ -5,6 +5,7 @@ import {
   PENDING_TTL_MS,
   boundPayload,
   clearPending,
+  listReadyForAccount,
   parsePending,
   peekPending,
   markPromptOAuth,
@@ -86,4 +87,14 @@ test('the provider sign-in marker is read once and expires', () => {
   markPromptOAuth('later', 'google', 100, store);
   assert.equal(takePromptOAuth(100 + PENDING_TTL_MS, store), null);
   assert.equal(store.map.size, 0);
+});
+
+test('listReadyForAccount: only once the page was loaded signed in and nothing is loading', () => {
+  assert.equal(listReadyForAccount('user', 'user', false), true);
+  // The guest page is still shown while the signed-in refetch runs.
+  assert.equal(listReadyForAccount('anon', 'user', false), false);
+  assert.equal(listReadyForAccount('anon', 'user', true), false);
+  assert.equal(listReadyForAccount('user', 'user', true), false);
+  assert.equal(listReadyForAccount(null, 'user', false), false);
+  assert.equal(listReadyForAccount('user', 'anon', false), false);
 });
