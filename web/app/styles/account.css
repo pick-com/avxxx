@@ -113,6 +113,37 @@
   }
 }
 
+/* 「已登录，并已收藏」 after a pending action finishes (AuthPrompt). */
+.auth-toast-region {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: calc(24px + env(safe-area-inset-bottom));
+  z-index: 70;
+  display: flex;
+  justify-content: center;
+  padding: 0 16px;
+  pointer-events: none;
+}
+
+.auth-toast {
+  max-width: 480px;
+  padding: 10px 16px;
+  border-radius: 12px;
+  background: var(--pop);
+  color: var(--text);
+  box-shadow: var(--shadow);
+  font-size: 14px;
+  line-height: 1.5;
+  animation: sheet-fade 0.2s ease-out;
+}
+
+@media (max-width: 767px) {
+  .auth-toast-region {
+    bottom: calc(72px + env(safe-area-inset-bottom));
+  }
+}
+
 /* Settings › 账号 */
 
 .set-input {

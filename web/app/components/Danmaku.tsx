@@ -28,7 +28,7 @@ import {
 import {formatClock} from '../lib/format';
 import {useT} from '../lib/i18n';
 import type {MessageKey} from '../lib/messages.zh-CN';
-import {useRequireAuth} from './AuthPrompt';
+import {usePendingAction, useRequireAuth} from './AuthPrompt';
 import {Icon} from './Icon';
 import {ReportPicker} from './ReportPicker';
 import {Sheet} from './Sheet';
@@ -348,10 +348,19 @@ export function DanmakuBar({slug, releaseId, sourceId, video, feed, layer, onOpe
   const [sent, setSent] = useState('');
   const length = runeLength(text.trim());
   const tooLong = length > DANMAKU_MAX;
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  // A guest's draft waits through the sign-in and comes back here, unsent.
+  usePendingAction('danmaku', slug, payload => {
+    if (typeof payload.draft === 'string') setText(payload.draft);
+    inputRef.current?.focus({preventScroll: true});
+    return t('authPrompt.doneDraft');
+  });
 
   const send = async () => {
     const body = text.trim();
     if (!body || tooLong || busy || !video) return;
+    if (!requireAuth('danmaku', {target: slug, payload: {draft: body}})) return;
     setBusy(true);
     setError('');
     setSent('');
@@ -386,7 +395,7 @@ export function DanmakuBar({slug, releaseId, sourceId, video, feed, layer, onOpe
             {t('danmaku.glyph')}
           </span>
         </button>
-        {status === 'user' ? (
+        {status !== 'unknown' ? (
           <form
             className="dm-form"
             onSubmit={event => {
@@ -398,11 +407,12 @@ export function DanmakuBar({slug, releaseId, sourceId, video, feed, layer, onOpe
               {t('danmaku.inputLabel')}
             </label>
             <input
+              ref={inputRef}
               id="dm-input"
               className="dm-input"
               type="text"
               value={text}
-              placeholder={t('danmaku.placeholder')}
+              placeholder={status === 'user' ? t('danmaku.placeholder') : t('danmaku.loginToSend')}
               autoComplete="off"
               enterKeyHint="send"
               aria-invalid={tooLong || !!error || undefined}
@@ -419,10 +429,6 @@ export function DanmakuBar({slug, releaseId, sourceId, video, feed, layer, onOpe
               {busy ? t('danmaku.sending') : t('danmaku.send')}
             </button>
           </form>
-        ) : status === 'anon' ? (
-          <button type="button" className="dm-login" onClick={() => requireAuth('danmaku')}>
-            {t('danmaku.loginToSend')}
-          </button>
         ) : (
           <span className="dm-form" />
         )}

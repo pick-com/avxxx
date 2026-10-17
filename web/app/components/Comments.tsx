@@ -1,4 +1,4 @@
-import {useEffect, useState} from 'react';
+import {useEffect, useRef, useState} from 'react';
 import {ApiError, isAbort} from '../lib/api';
 import {track} from '../lib/analytics';
 import {useAuth} from '../lib/auth';
@@ -19,7 +19,7 @@ import {
   type CommentSort,
 } from '../lib/interactions';
 import type {MessageKey} from '../lib/messages.zh-CN';
-import {useRequireAuth} from './AuthPrompt';
+import {usePendingAction, useRequireAuth} from './AuthPrompt';
 import {Icon} from './Icon';
 import {ReportPicker} from './ReportPicker';
 import {ErrorBanner} from './States';
@@ -55,6 +55,8 @@ function CommentComposer({slug, releaseId, parent, onPosted, onCancel}: {
   onCancel?: () => void;
 }) {
   const t = useT();
+  const {status} = useAuth();
+  const requireAuth = useRequireAuth();
   const [body, setBody] = useState('');
   const [spoiler, setSpoiler] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -62,10 +64,19 @@ function CommentComposer({slug, releaseId, parent, onPosted, onCancel}: {
   const length = runeLength(body.trim());
   const over = length > COMMENT_MAX;
   const inputId = parent ? `comment-reply-${parent.id}` : 'comment-input';
+  // A guest's top-level draft comes back after the sign-in, unsent.
+  const draftTarget = parent ? '' : `comment:${slug}`;
+  usePendingAction('comment', draftTarget, payload => {
+    if (typeof payload.draft === 'string') setBody(payload.draft);
+    if (payload.spoiler === true) setSpoiler(true);
+    document.getElementById(inputId)?.focus({preventScroll: true});
+    return t('authPrompt.doneDraft');
+  });
 
   const submit = async () => {
     const text = body.trim();
     if (!text || over || busy) return;
+    if (!requireAuth('comment', {target: draftTarget, payload: {draft: text, spoiler}})) return;
     setBusy(true);
     setError('');
     try {
@@ -98,7 +109,7 @@ function CommentComposer({slug, releaseId, parent, onPosted, onCancel}: {
         rows={parent ? 2 : 3}
         value={body}
         autoFocus={!!parent}
-        placeholder={parent ? t('comment.replyPlaceholder') : t('comment.placeholder', {n: COMMENT_MAX})}
+        placeholder={parent ? t('comment.replyPlaceholder') : status === 'user' ? t('comment.placeholder', {n: COMMENT_MAX}) : t('comment.loginToWrite')}
         aria-invalid={over || !!error || undefined}
         aria-describedby={`${inputId}-count`}
         onChange={e => {
@@ -149,6 +160,22 @@ function CommentItem({comment, onChange, onRemove, onReply}: {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [editing, setEditing] = useState(false);
+  const latest = useRef(comment);
+  latest.current = comment;
+  // Back from the sign-in sheet: like it (once; an existing like stays).
+  usePendingAction('like', `comment:${comment.id}`, async () => {
+    if (!latest.current.liked_by_me) {
+      try {
+        const r = await likeComment(comment.id, true);
+        onChange({...latest.current, liked_by_me: r.liked, likes: r.likes});
+        track('comment_like', {comment_id: comment.id});
+      } catch (cause) {
+        setError(postErrorMessage(cause));
+        return null;
+      }
+    }
+    return t('authPrompt.doneLike');
+  });
 
   if (comment.deleted) {
     return <p className="muted comment-deleted">{t('comment.deleted')}</p>;
@@ -238,7 +265,7 @@ function CommentItem({comment, onChange, onRemove, onReply}: {
             <span aria-hidden="true">{comment.likes > 0 ? formatCount(comment.likes) : t('vote.likeShort')}</span>
           </button>
         ) : (
-          <button type="button" className="review-like" aria-label={t('review.loginToLike', {n: comment.likes})} onClick={() => requireAuth('like')}>
+          <button type="button" className="review-like" aria-label={t('review.loginToLike', {n: comment.likes})} onClick={() => requireAuth('like', {target: `comment:${comment.id}`})}>
             <Icon name="thumb" size={18} />
             <span aria-hidden="true">{comment.likes > 0 ? formatCount(comment.likes) : t('vote.likeShort')}</span>
           </button>
@@ -456,7 +483,6 @@ function Thread({slug, releaseId, comment, onChange, onRemove}: {
 export function Comments({slug, releaseId}: {slug: string; releaseId: number}) {
   const t = useT();
   const {status} = useAuth();
-  const requireAuth = useRequireAuth();
   const [sort, setSort] = useState<CommentSort>('top');
   const [items, setItems] = useState<Comment[]>([]);
   const [cursor, setCursor] = useState<string | null>(null);
@@ -514,15 +540,10 @@ export function Comments({slug, releaseId}: {slug: string; releaseId: number}) {
           ))}
         </div>
       </div>
-      {status === 'user' ? (
+      {/* Guests can write too: 发表 opens the sign-in sheet and the draft waits. */}
+      {status !== 'unknown' && (
         <CommentComposer slug={slug} releaseId={releaseId} onPosted={c => setItems(list => [c, ...list.filter(x => x.id !== c.id)])} />
-      ) : status === 'anon' ? (
-        <p className="muted">
-          <button type="button" className="text-link" onClick={() => requireAuth('comment')}>
-            {t('comment.loginToWrite')}
-          </button>
-        </p>
-      ) : null}
+      )}
       {error && <ErrorBanner error={error} onRetry={() => setNonce(n => n + 1)} />}
       {!loading && !error && items.length === 0 && <p className="muted">{t('comment.empty')}</p>}
       {items.length > 0 && (
